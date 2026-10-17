@@ -51,6 +51,21 @@ func Extract(prompt string, images int, estTokens int) Signals {
 	return s
 }
 
+var reSeconds = regexp.MustCompile(`(\d{1,3})\s*(秒|s\b|sec)`)
+
+// ParseSeconds 从提示词里读「N 秒」，没有就返回 0。
+func ParseSeconds(prompt string) int {
+	m := reSeconds.FindStringSubmatch(strings.ToLower(prompt))
+	if len(m) < 2 {
+		return 0
+	}
+	n := 0
+	for _, r := range m[1] {
+		n = n*10 + int(r-'0')
+	}
+	return n
+}
+
 // EstimateTokens 粗估 token 数：中文按字数除 1.6，其余按字符除 4。
 func EstimateTokens(text string) int {
 	cjk, other := 0, 0

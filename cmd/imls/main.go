@@ -103,7 +103,8 @@ func route(args []string) error {
 		return err
 	}
 	defer a.Close()
-	t := &core.Task{Prompt: prompt, Source: "cli"}
+	cwd, _ := os.Getwd()
+	t := &core.Task{Prompt: prompt, Source: "cli", ProjectDir: cwd}
 	d := a.Router.Decide(t)
 	fmt.Printf("任务类型：%s（%s）\n", a.Router.TaskName(d.TaskType), d.TaskType)
 	if d.Kind == core.KindText {

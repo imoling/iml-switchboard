@@ -60,3 +60,11 @@ func TestHeuristic(t *testing.T) {
 		t.Fatalf("got %s", tier)
 	}
 }
+
+func TestParseSeconds(t *testing.T) {
+	for in, want := range map[string]int{"做一个 3 秒的标题动画": 3, "做个 12秒 视频": 12, "a 5s clip": 5, "没有时长": 0} {
+		if got := ParseSeconds(in); got != want {
+			t.Errorf("%q → %d，想要 %d", in, got, want)
+		}
+	}
+}

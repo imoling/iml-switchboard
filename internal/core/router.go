@@ -125,6 +125,12 @@ func (r *Router) Decide(t *Task) *Decision {
 		if t.Kind == KindAnimation {
 			d.MediaTier = ""
 		}
+		if (t.Kind == KindVideo || t.Kind == KindAnimation) && t.Seconds == 0 {
+			if n := ParseSeconds(t.Prompt); n > 0 {
+				t.Seconds = min(max(n, 2), 30)
+				d.Reason = append(d.Reason, fmt.Sprintf("时长：%d 秒", t.Seconds))
+			}
+		}
 		d.Reason = append(d.Reason, "模态："+kindLabel(t.Kind)+"，进入媒体渠道")
 		d.Candidates = r.mediaCandidates(cfg, t, d.MediaTier)
 		return d

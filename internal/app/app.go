@@ -94,7 +94,7 @@ func New(version string) (*App, error) {
 	a.Claude = sub.NewClaudeDriver()
 	a.Codex = sub.NewCodexDriver()
 	a.API = api.NewAPIDriver(a.apiAccounts(cfg.Get()), client)
-	a.Media = media.New(media.Options{Jobs: a.Jobs, Accounts: a.API, Codex: a.Codex, Claude: a.Claude, Client: client, AnimRoot: filepath.Join(dir, "animations")})
+	a.Media = media.New(a.mediaOptions(client))
 	a.Router.Register(a.Claude)
 	a.Router.Register(a.Codex)
 	a.Router.Register(sub.NewAntigravityDriver())
@@ -112,6 +112,18 @@ func New(version string) (*App, error) {
 		NodeAvailable: func() bool { _, err := exec.LookPath("node"); return err == nil }})
 	a.Facade = facade.New(a.Router, func() string { return cfg.Get().Settings.FacadeKey })
 	return a, nil
+}
+
+// mediaOptions 组装媒体驱动的依赖；没有项目目录时产物落到数据目录的 media/。
+func (a *App) mediaOptions(client *http.Client) media.Options {
+	dir := config.DataDir()
+	return media.Options{Jobs: a.Jobs, Accounts: a.API, Codex: a.Codex, Claude: a.Claude, Client: client, AnimRoot: filepath.Join(dir, "animations"),
+		OutDir: func(t *core.Task) (string, error) {
+			if t.OutDir == "" && t.ProjectDir == "" {
+				return filepath.Join(dir, "media"), nil
+			}
+			return media.DefaultOutDir(t)
+		}}
 }
 
 func kindTitle(k core.Kind) string {
@@ -306,7 +318,7 @@ func (o *accountOps) Providers() []string {
 func (o *accountOps) Reload(cfg *config.Config) {
 	o.a.API = api.NewAPIDriver(o.a.apiAccounts(cfg), o.a.httpClient())
 	o.a.Router.Register(o.a.API)
-	o.a.Media = media.New(media.Options{Jobs: o.a.Jobs, Accounts: o.a.API, Codex: o.a.Codex, Claude: o.a.Claude, Client: o.a.httpClient(), AnimRoot: filepath.Join(config.DataDir(), "animations")})
+	o.a.Media = media.New(o.a.mediaOptions(o.a.httpClient()))
 	o.a.Router.Register(o.a.Media)
 }
 
