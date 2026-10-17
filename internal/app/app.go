@@ -24,11 +24,16 @@ import (
 	"github.com/imoling/iml-switchboard/internal/surfaces/facade"
 )
 
-// Addr 是后台监听地址，只在本机。
-const Addr = "127.0.0.1:18081"
+// Addr 是后台监听地址，只在本机。环境变量 IMLS_ADDR 可覆盖（测试用）。
+var Addr = func() string {
+	if a := os.Getenv("IMLS_ADDR"); a != "" {
+		return a
+	}
+	return "127.0.0.1:18081"
+}()
 
 // BaseURL 是后台地址。
-const BaseURL = "http://" + Addr
+var BaseURL = "http://" + Addr
 
 // App 是装配好的应用。
 type App struct {

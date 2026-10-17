@@ -127,15 +127,19 @@ func route(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
+	streamed := false
 	call, res, err := a.Router.Execute(ctx, t, d, func(e core.Event) {
 		if e.Type == "text_delta" {
+			streamed = true
 			fmt.Print(e.Text)
 		}
 	})
 	if err != nil {
 		return err
 	}
-	if res.Text != "" && !t.Stream {
+	if streamed {
+		fmt.Println()
+	} else if res.Text != "" {
 		fmt.Println(res.Text)
 	}
 	if res.Path != "" {
