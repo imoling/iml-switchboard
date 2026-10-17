@@ -209,7 +209,25 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "iML Switchboard %s\n", a.Version)
 	})
-	return mux
+	return cors(mux)
+}
+
+// cors 只放行 Tauri 窗口和本机开发服务器的跨源请求。
+func cors(next http.Handler) http.Handler {
+	allowed := map[string]bool{"tauri://localhost": true, "http://tauri.localhost": true, "https://tauri.localhost": true, "http://localhost:1420": true, "http://127.0.0.1:1420": true}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if o := r.Header.Get("Origin"); o != "" && allowed[o] {
+			w.Header().Set("Access-Control-Allow-Origin", o)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-IMLS-Client, Authorization")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(204)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Serve 启动后台直到 ctx 结束。

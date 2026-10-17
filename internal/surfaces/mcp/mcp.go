@@ -24,7 +24,15 @@ func Serve(ctx context.Context, baseURL, version string) error {
 	cwd, _ := os.Getwd()
 	host := os.Getenv("IMLS_HOST")
 	if host == "" {
-		host = "claude_code"
+		// Claude Code 会给子进程设 CLAUDECODE=1；Codex 设 CODEX_SANDBOX 之类；都没有就按通用 MCP 记
+		switch {
+		case os.Getenv("CLAUDECODE") != "" || os.Getenv("CLAUDE_CODE_ENTRYPOINT") != "":
+			host = "claude_code"
+		case os.Getenv("CODEX_SANDBOX") != "" || os.Getenv("CODEX_HOME") != "":
+			host = "codex"
+		default:
+			host = "mcp"
+		}
 	}
 	srv := sdk.NewServer(&sdk.Implementation{Name: "iml-switchboard", Version: version}, nil)
 	call := func(name string, args any) (*sdk.CallToolResult, any, error) {

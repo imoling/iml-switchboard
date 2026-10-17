@@ -191,7 +191,7 @@ func (m *Manager) connectClaude(opts map[string]bool) error {
 		return errors.New("本机没有找到 claude 命令")
 	}
 	if !m.claudeRegistered() {
-		cmd := exec.Command("claude", "mcp", "add", "-s", "user", "-e", "IMLS_HOST=claude_code", mcpName, "--", m.exe, "mcp")
+		cmd := exec.Command("claude", "mcp", "add", "-s", "user", mcpName, "--", m.exe, "mcp")
 		var out bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &out
 		if err := cmd.Run(); err != nil {
