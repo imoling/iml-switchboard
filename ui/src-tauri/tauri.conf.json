@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "iML Switchboard",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "identifier": "cn.imoling.switchboard",
   "build": {
     "beforeDevCommand": "npm run dev",

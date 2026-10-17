@@ -61,7 +61,7 @@ function TryOne() {
       {error && <div className="hint err-text mt8">{error.message}</div>}
       {data && first && (
         <div className="mt8" style={{ fontSize: 12.5 }}>
-          命中 <b>{data.task_type}</b>{data.reason[0] && <>（{data.reason[0]}）</>} → <TierChip tier={data.tier} /> → <GroupChip group={first.lane === 'media' ? 'media' : first.lane.endsWith('_sub') ? 'sub' : 'api'} /> <Vendor provider={first.provider} />{first.model}
+          命中 <b>{data.task_name ?? data.task_type}</b>{data.reason[0] && <>（{data.reason[0]}）</>} → <TierChip tier={data.tier} /> → <GroupChip group={first.lane === 'media' ? 'media' : first.lane.endsWith('_sub') ? 'sub' : 'api'} /> <Vendor provider={first.provider} />{first.model}
           {alt && <>　<span className="muted">{alt.skipped ?? '额度紧张时改用'} <Vendor provider={alt.provider} />{alt.model}</span></>}
           {data.sticky && <span className="muted">　同一会话沿用上次的{t('model')}</span>}
         </div>
@@ -70,7 +70,7 @@ function TryOne() {
   );
 }
 
-function TaskTable({ rules, suggestions, onSave, onSuggestion }: { rules: RulesT; suggestions: { task_type: string; escalations: number; to_tier: Tier; weekly_delta_usd: number }[]; onSave: (r: RulesT) => void; onSuggestion: (task: string, a: 'accept' | 'ignore') => void }) {
+function TaskTable({ rules, suggestions, onSave, onSuggestion }: { rules: RulesT; suggestions: { task_type: string; name?: string; escalations: number; to_tier: Tier; weekly_delta_usd: number }[]; onSave: (r: RulesT) => void; onSuggestion: (task: string, a: 'accept' | 'ignore') => void }) {
   const { t } = useTheme();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ task_type: '', how: '', tier: 'low' as Tier });
@@ -91,9 +91,9 @@ function TaskTable({ rules, suggestions, onSave, onSuggestion }: { rules: RulesT
             const s = suggestions.find((x) => x.task_type === r.task_type);
             return (
               <tr key={r.task_type} className={s || r.suggest ? 'hi' : ''}>
-                <td>{r.task_type} {(s || r.suggest) && <span className="chip c-warn">建议调高</span>}</td>
+                <td>{r.name ?? r.task_type} {(s || r.suggest) && <span className="chip c-warn">建议调高</span>}</td>
                 <td className="muted" style={{ whiteSpace: 'normal' }}>{r.how}</td>
-                <td><select className="sel" value={r.tier} onChange={(e) => setTier(r.task_type, e.target.value as Tier)}>{TIERS.map((x) => <option key={x} value={x}>{t(`tier.${x}`)}</option>)}</select></td>
+                <td>{r.kind ? <span className="chip c-m">媒体</span> : <select className="sel" value={r.tier} onChange={(e) => setTier(r.task_type, e.target.value as Tier)}>{TIERS.map((x) => <option key={x} value={x}>{t(`tier.${x}`)}</option>)}</select>}</td>
                 <td>
                   {(['api', 'sub'] as const).map((l) => (
                     <button key={l} className="btn link" style={{ marginRight: 4, opacity: r.lanes.includes(l) ? 1 : 0.35 }} title={r.lanes.includes(l) ? '点一下取消' : '点一下启用'} onClick={() => toggleLane(r.task_type, l)}><GroupChip group={l} /></button>
@@ -108,7 +108,7 @@ function TaskTable({ rules, suggestions, onSave, onSuggestion }: { rules: RulesT
       </table>
       {suggestions.map((s) => (
         <div key={s.task_type} className="hint warn-text mt8 row wrap">
-          <span>「{s.task_type}」7 天内被标记判低 {s.escalations} 次，调到{t(`tier.${s.to_tier}`)}后这类任务每周约多花 {usd(s.weekly_delta_usd)}</span>
+          <span>「{s.name ?? s.task_type}」7 天内被标记判低 {s.escalations} 次，调到{t(`tier.${s.to_tier}`)}后这类任务每周约多花 {usd(s.weekly_delta_usd)}</span>
           <button className="btn sm" onClick={() => onSuggestion(s.task_type, 'accept')}>调高一档</button><button className="btn sm" onClick={() => onSuggestion(s.task_type, 'ignore')}>忽略</button>
         </div>
       ))}

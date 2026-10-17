@@ -11,6 +11,9 @@ import { desktop } from '../tauri';
 type Kind = 'all' | 'image' | 'video' | 'animation';
 const KIND_LABEL: Record<string, string> = { image: '图片', video: '视频', animation: '动画' };
 
+/** 后台的进度是 0 到 1，mock 是 0 到 100，两种都认 */
+const pct = (p: number) => (p <= 1 ? p * 100 : p);
+
 export function Media({ liveJob }: { liveJob?: Job | null }) {
   const { t } = useTheme();
   const [kind, setKind] = useState<Kind>('all');
@@ -52,8 +55,8 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
               {j.status === 'failed' || j.status === 'timeout'
                 ? <><span className="grow err-text">{j.error ?? '生成失败：10 分钟内没有完成'}</span>
                     <button className="btn sm" onClick={() => (j.retry_options && j.retry_options.length > 1 ? setPick(j) : act(() => api.retryJob(j.id, j.retry_options?.[0]?.model)))}>换个模型重做</button></>
-                : <><div className="prog"><span style={{ width: `${j.progress}%` }} /></div>
-                    <span className="muted">{j.kind === 'animation' && j.progress < 100 ? '正在渲染…' : eta(j.eta_seconds)}</span>
+                : <><div className="prog"><span style={{ width: `${pct(j.progress)}%` }} /></div>
+                    <span className="muted">{j.kind === 'animation' && pct(j.progress) < 100 ? '正在渲染…' : eta(j.eta_seconds)}</span>
                     <button className="btn sm" onClick={() => act(() => api.cancelJob(j.id))}>取消</button></>}
             </div>
           ))}
@@ -125,7 +128,7 @@ export function AnimationDetail({ job, onClose, onChanged }: { job: Job; onClose
             {job.render_note && <><span>渲染</span><span>{job.render_note}</span></>}
             {job.size && <><span>尺寸</span><span>{job.size}{job.fps ? `，${job.fps} 帧` : ''}</span></>}
             {job.result_path && <><span>文件</span><span style={{ wordBreak: 'break-all' }}>{job.result_path}</span></>}
-            {job.status !== 'done' && <><span>状态</span><span>{job.status === 'failed' ? job.error : `正在渲染… ${job.progress}%`}</span></>}
+            {job.status !== 'done' && <><span>状态</span><span>{job.status === 'failed' ? job.error : `正在渲染… ${Math.round(pct(job.progress))}%`}</span></>}
           </div>
           <div className="hint" style={{ margin: '10px 0 4px' }}>改一句重做</div>
           <input className="input" placeholder="标题改成从下往上滑入，再慢一点" value={instruction} onChange={(e) => setInstruction(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && redo()} />

@@ -87,7 +87,7 @@ export function Quick() {
   };
 
   const first = preview?.candidates.find((c) => !c.skipped) ?? preview?.candidates[0];
-  const shown = picked ?? (first ? { label: '', lane: first.lane, provider: first.provider ?? '', model: first.model, est_cost_usd: first.est_cost_usd } : null);
+  const shown = picked ?? (first ? { label: '', lane: first.lane, provider: first.provider ?? '', model: first.model, display: first.display, est_cost_usd: first.est_cost_usd } : null);
   const isMedia = preview && preview.kind !== 'text';
   const tierLabel = (a: Alt | null) => (isMedia ? MEDIA_TIER_LABEL[a?.media_tier ?? preview?.media_tier ?? 'default'] : a?.tier ? <TierChip tier={a.tier} /> : <TierChip tier={preview?.tier ?? 'low'} />);
   const call = result?.call;
@@ -105,13 +105,13 @@ export function Quick() {
         <>
           <div className="route-chip">
             {call ? <>{call.kind === 'text' && call.tier ? <TierChip tier={call.tier} /> : <LaneChip lane={call.lane} />}<b><Vendor provider={call.provider} />{call.model}</b><span className="muted">· {call.kind === 'text' ? (call.lane.endsWith('_sub') ? '订阅' : '按量') : MEDIA_TIER_LABEL[call.media_tier ?? 'default']} · {cost(call).text} · {elapsed}</span></>
-              : shown ? <><b><Vendor provider={shown.provider} />{shown.model}</b><span className="muted">· {running ? '正在生成…' : ''}</span></> : <span className="muted">正在生成…</span>}
+              : shown ? <><b><Vendor provider={shown.provider} />{shown.display ?? shown.model}</b><span className="muted">· {running ? '正在生成…' : ''}</span></> : <span className="muted">正在生成…</span>}
             {running && <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={() => abort.current?.abort()}>停止</button>}
           </div>
           <div className="body">
             {result.error && <div className="err-text">{result.error}{result.detail && <details className="raw"><summary>详情</summary><pre>{result.detail}</pre></details>}</div>}
             {result.imagePath && <div className="imgbox">{inTauri && <img src={`asset://localhost/${encodeURIComponent(result.imagePath)}`} alt="" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}</div>}
-            {result.job && <div className="row"><span className="chip c-m">视频</span><span className="grow">{result.job.prompt_excerpt} · {result.job.model}</span><div className="prog" style={{ maxWidth: 160 }}><span style={{ width: `${result.job.progress}%` }} /></div><span className="hint">已加入媒体库，做好会通知</span></div>}
+            {result.job && <div className="row"><span className="chip c-m">视频</span><span className="grow">{result.job.prompt_excerpt} · {result.job.model}</span><div className="prog" style={{ maxWidth: 160 }}><span style={{ width: `${result.job.progress <= 1 ? result.job.progress * 100 : result.job.progress}%` }} /></div><span className="hint">已加入媒体库，做好会通知</span></div>}
             {result.text && <div className="result">{result.text}</div>}
           </div>
           <div className="actions">
@@ -134,11 +134,11 @@ export function Quick() {
           <div className="route-chip">
             {shown ? <>
               <span className="muted">将使用</span>{isMedia ? <LaneChip lane="media" /> : tierLabel(picked)}
-              <b><Vendor provider={shown.provider} />{shown.model}</b>
+              <b><Vendor provider={shown.provider} />{shown.display ?? shown.model}</b>
               <span className="muted">· {isMedia ? MEDIA_TIER_LABEL[picked?.media_tier ?? preview?.media_tier ?? 'default'] : shown.lane.endsWith('_sub') ? '订阅' : '按量'}{shown.est_cost_usd !== undefined ? ` · 约 ${usd(shown.est_cost_usd)}` : shown.note ? ` · ${shown.note}` : ''}</span>
               {preview && preview.alternatives.length > 0 && (
                 <select className="sel" style={{ marginLeft: 'auto' }} value={picked?.model ?? ''} onChange={(e) => setPicked(preview.alternatives.find((a) => a.model === e.target.value) ?? null)}>
-                  <option value="">换模型 ▾</option>{preview.alternatives.map((a) => <option key={a.model} value={a.model}>{a.model}</option>)}
+                  <option value="">换模型 ▾</option>{preview.alternatives.map((a) => <option key={a.model} value={a.model}>{a.display ?? a.model}</option>)}
                 </select>
               )}
             </> : <span className="muted">{prompt.trim() ? '正在判断…' : '输入后先告诉你会用谁、花多少'}</span>}

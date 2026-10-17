@@ -128,6 +128,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	h("GET /api/rules/export", s.exportRules)
 	h("POST /api/rules/import", s.importRules)
 	h("GET /api/accounts", s.accounts)
+	h("GET /api/providers", s.providers)
 	h("POST /api/accounts", s.addAccount)
 	h("POST /api/accounts/detect", s.accounts)
 	h("PUT /api/accounts/{id}", s.updateAccount)
@@ -270,8 +271,12 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	cfg := s.d.Router.Config().Get()
 	quotas := s.quotas(cfg)
+	delta := 0.0
+	if ov.PrevCalls > 0 {
+		delta = float64(ov.Calls-ov.PrevCalls) / float64(ov.PrevCalls) * 100
+	}
 	return map[string]any{
-		"calls": ov.Calls, "prev_calls": ov.PrevCalls, "api_cost_usd": ov.APICostUSD, "baseline_cost_usd": ov.BaselineCostUSD,
+		"calls": ov.Calls, "prev_calls": ov.PrevCalls, "calls_delta_pct": delta, "api_cost_usd": ov.APICostUSD, "baseline_cost_usd": ov.BaselineCostUSD,
 		"saved_usd": ov.SavedUSD, "saved_pct": ov.SavedPct, "escalation_rate": ov.EscalationRate, "escalation_hot_task": ov.EscalationHot,
 		"escalation_hot_name": s.d.Router.TaskName(ov.EscalationHot),
 		"tier_dist":           ov.TierDist, "lane_dist": ov.LaneDist, "daily": ov.Daily, "quotas": quotas,
@@ -283,20 +288,24 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) (any, error) {
 func (s *Server) namedTasks(ts []core.TopTask) []map[string]any {
 	out := []map[string]any{}
 	for _, t := range ts {
-		out = append(out, map[string]any{"task_type": t.TaskType, "name": s.d.Router.TaskName(t.TaskType), "lane": t.Lane, "count": t.Count, "cost_usd": t.CostUSD})
+		metric := fmt.Sprintf("%d 次", t.Count)
+		if t.CostUSD > 0 {
+			metric = fmt.Sprintf("$%.2f", t.CostUSD)
+		}
+		out = append(out, map[string]any{"task_type": t.TaskType, "name": s.d.Router.TaskName(t.TaskType), "lane": t.Lane, "count": t.Count, "cost_usd": t.CostUSD, "metric": metric})
 	}
 	return out
 }
 
 type quotaRow struct {
-	AccountID   string    `json:"account_id"`
-	Label       string    `json:"label"`
-	Provider    string    `json:"provider"`
-	Window      string    `json:"window"`
-	WindowLabel string    `json:"window_label"`
-	Pct         float64   `json:"pct"`
-	ResetsAt    time.Time `json:"resets_at"`
-	Sub         bool      `json:"sub,omitempty"`
+	AccountID string    `json:"account_id"`
+	Label     string    `json:"label"`
+	Provider  string    `json:"provider"`
+	Window    string    `json:"window"`
+	WindowKey string    `json:"window_key"`
+	Pct       float64   `json:"pct"`
+	ResetsAt  time.Time `json:"resets_at"`
+	Sub       bool      `json:"sub,omitempty"`
 }
 
 func (s *Server) quotas(cfg *config.Config) []quotaRow {
@@ -317,7 +326,14 @@ func (s *Server) quotas(cfg *config.Config) []quotaRow {
 		}
 		label := map[core.LaneID]string{core.LaneClaudeSub: "Claude 订阅", core.LaneCodexSub: "ChatGPT 订阅", core.LaneAgySub: "Google AI 订阅"}[lane]
 		for _, wnd := range s.d.Router.Quota().Windows(lane, sl.Models) {
-			out = append(out, quotaRow{AccountID: string(lane), Label: label, Provider: providerOfLane(lane), Window: wnd.Window, WindowLabel: wnd.Label, Pct: wnd.Pct, ResetsAt: wnd.ResetsAt, Sub: wnd.Window == "week_fable"})
+			row := quotaRow{AccountID: string(lane), Label: label, Provider: providerOfLane(lane), Window: wnd.Label, WindowKey: wnd.Window, Pct: wnd.Pct, ResetsAt: wnd.ResetsAt, Sub: wnd.Window == "week_fable"}
+			if row.Window == "" {
+				row.Window = map[string]string{"5h": "5 小时窗口", "week": "本周", "month": "本月"}[wnd.Window]
+			}
+			if row.Sub {
+				row.Label, row.Window = "其中 Fable", "本周"
+			}
+			out = append(out, row)
 		}
 	}
 	return out
@@ -418,6 +434,38 @@ func projectDirOf(p string) string {
 
 // --- 规则 ---
 
+func laneGroups(prefer []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, p := range prefer {
+		g := "api"
+		if strings.HasSuffix(p, "_sub") {
+			g = "sub"
+		}
+		if !seen[g] {
+			seen[g] = true
+			out = append(out, g)
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, "sub", "api")
+	}
+	return out
+}
+
+func explicitEffect(e config.Explicit) string {
+	switch {
+	case e.Tier != "":
+		return core.TierLabel(core.Tier(e.Tier))
+	case e.Effect == "sub_only":
+		return "只用订阅"
+	case e.Effect == "media_best":
+		return "媒体用最好档"
+	}
+	return e.Effect
+}
+
+// rulesBody 按界面的契约输出：task_type 是行的 id，how 是识别说明，lanes 只分订阅 / 按量付费两组。
 func (s *Server) rulesBody(cfg *config.Config) map[string]any {
 	rows := []map[string]any{}
 	stats, _ := s.d.Router.Ledger().EscalationStats(7)
@@ -425,47 +473,167 @@ func (s *Server) rulesBody(cfg *config.Config) map[string]any {
 	for _, st := range stats {
 		byType[st.TaskType] = st
 	}
+	defaults := map[string]bool{}
+	for _, t := range config.Default().Routing.TaskTable {
+		defaults[t.Type] = true
+	}
 	for _, t := range cfg.Routing.TaskTable {
 		st := byType[t.Type]
-		rows = append(rows, map[string]any{"type": t.Type, "name": t.Name, "hint": t.Hint, "tier": t.Tier, "kind": t.Kind, "media_tier": t.MediaTier,
-			"prefer": t.Prefer, "order": t.Order, "match": t.Match, "week_count": st.Total, "week_escalations": st.Escalations})
+		rows = append(rows, map[string]any{"task_type": t.Type, "name": t.Name, "how": t.Hint, "tier": t.Tier, "kind": t.Kind, "media_tier": t.MediaTier,
+			"lanes": laneGroups(t.Prefer), "prefer": t.Prefer, "order": t.Order, "count_7d": st.Total, "escalations_7d": st.Escalations, "builtin": defaults[t.Type]})
 	}
-	return map[string]any{"task_table": rows, "explicit": cfg.Routing.Explicit, "context_rules": cfg.Routing.ContextRules, "sticky": cfg.Routing.Sticky}
+	explicit := []map[string]any{}
+	for _, e := range cfg.Routing.Explicit {
+		explicit = append(explicit, map[string]any{"id": e.ID, "triggers": e.Words, "effect": explicitEffect(e), "tier": e.Tier, "raw_effect": e.Effect, "builtin": e.Builtin, "enabled": e.Enabled})
+	}
+	ctxRules := []map[string]any{}
+	for _, c := range cfg.Routing.ContextRules {
+		ctxRules = append(ctxRules, map[string]any{"id": c.ID, "title": c.Title, "off_effect": c.Note, "enabled": c.Enabled})
+	}
+	return map[string]any{"task_table": rows, "explicit": explicit, "context_rules": ctxRules, "sticky": cfg.Routing.Sticky}
 }
 
 func (s *Server) rules(w http.ResponseWriter, r *http.Request) (any, error) {
 	return s.rulesBody(s.d.Router.Config().Get()), nil
 }
 
+type uiTaskRow struct {
+	TaskType string   `json:"task_type"`
+	Name     string   `json:"name"`
+	How      string   `json:"how"`
+	Tier     string   `json:"tier"`
+	Lanes    []string `json:"lanes"`
+	Kind     string   `json:"kind"`
+}
+
+type uiExplicit struct {
+	ID        string   `json:"id"`
+	Triggers  []string `json:"triggers"`
+	Tier      string   `json:"tier"`
+	RawEffect string   `json:"raw_effect"`
+	Effect    string   `json:"effect"`
+	Enabled   bool     `json:"enabled"`
+	Builtin   bool     `json:"builtin"`
+}
+
+type uiContext struct {
+	ID      string `json:"id"`
+	Enabled bool   `json:"enabled"`
+}
+
+func preferFromLanes(lanes []string, prev []string) []string {
+	var out []string
+	for _, g := range lanes {
+		switch g {
+		case "sub":
+			added := false
+			for _, p := range prev {
+				if strings.HasSuffix(p, "_sub") {
+					out = append(out, p)
+					added = true
+				}
+			}
+			if !added {
+				out = append(out, "claude_sub", "codex_sub")
+			}
+		case "api":
+			out = append(out, "api")
+		}
+	}
+	return out
+}
+
+func keywordsFromHow(how string) []string {
+	var out []string
+	for _, k := range strings.FieldsFunc(how, func(r rune) bool { return strings.ContainsRune("、，,;； /「」", r) }) {
+		k = strings.TrimSpace(k)
+		if len([]rune(k)) >= 2 {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 func (s *Server) putRules(w http.ResponseWriter, r *http.Request) (any, error) {
 	var in struct {
-		TaskTable    []config.TaskType    `json:"task_table"`
-		Explicit     []config.Explicit    `json:"explicit"`
-		ContextRules []config.ContextRule `json:"context_rules"`
+		TaskTable    []uiTaskRow  `json:"task_table"`
+		Explicit     []uiExplicit `json:"explicit"`
+		ContextRules []uiContext  `json:"context_rules"`
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
 	err := s.d.Router.Config().Update(func(c *config.Config) error {
 		if in.TaskTable != nil {
-			c.Routing.TaskTable = in.TaskTable
+			byType := map[string]config.TaskType{}
+			for _, t := range c.Routing.TaskTable {
+				byType[t.Type] = t
+			}
+			var table []config.TaskType
+			for i, row := range in.TaskTable {
+				t, ok := byType[row.TaskType]
+				if !ok {
+					// 新建的行：用说明里的词做关键词
+					t = config.TaskType{Type: row.TaskType, Name: row.TaskType, Order: 100 + i, Match: config.Match{Keywords: keywordsFromHow(row.How)}}
+					if row.Name != "" {
+						t.Name = row.Name
+					}
+				}
+				if row.How != "" && row.How != t.Hint {
+					t.Hint = row.How
+					if !ok || len(t.Match.Keywords) > 0 {
+						t.Match.Keywords = keywordsFromHow(row.How)
+					}
+				}
+				if t.Kind == "" && row.Tier != "" {
+					t.Tier = row.Tier
+				}
+				if len(row.Lanes) > 0 {
+					t.Prefer = preferFromLanes(row.Lanes, t.Prefer)
+				}
+				table = append(table, t)
+			}
+			c.Routing.TaskTable = table
 		}
 		if in.Explicit != nil {
-			// 内置指令只能停用不能删
 			have := map[string]bool{}
+			var list []config.Explicit
 			for _, e := range in.Explicit {
 				have[e.ID] = true
+				ex := config.Explicit{ID: e.ID, Words: e.Triggers, Tier: e.Tier, Effect: e.RawEffect, Enabled: e.Enabled, Builtin: e.Builtin}
+				if ex.ID == "" {
+					ex.ID = core.NewID("ex")
+				}
+				if ex.Tier == "" && ex.Effect == "" {
+					switch e.Effect {
+					case "只用订阅":
+						ex.Effect = "sub_only"
+					case "媒体用最好档":
+						ex.Effect = "media_best"
+					case "低档", "中档", "高档", "顶配":
+						ex.Tier = map[string]string{"低档": "low", "中档": "mid", "高档": "high", "顶配": "top"}[e.Effect]
+					default:
+						ex.Tier = "high"
+					}
+				}
+				list = append(list, ex)
 			}
 			for _, e := range c.Routing.Explicit {
 				if e.Builtin && !have[e.ID] {
 					e.Enabled = false
-					in.Explicit = append(in.Explicit, e)
+					list = append(list, e)
 				}
 			}
-			c.Routing.Explicit = in.Explicit
+			c.Routing.Explicit = list
 		}
 		if in.ContextRules != nil {
-			c.Routing.ContextRules = in.ContextRules
+			for _, u := range in.ContextRules {
+				for i := range c.Routing.ContextRules {
+					if c.Routing.ContextRules[i].ID == u.ID {
+						c.Routing.ContextRules[i].Enabled = u.Enabled
+					}
+				}
+			}
 		}
 		return nil
 	})
@@ -663,7 +831,16 @@ func labelOr(a, b string) string {
 }
 
 func (s *Server) accounts(w http.ResponseWriter, r *http.Request) (any, error) {
-	return map[string]any{"accounts": s.accountViews(), "providers": s.d.Accounts.Providers()}, nil
+	return s.accountViews(), nil
+}
+
+func (s *Server) providers(w http.ResponseWriter, r *http.Request) (any, error) {
+	out := []map[string]any{}
+	for _, p := range s.d.Accounts.Providers() {
+		_, cur, _, proxy, _ := s.d.Accounts.Preset(p)
+		out = append(out, map[string]any{"id": p, "label": core.ProviderLabel(p), "currency": cur, "needs_proxy": proxy})
+	}
+	return out, nil
 }
 
 func (s *Server) addAccount(w http.ResponseWriter, r *http.Request) (any, error) {

@@ -8,7 +8,7 @@ export type ThemeId = 'standard' | 'dianjiang' | 'harem' | 'seaking';
 export type MediaTier = 'cheap' | 'default' | 'best' | 'free';
 export type Source = 'mcp' | 'facade' | 'cli' | 'quick' | 'redo';
 
-export interface Candidate { lane: Lane; provider?: string; model: string; est_cost_usd?: number; skipped?: string }
+export interface Candidate { lane: Lane; provider?: string; model: string; display?: string; est_cost_usd?: number; skipped?: string }
 
 export interface Call {
   id: string; ts: string; source: Source; host?: string; session_id?: string;
@@ -24,7 +24,7 @@ export interface Call {
 }
 
 export interface Decision {
-  task_type: string; tier: Tier | null; media_tier?: MediaTier; kind: Kind;
+  task_type: string; task_name?: string; tier_label?: string; tier: Tier | null; media_tier?: MediaTier; kind: Kind;
   candidates: Candidate[]; reason: string[]; sticky?: boolean;
 }
 
@@ -64,11 +64,11 @@ export interface Overview {
   top_tasks: { task_type: string; lane: 'sub' | 'api' | 'media'; metric: string }[];
 }
 
-export interface TaskRule { task_type: string; how: string; tier: Tier; lanes: ('sub' | 'api')[]; count_7d: number; suggest?: Tier; builtin?: boolean }
+export interface TaskRule { task_type: string; name?: string; kind?: string; how: string; tier: Tier; lanes: ('sub' | 'api')[]; count_7d: number; suggest?: Tier; builtin?: boolean }
 export interface ExplicitRule { id: string; triggers: string[]; effect: string; tier?: Tier; builtin: boolean; enabled: boolean }
 export interface ContextRule { id: string; title: string; off_effect: string; enabled: boolean }
 export interface Rules { task_table: TaskRule[]; explicit: ExplicitRule[]; context_rules: ContextRule[]; classifier?: Record<string, unknown> }
-export interface Suggestion { task_type: string; escalations: number; from_tier: Tier; to_tier: Tier; weekly_delta_usd: number }
+export interface Suggestion { task_type: string; name?: string; escalations: number; from_tier: Tier; to_tier: Tier; weekly_delta_usd: number }
 
 export type IntegrationId = 'claude_code' | 'hermes' | 'workbuddy';
 export interface Integration {
@@ -91,7 +91,7 @@ export interface Evaluation {
   by_task: { task_type: string; n: number; low_better: number; tie: number; high_better: number; suggestion?: string; to_tier?: Tier; weekly_delta_usd?: number }[];
 }
 
-export interface QuickPreview extends Decision { alternatives: { label: string; lane: Lane; provider: string; model: string; est_cost_usd?: number; note?: string; tier?: Tier; media_tier?: MediaTier }[] }
+export interface QuickPreview extends Decision { alternatives: { label: string; lane: Lane; provider: string; model: string; display?: string; est_cost_usd?: number; note?: string; tier?: Tier; media_tier?: MediaTier }[] }
 
 export interface Onboarding { done: boolean; steps: { cli_detected: boolean; api_added: boolean; claude_connected: boolean; tried: boolean } }
 

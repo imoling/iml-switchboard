@@ -533,6 +533,13 @@ func (r *Router) finish(call *Call, t *Task, tgt Target, res *Result, start time
 	call.InputTokens, call.OutputTokens, call.CacheReadTokens = res.Usage.InputTokens, res.Usage.OutputTokens, res.Usage.CacheReadTokens
 	call.Units, call.Unit = res.Usage.Units, res.Usage.Unit
 	call.CostUSD, call.CostNative, call.Currency, call.QuotaUnits = res.Usage.CostUSD, res.Usage.CostNative, res.Usage.Currency, res.Usage.QuotaUnits
+	// 订阅渠道的额度占用统一按「等值美元」记：各家 CLI 报的单位不同（Claude 报美元，Codex 只有 token 数），
+	// 用注册表价格换算，窗口百分比才能横向比较。
+	if tgt.Lane != LaneAPI && tgt.Lane != LaneMedia && t.Kind == KindText {
+		if usd := r.reg.TextCost(call.Model, res.Usage.InputTokens, res.Usage.OutputTokens, res.Usage.CacheReadTokens); usd > 0 {
+			call.QuotaUnits = usd
+		}
+	}
 	if t.Kind == KindText {
 		call.BaselineCostUSD = r.reg.Baseline(res.Usage.InputTokens, res.Usage.OutputTokens, res.Usage.CacheReadTokens)
 		if call.BaselineCostUSD == 0 {

@@ -167,9 +167,11 @@ func TestAccountsAndSettings(t *testing.T) {
 		t.Fatalf("%d %v", code, m)
 	}
 	id := m["id"].(string)
-	_, m, _ = do(t, ts, "GET", "/api/accounts", nil)
-	if len(m["accounts"].([]any)) != 4 {
-		t.Fatalf("应有 3 个订阅 + 1 个按量付费：%v", m)
+	_, _, raw := do(t, ts, "GET", "/api/accounts", nil)
+	var list []map[string]any
+	_ = json.Unmarshal(raw, &list)
+	if len(list) != 4 {
+		t.Fatalf("应有 3 个订阅 + 1 个按量付费：%s", raw)
 	}
 	code, _, _ = do(t, ts, "DELETE", "/api/accounts/"+id, nil)
 	if code != 200 {
