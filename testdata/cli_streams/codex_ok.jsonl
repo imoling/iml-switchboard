@@ -1,4 +1,5 @@
-{"type":"thread.started","thread_id":"01a14b80-7902-73d0-b212-27a4076472ad"}
+{"type":"thread.started","thread_id":"01a14b80-0000-7000-8000-synthetic00001"}
 {"type":"turn.started"}
-{"type":"error","message":"You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Oct 29th, 2026 8:54 AM."}
-{"type":"turn.failed","error":{"message":"You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Oct 29th, 2026 8:54 AM."}}
+{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"用户要我回复 OK。"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"OK"}}
+{"type":"turn.completed","usage":{"input_tokens":1234,"cached_input_tokens":1024,"output_tokens":3}}

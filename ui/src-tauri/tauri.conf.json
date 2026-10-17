@@ -1,0 +1,84 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "iML Switchboard",
+  "version": "1.0.0",
+  "identifier": "cn.imoling.switchboard",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "iML Switchboard",
+        "url": "index.html",
+        "width": 1120,
+        "height": 740,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "visible": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "backgroundColor": "#F0EEE9"
+      },
+      {
+        "label": "popover",
+        "title": "iML Switchboard",
+        "url": "index.html?win=popover",
+        "width": 340,
+        "height": 520,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "shadow": true
+      },
+      {
+        "label": "quick",
+        "title": "iML Switchboard",
+        "url": "index.html?win=quick",
+        "width": 640,
+        "height": 420,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "center": true,
+        "focus": false,
+        "shadow": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    },
+    "copyright": "© 2026 imoling",
+    "publisher": "iML Studio"
+  }
+}
