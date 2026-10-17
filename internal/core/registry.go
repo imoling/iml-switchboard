@@ -52,6 +52,10 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "gpt-5.4-nano", Provider: "openai", Display: "GPT-5.4 nano", InputPerM: 0.2, OutputPerM: 1.25, CacheReadPerM: 0.02, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
 	add(ModelInfo{ID: "gpt-6.1-sol", Provider: "openai", Display: "GPT-6.1 Sol", InputPerM: 2, OutputPerM: 10, CacheReadPerM: 0.2, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
 	add(ModelInfo{ID: "gpt-6-astra", Provider: "openai", Display: "GPT-6 Astra", InputPerM: 10, OutputPerM: 40, CacheReadPerM: 1, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
+	// Codex（ChatGPT 登录可用的型号；订阅不计费，价格只用于基线对比）
+	add(ModelInfo{ID: "gpt-5.6-sol", Provider: "openai", Display: "GPT-5.6 Sol", InputPerM: 2.5, OutputPerM: 15, CacheReadPerM: 0.25, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
+	add(ModelInfo{ID: "gpt-5.6-terra", Provider: "openai", Display: "GPT-5.6 Terra", InputPerM: 1, OutputPerM: 6, CacheReadPerM: 0.1, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
+	add(ModelInfo{ID: "gpt-5.6-luna", Provider: "openai", Display: "GPT-5.6 Luna", InputPerM: 0.3, OutputPerM: 2, CacheReadPerM: 0.03, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
 	// 国产
 	add(ModelInfo{ID: "glm-5.3", Provider: "zhipu", Display: "GLM-5.3", InputPerM: cny(8), OutputPerM: cny(28), CacheReadPerM: cny(1.6), Currency: "CNY", Context: 200000, Vision: false, Tools: true})
 	add(ModelInfo{ID: "glm-5.3-flash", Provider: "zhipu", Display: "GLM-5.3-Flash", InputPerM: cny(0.8), OutputPerM: cny(2.8), CacheReadPerM: cny(0.16), Currency: "CNY", Context: 200000, Tools: true})

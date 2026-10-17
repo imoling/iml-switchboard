@@ -107,9 +107,9 @@ function TaskTable({ rules, suggestions, onSave, onSuggestion }: { rules: RulesT
         </tbody>
       </table>
       {suggestions.map((s) => (
-        <div key={s.task_type} className="hint warn-text mt8">
-          「{s.task_type}」7 天内被标记判低 {s.escalations} 次，调到{t(`tier.${s.to_tier}`)}后这类任务每周约多花 {usd(s.weekly_delta_usd)}
-          　<button className="btn sm" onClick={() => onSuggestion(s.task_type, 'accept')}>调高一档</button>　<button className="btn sm" onClick={() => onSuggestion(s.task_type, 'ignore')}>忽略</button>
+        <div key={s.task_type} className="hint warn-text mt8 row wrap">
+          <span>「{s.task_type}」7 天内被标记判低 {s.escalations} 次，调到{t(`tier.${s.to_tier}`)}后这类任务每周约多花 {usd(s.weekly_delta_usd)}</span>
+          <button className="btn sm" onClick={() => onSuggestion(s.task_type, 'accept')}>调高一档</button><button className="btn sm" onClick={() => onSuggestion(s.task_type, 'ignore')}>忽略</button>
         </div>
       ))}
       <div className="mt12">

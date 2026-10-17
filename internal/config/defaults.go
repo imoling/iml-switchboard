@@ -30,7 +30,7 @@ func Default() *Config {
 	}
 	c.Sub = map[string]SubLane{
 		"claude_sub": {Enabled: true, Models: map[string]string{"top": "fable", "high": "opus", "mid": "sonnet", "low": "haiku"}},
-		"codex_sub":  {Enabled: true, Models: map[string]string{"high": "gpt-5.4", "mid": "gpt-5.4-mini", "low": "gpt-5.4-nano"}, ImageGen: true},
+		"codex_sub":  {Enabled: true, Models: map[string]string{"high": "gpt-5.6-sol", "mid": "gpt-5.6-terra", "low": "gpt-5.6-luna"}, ImageGen: true}, // ChatGPT 登录只接受这几个
 		"agy_sub":    {Enabled: false, Models: map[string]string{"high": "gemini-3.1-pro", "mid": "gemini-3.1-flash", "low": "gemini-3.1-flash-lite"}},
 	}
 	c.Media.Image = map[string]MediaTarget{

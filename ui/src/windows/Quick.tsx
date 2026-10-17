@@ -110,7 +110,7 @@ export function Quick() {
           </div>
           <div className="body">
             {result.error && <div className="err-text">{result.error}{result.detail && <details className="raw"><summary>详情</summary><pre>{result.detail}</pre></details>}</div>}
-            {result.imagePath && <div className="imgbox"><img src={inTauri ? `asset://localhost/${encodeURIComponent(result.imagePath)}` : ''} alt="" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} /></div>}
+            {result.imagePath && <div className="imgbox">{inTauri && <img src={`asset://localhost/${encodeURIComponent(result.imagePath)}`} alt="" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}</div>}
             {result.job && <div className="row"><span className="chip c-m">视频</span><span className="grow">{result.job.prompt_excerpt} · {result.job.model}</span><div className="prog" style={{ maxWidth: 160 }}><span style={{ width: `${result.job.progress}%` }} /></div><span className="hint">已加入媒体库，做好会通知</span></div>}
             {result.text && <div className="result">{result.text}</div>}
           </div>

@@ -9,7 +9,7 @@ export function cost(c: Pick<Call, 'lane' | 'cost_usd' | 'cost_native' | 'curren
   if (c.currency === 'CNY' && c.cost_native !== undefined) return { text: cny(c.cost_native), muted: false };
   return { text: usd(c.cost_usd), muted: false };
 }
-export const jobCost = (j: Job) => (j.cost_usd === undefined ? '' : j.currency === 'CNY' && j.cost_native !== undefined ? cny(j.cost_native) : usd(j.cost_usd));
+export const jobCost = (j: Job) => (j.cost_usd === undefined || (j.cost_usd === 0 && j.lane && isSub(j.lane)) ? '' : j.currency === 'CNY' && j.cost_native !== undefined ? cny(j.cost_native) : usd(j.cost_usd));
 
 export const isSub = (lane: Lane | string) => lane.endsWith('_sub');
 export type LaneGroup = 'sub' | 'api' | 'media';

@@ -169,7 +169,7 @@ function broadcast(event, data) {
   for (const res of clients) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 setInterval(() => {
-  quotas = quotas.map((q) => (q.sub ? q : { ...q, pct: Math.min(99, q.pct + (Math.random() < 0.5 ? 1 : 0)) }));
+  quotas = quotas.map((q) => (q.sub ? q : { ...q, pct: Math.max(5, Math.min(99, q.pct + (Math.random() < 0.5 ? 1 : -1))) }));
   broadcast('quota', { quotas });
 }, 5000);
 setInterval(() => {
