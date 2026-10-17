@@ -17,19 +17,19 @@ const AppName = "iML Switchboard"
 
 // Settings 对应界面「设置」页。
 type Settings struct {
-	MonthlyAPILimitUSD    float64 `yaml:"monthly_api_limit_usd" json:"monthly_api_limit_usd"`
-	SubscriptionYieldPct  float64 `yaml:"subscription_yield_pct" json:"subscription_yield_pct"`
-	DefaultMode           string  `yaml:"default_mode" json:"default_mode"`
-	Theme                 string  `yaml:"theme" json:"theme"`
-	Hotkey                string  `yaml:"hotkey" json:"hotkey"`
-	Proxy                 string  `yaml:"proxy" json:"proxy"`
-	SavePrompts           bool    `yaml:"save_prompts" json:"save_prompts"`
-	LaunchAtLogin         bool    `yaml:"launch_at_login" json:"launch_at_login"`
-	FacadeKey             string  `yaml:"facade_key" json:"facade_key"`
-	AutoEvaluateMonthly   bool    `yaml:"auto_evaluate_monthly" json:"auto_evaluate_monthly"`
-	Notifications         Notifications `yaml:"notifications" json:"notifications"`
-	OnboardingDone        bool    `yaml:"onboarding_done" json:"onboarding_done"`
-	USDPerCNY             float64 `yaml:"usd_per_cny" json:"usd_per_cny"`
+	MonthlyAPILimitUSD   float64       `yaml:"monthly_api_limit_usd" json:"monthly_api_limit_usd"`
+	SubscriptionYieldPct float64       `yaml:"subscription_yield_pct" json:"subscription_yield_pct"`
+	DefaultMode          string        `yaml:"default_mode" json:"default_mode"`
+	Theme                string        `yaml:"theme" json:"theme"`
+	Hotkey               string        `yaml:"hotkey" json:"hotkey"`
+	Proxy                string        `yaml:"proxy" json:"proxy"`
+	SavePrompts          bool          `yaml:"save_prompts" json:"save_prompts"`
+	LaunchAtLogin        bool          `yaml:"launch_at_login" json:"launch_at_login"`
+	FacadeKey            string        `yaml:"facade_key" json:"facade_key"`
+	AutoEvaluateMonthly  bool          `yaml:"auto_evaluate_monthly" json:"auto_evaluate_monthly"`
+	Notifications        Notifications `yaml:"notifications" json:"notifications"`
+	OnboardingDone       bool          `yaml:"onboarding_done" json:"onboarding_done"`
+	USDPerCNY            float64       `yaml:"usd_per_cny" json:"usd_per_cny"`
 }
 
 // Notifications 是四类系统通知的开关。
@@ -49,23 +49,23 @@ type SubLane struct {
 
 // APIAccount 是一个按量付费账号。密钥不在这里，在钥匙串里，键名为 account id。
 type APIAccount struct {
-	ID       string              `yaml:"id" json:"id"`
-	Provider string              `yaml:"provider" json:"provider"`
-	Label    string              `yaml:"label,omitempty" json:"label,omitempty"`
-	BaseURL  string              `yaml:"base_url,omitempty" json:"base_url,omitempty"`
-	Currency string              `yaml:"currency,omitempty" json:"currency,omitempty"`
-	Enabled  bool                `yaml:"enabled" json:"enabled"`
-	Models   map[string][]string `yaml:"models" json:"models"` // tier -> 候选模型，按优先级
-	NeedsProxy bool              `yaml:"needs_proxy,omitempty" json:"needs_proxy,omitempty"`
+	ID         string              `yaml:"id" json:"id"`
+	Provider   string              `yaml:"provider" json:"provider"`
+	Label      string              `yaml:"label,omitempty" json:"label,omitempty"`
+	BaseURL    string              `yaml:"base_url,omitempty" json:"base_url,omitempty"`
+	Currency   string              `yaml:"currency,omitempty" json:"currency,omitempty"`
+	Enabled    bool                `yaml:"enabled" json:"enabled"`
+	Models     map[string][]string `yaml:"models" json:"models"` // tier -> 候选模型，按优先级
+	NeedsProxy bool                `yaml:"needs_proxy,omitempty" json:"needs_proxy,omitempty"`
 }
 
 // MediaTarget 是媒体某一档位的目标。
 type MediaTarget struct {
-	Provider string `yaml:"provider" json:"provider"` // openrouter ark openai 302ai codex
-	Model    string `yaml:"model,omitempty" json:"model,omitempty"`
-	Quality  string `yaml:"quality,omitempty" json:"quality,omitempty"`
+	Provider   string `yaml:"provider" json:"provider"` // openrouter ark openai 302ai codex
+	Model      string `yaml:"model,omitempty" json:"model,omitempty"`
+	Quality    string `yaml:"quality,omitempty" json:"quality,omitempty"`
 	Resolution string `yaml:"resolution,omitempty" json:"resolution,omitempty"`
-	AccountID string `yaml:"account_id,omitempty" json:"account_id,omitempty"`
+	AccountID  string `yaml:"account_id,omitempty" json:"account_id,omitempty"`
 }
 
 // Media 是三种媒体的档位表。
@@ -83,8 +83,8 @@ type Media struct {
 type Explicit struct {
 	ID      string   `yaml:"id" json:"id"`
 	Words   []string `yaml:"words" json:"words"`
-	Tier    string   `yaml:"tier,omitempty" json:"tier,omitempty"`       // low mid high top
-	Effect  string   `yaml:"effect,omitempty" json:"effect,omitempty"`   // sub_only media_best
+	Tier    string   `yaml:"tier,omitempty" json:"tier,omitempty"`     // low mid high top
+	Effect  string   `yaml:"effect,omitempty" json:"effect,omitempty"` // sub_only media_best
 	Builtin bool     `yaml:"builtin,omitempty" json:"builtin,omitempty"`
 	Enabled bool     `yaml:"enabled" json:"enabled"`
 }
@@ -99,27 +99,27 @@ type ContextRule struct {
 
 // Match 是任务类型的识别条件；全部可选，设了的都要满足。
 type Match struct {
-	Keywords   []string `yaml:"keywords,omitempty" json:"keywords,omitempty"`     // 任一命中
-	MaxChars   int      `yaml:"max_chars,omitempty" json:"max_chars,omitempty"`
-	MinChars   int      `yaml:"min_chars,omitempty" json:"min_chars,omitempty"`
-	HasCode    *bool    `yaml:"has_code,omitempty" json:"has_code,omitempty"`
-	HasStack   *bool    `yaml:"has_stack,omitempty" json:"has_stack,omitempty"`
-	HasImage   *bool    `yaml:"has_image,omitempty" json:"has_image,omitempty"`
-	MaxCodeLines int    `yaml:"max_code_lines,omitempty" json:"max_code_lines,omitempty"`
-	LongInput  bool     `yaml:"long_input,omitempty" json:"long_input,omitempty"` // 输入像日志 / 长文
+	Keywords     []string `yaml:"keywords,omitempty" json:"keywords,omitempty"` // 任一命中
+	MaxChars     int      `yaml:"max_chars,omitempty" json:"max_chars,omitempty"`
+	MinChars     int      `yaml:"min_chars,omitempty" json:"min_chars,omitempty"`
+	HasCode      *bool    `yaml:"has_code,omitempty" json:"has_code,omitempty"`
+	HasStack     *bool    `yaml:"has_stack,omitempty" json:"has_stack,omitempty"`
+	HasImage     *bool    `yaml:"has_image,omitempty" json:"has_image,omitempty"`
+	MaxCodeLines int      `yaml:"max_code_lines,omitempty" json:"max_code_lines,omitempty"`
+	LongInput    bool     `yaml:"long_input,omitempty" json:"long_input,omitempty"` // 输入像日志 / 长文
 }
 
 // TaskType 是任务类型表的一行。
 type TaskType struct {
-	Type   string   `yaml:"type" json:"type"`
-	Name   string   `yaml:"name" json:"name"`
-	Hint   string   `yaml:"hint" json:"hint"` // 界面上「怎么识别」一栏
-	Match  Match    `yaml:"match" json:"match"`
-	Tier   string   `yaml:"tier,omitempty" json:"tier,omitempty"`
-	Kind   string   `yaml:"kind,omitempty" json:"kind,omitempty"` // image video animation；空为 text
-	MediaTier string `yaml:"media_tier,omitempty" json:"media_tier,omitempty"`
-	Prefer []string `yaml:"prefer,omitempty" json:"prefer,omitempty"` // 渠道顺序：api claude_sub codex_sub
-	Order  int      `yaml:"order" json:"order"`
+	Type      string   `yaml:"type" json:"type"`
+	Name      string   `yaml:"name" json:"name"`
+	Hint      string   `yaml:"hint" json:"hint"` // 界面上「怎么识别」一栏
+	Match     Match    `yaml:"match" json:"match"`
+	Tier      string   `yaml:"tier,omitempty" json:"tier,omitempty"`
+	Kind      string   `yaml:"kind,omitempty" json:"kind,omitempty"` // image video animation；空为 text
+	MediaTier string   `yaml:"media_tier,omitempty" json:"media_tier,omitempty"`
+	Prefer    []string `yaml:"prefer,omitempty" json:"prefer,omitempty"` // 渠道顺序：api claude_sub codex_sub
+	Order     int      `yaml:"order" json:"order"`
 }
 
 // Routing 是路由规则。
@@ -133,18 +133,18 @@ type Routing struct {
 
 // Integration 是一个宿主的接入状态。
 type Integration struct {
-	Connected bool              `yaml:"connected" json:"connected"`
-	Options   map[string]bool   `yaml:"options,omitempty" json:"options,omitempty"`
+	Connected bool            `yaml:"connected" json:"connected"`
+	Options   map[string]bool `yaml:"options,omitempty" json:"options,omitempty"`
 }
 
 // Config 是整份配置。
 type Config struct {
-	Version  int                    `yaml:"version" json:"version"`
-	Settings Settings               `yaml:"settings" json:"settings"`
-	Sub      map[string]SubLane     `yaml:"subscription" json:"subscription"`
-	API      []APIAccount           `yaml:"api_accounts" json:"api_accounts"`
-	Media    Media                  `yaml:"media" json:"media"`
-	Routing  Routing                `yaml:"routing" json:"routing"`
+	Version      int                    `yaml:"version" json:"version"`
+	Settings     Settings               `yaml:"settings" json:"settings"`
+	Sub          map[string]SubLane     `yaml:"subscription" json:"subscription"`
+	API          []APIAccount           `yaml:"api_accounts" json:"api_accounts"`
+	Media        Media                  `yaml:"media" json:"media"`
+	Routing      Routing                `yaml:"routing" json:"routing"`
 	Integrations map[string]Integration `yaml:"integrations" json:"integrations"`
 }
 

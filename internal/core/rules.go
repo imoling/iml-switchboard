@@ -11,22 +11,22 @@ import (
 
 // Signals 是从请求里提取的确定性信号，决策顺序里「启发式」那一步也只看它们。
 type Signals struct {
-	Chars      int  `json:"chars"`
-	CodeBlocks int  `json:"code_blocks"`
-	CodeLines  int  `json:"code_lines"`
-	HasStack   bool `json:"has_stack"`
-	HasImage   bool `json:"has_image"`
-	LongInput  bool `json:"long_input"`
-	Constraints int `json:"constraints"`
-	Reasoning  bool `json:"reasoning"`
+	Chars       int  `json:"chars"`
+	CodeBlocks  int  `json:"code_blocks"`
+	CodeLines   int  `json:"code_lines"`
+	HasStack    bool `json:"has_stack"`
+	HasImage    bool `json:"has_image"`
+	LongInput   bool `json:"long_input"`
+	Constraints int  `json:"constraints"`
+	Reasoning   bool `json:"reasoning"`
 }
 
 var (
-	reFence  = regexp.MustCompile("(?s)```.*?```")
-	reStack  = regexp.MustCompile(`(?m)(Traceback \(most recent call last\)|^\s+at [\w$.<>]+ \(|Exception in thread|panic: |goroutine \d+ \[|Error: .*\n\s+at |^\s*File ".*", line \d+|\w+Error: |\w+Exception: |segmentation fault|stack trace)`)
-	reCodeish = regexp.MustCompile(`(?m)^\s*(func |def |class |import |#include|const |let |var |public |private |return |if \(|for \(|\}\s*$)`)
+	reFence      = regexp.MustCompile("(?s)```.*?```")
+	reStack      = regexp.MustCompile(`(?m)(Traceback \(most recent call last\)|^\s+at [\w$.<>]+ \(|Exception in thread|panic: |goroutine \d+ \[|Error: .*\n\s+at |^\s*File ".*", line \d+|\w+Error: |\w+Exception: |segmentation fault|stack trace)`)
+	reCodeish    = regexp.MustCompile(`(?m)^\s*(func |def |class |import |#include|const |let |var |public |private |return |if \(|for \(|\}\s*$)`)
 	reConstraint = regexp.MustCompile(`(必须|不要|不能|要求|至少|最多|只能|禁止|务必|不得|需要满足|should|must|never|always)`)
-	reReasoning = regexp.MustCompile(`(为什么|证明|推导|原因是什么|权衡|对比分析|利弊|trade-?off|why does|prove)`)
+	reReasoning  = regexp.MustCompile(`(为什么|证明|推导|原因是什么|权衡|对比分析|利弊|trade-?off|why does|prove)`)
 )
 
 // Extract 提取信号。只看文本，不调用任何模型。
@@ -156,11 +156,11 @@ func Heuristic(sig Signals) (Tier, string) {
 
 // ExplicitHit 是显式指令命中的结果。
 type ExplicitHit struct {
-	Tier    Tier
-	SubOnly bool
+	Tier      Tier
+	SubOnly   bool
 	MediaBest bool
-	Word    string
-	Prompt  string // 去掉斜杠指令后的提示词
+	Word      string
+	Prompt    string // 去掉斜杠指令后的提示词
 }
 
 // FindExplicit 在提示词里找显式指令。斜杠指令只认开头或独立成词；中文短语认包含。

@@ -9,9 +9,9 @@ import (
 
 // MemJobStore 是内存任务表，变化写回账本。
 type MemJobStore struct {
-	mu     sync.RWMutex
-	jobs   map[string]*Job
-	ledger *Ledger
+	mu       sync.RWMutex
+	jobs     map[string]*Job
+	ledger   *Ledger
 	onChange func(*Job)
 }
 

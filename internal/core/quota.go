@@ -7,14 +7,14 @@ import (
 
 // QuotaManager 记录订阅渠道的冷却与窗口用量，决定它能不能接活。
 type QuotaManager struct {
-	mu        sync.Mutex
-	cooldown  map[LaneID]cool
-	ledger    *Ledger
-	yieldPct  func() float64 // 让出线
+	mu       sync.Mutex
+	cooldown map[LaneID]cool
+	ledger   *Ledger
+	yieldPct func() float64 // 让出线
 	// 订阅渠道的 5 小时窗口「满额」估算值：按 quota_units（美元等值）计。
 	// 没有官方接口可查，用经验值：Max 5x ≈ $35 / 5h，Plus ≈ $8 / 5h。界面上注明是估算。
-	windowCap map[LaneID]float64
-	weekCap   map[LaneID]float64
+	windowCap    map[LaneID]float64
+	weekCap      map[LaneID]float64
 	fableWeekCap float64
 	// observed 是官方 CLI 自己报告的窗口利用率（Claude 的 rate_limit_event），比估算准，15 分钟内优先用。
 	observed map[LaneID]observedQuota
@@ -43,8 +43,8 @@ type cool struct {
 // NewQuotaManager 创建额度管家。
 func NewQuotaManager(l *Ledger, yieldPct func() float64) *QuotaManager {
 	q := &QuotaManager{cooldown: map[LaneID]cool{}, ledger: l, yieldPct: yieldPct,
-		windowCap: map[LaneID]float64{LaneClaudeSub: 35, LaneCodexSub: 8, LaneAgySub: 10},
-		weekCap:   map[LaneID]float64{LaneClaudeSub: 180, LaneCodexSub: 40, LaneAgySub: 50},
+		windowCap:    map[LaneID]float64{LaneClaudeSub: 35, LaneCodexSub: 8, LaneAgySub: 10},
+		weekCap:      map[LaneID]float64{LaneClaudeSub: 180, LaneCodexSub: 40, LaneAgySub: 50},
 		fableWeekCap: 90, observed: map[LaneID]observedQuota{}}
 	var saved map[LaneID]cool
 	if l != nil && l.KVGet("cooldown", &saved) {

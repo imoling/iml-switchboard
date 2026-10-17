@@ -30,10 +30,10 @@ const (
 
 // Manager 实现 admin.IntegrationOps。
 type Manager struct {
-	cfg      *config.Store
-	exe      string // imls 可执行文件绝对路径
-	facade   string // http://127.0.0.1:18081
-	home     string
+	cfg       *config.Store
+	exe       string // imls 可执行文件绝对路径
+	facade    string // http://127.0.0.1:18081
+	home      string
 	facadeKey func() string
 }
 
@@ -43,8 +43,8 @@ func New(cfg *config.Store, exe, facadeURL string, facadeKey func() string) *Man
 	return &Manager{cfg: cfg, exe: exe, facade: facadeURL, home: home, facadeKey: facadeKey}
 }
 
-func (m *Manager) claudeDir() string  { return filepath.Join(m.home, ".claude") }
-func (m *Manager) hermesCfg() string  { return filepath.Join(m.home, ".hermes", "config.yaml") }
+func (m *Manager) claudeDir() string       { return filepath.Join(m.home, ".claude") }
+func (m *Manager) hermesCfg() string       { return filepath.Join(m.home, ".hermes", "config.yaml") }
 func (m *Manager) workbuddyModels() string { return filepath.Join(m.home, ".workbuddy", "models.json") }
 
 // List 返回三个宿主的状态。
@@ -529,7 +529,9 @@ func (m *Manager) connectWorkBuddy() error {
 	}
 	keep := list[:0]
 	for _, raw := range list {
-		var probe struct{ ID string `json:"id"` }
+		var probe struct {
+			ID string `json:"id"`
+		}
 		_ = json.Unmarshal(raw, &probe)
 		if probe.ID == "router-auto" || probe.ID == "router-sub" {
 			continue
@@ -557,7 +559,9 @@ func (m *Manager) disconnectWorkBuddy() error {
 	}
 	keep := list[:0]
 	for _, raw := range list {
-		var probe struct{ ID string `json:"id"` }
+		var probe struct {
+			ID string `json:"id"`
+		}
 		_ = json.Unmarshal(raw, &probe)
 		if probe.ID != "router-auto" && probe.ID != "router-sub" {
 			keep = append(keep, raw)

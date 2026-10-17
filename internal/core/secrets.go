@@ -13,9 +13,9 @@ import (
 // KeychainSecrets 用 macOS 的 security 命令存按量付费密钥。服务名固定，账户名是账号 id。
 // 这里只存我们自己创建的条目，从不碰别的应用（包括 Claude、Codex）的钥匙串项。
 type KeychainSecrets struct {
-	service string
+	service  string
 	fallback string // 非 macOS 或 security 不可用时的文件回退（仅测试）
-	mu sync.Mutex
+	mu       sync.Mutex
 }
 
 // NewSecrets 创建密钥存取。

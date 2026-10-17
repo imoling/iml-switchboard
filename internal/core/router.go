@@ -43,17 +43,17 @@ func (r *Router) Register(d Driver) { r.drivers[d.ID()] = d }
 func (r *Router) Driver(id LaneID) (Driver, bool) { d, ok := r.drivers[id]; return d, ok }
 
 // OnCall / OnNotice 设置回调（事件流、通知）。
-func (r *Router) OnCall(fn func(*Call))                      { r.onCall = fn }
+func (r *Router) OnCall(fn func(*Call))                       { r.onCall = fn }
 func (r *Router) OnNotice(fn func(title, body, level string)) { r.onNotice = fn }
 
 // Mode / SetMode / Paused / SetPaused 是菜单栏的两个开关。
-func (r *Router) Mode() Mode   { r.mu.RLock(); defer r.mu.RUnlock(); return r.mode }
-func (r *Router) SetMode(m Mode) { r.mu.Lock(); r.mode = m; r.mu.Unlock() }
-func (r *Router) Paused() bool { r.mu.RLock(); defer r.mu.RUnlock(); return r.paused }
-func (r *Router) SetPaused(p bool) { r.mu.Lock(); r.paused = p; r.mu.Unlock() }
-func (r *Router) Registry() *Registry { return r.reg }
-func (r *Router) Ledger() *Ledger   { return r.ledger }
-func (r *Router) Quota() *QuotaManager { return r.quota }
+func (r *Router) Mode() Mode            { r.mu.RLock(); defer r.mu.RUnlock(); return r.mode }
+func (r *Router) SetMode(m Mode)        { r.mu.Lock(); r.mode = m; r.mu.Unlock() }
+func (r *Router) Paused() bool          { r.mu.RLock(); defer r.mu.RUnlock(); return r.paused }
+func (r *Router) SetPaused(p bool)      { r.mu.Lock(); r.paused = p; r.mu.Unlock() }
+func (r *Router) Registry() *Registry   { return r.reg }
+func (r *Router) Ledger() *Ledger       { return r.ledger }
+func (r *Router) Quota() *QuotaManager  { return r.quota }
 func (r *Router) Config() *config.Store { return r.cfg }
 
 // NewID 生成短 id。
@@ -275,11 +275,14 @@ func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer [
 				tgt.Skipped = "带工具"
 			} else if _, ok := r.drivers[lid]; !ok {
 				tgt.Skipped = "未接入"
-			} else if h := r.drivers[lid].Health(context.Background()); h.Status == "missing" || h.Status == "error" || h.Status == "disabled" {
-				tgt.Skipped = h.Detail
-			} else if r.quota.Observe(lid, h.Quota); false {
-			} else if ok, why := r.quota.Healthy(lid, tier, sl.Models); !ok {
-				tgt.Skipped = why
+			} else {
+				h := r.drivers[lid].Health(context.Background())
+				r.quota.Observe(lid, h.Quota)
+				if h.Status == "missing" || h.Status == "error" || h.Status == "disabled" {
+					tgt.Skipped = h.Detail
+				} else if ok, why := r.quota.Healthy(lid, tier, sl.Models); !ok {
+					tgt.Skipped = why
+				}
 			}
 			out = append(out, tgt)
 		case "api":

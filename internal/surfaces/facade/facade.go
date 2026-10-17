@@ -221,10 +221,10 @@ func hostOf(r *http.Request) string {
 
 func (s *Server) images(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Prompt  string `json:"prompt"`
-		Size    string `json:"size"`
-		Quality string `json:"quality"`
-		N       int    `json:"n"`
+		Prompt         string `json:"prompt"`
+		Size           string `json:"size"`
+		Quality        string `json:"quality"`
+		N              int    `json:"n"`
 		ResponseFormat string `json:"response_format"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {

@@ -37,12 +37,14 @@ func (fakeAccounts) Verify(ctx context.Context, provider, baseURL, apiKey string
 func (fakeAccounts) Preset(p string) (string, string, map[string][]string, bool, bool) {
 	return "https://x/v1", "CNY", map[string][]string{"low": {"glm-5.3-flash"}, "mid": {"glm-5.3"}}, false, true
 }
-func (fakeAccounts) Providers() []string      { return []string{"zhipu"} }
-func (fakeAccounts) Reload(*config.Config)    {}
+func (fakeAccounts) Providers() []string   { return []string{"zhipu"} }
+func (fakeAccounts) Reload(*config.Config) {}
 
 type fakeIntegr struct{}
 
-func (fakeIntegr) List() []map[string]any { return []map[string]any{{"id": "claude_code", "status": "disconnected"}} }
+func (fakeIntegr) List() []map[string]any {
+	return []map[string]any{{"id": "claude_code", "status": "disconnected"}}
+}
 func (fakeIntegr) Connect(id string, o map[string]bool) (map[string]any, error) {
 	return map[string]any{"id": id, "status": "connected"}, nil
 }

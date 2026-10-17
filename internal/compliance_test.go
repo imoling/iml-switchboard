@@ -12,7 +12,7 @@ import (
 var banned = []*regexp.Regexp{
 	regexp.MustCompile(`\.credentials\.json`),
 	regexp.MustCompile(`oauth_creds\.json`),
-	regexp.MustCompile(`\.codex/auth\.json"`),           // 只允许 stat 目录；读文件内容的写法会带引号路径
+	regexp.MustCompile(`\.codex/auth\.json"`), // 只允许 stat 目录；读文件内容的写法会带引号路径
 	regexp.MustCompile(`find-generic-password[^\n]*(Claude|Codex|claude|codex|anthropic)`),
 	regexp.MustCompile(`"--bare"`),
 	regexp.MustCompile(`claude-code-20250219`),

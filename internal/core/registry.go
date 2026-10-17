@@ -25,8 +25,8 @@ type ModelInfo struct {
 
 // Registry 是模型注册表。
 type Registry struct {
-	mu     sync.RWMutex
-	models map[string]ModelInfo
+	mu        sync.RWMutex
+	models    map[string]ModelInfo
 	usdPerCNY float64
 }
 

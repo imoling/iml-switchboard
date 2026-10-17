@@ -9,16 +9,16 @@ import (
 
 // Evaluation 是一轮影子评估的结果：抽样低档请求，用高档重做，再让高档模型盲评。
 type Evaluation struct {
-	ID         string          `json:"id"`
-	Status     string          `json:"status"`
-	StartedAt  time.Time       `json:"started_at"`
-	FinishedAt *time.Time      `json:"finished_at,omitempty"`
-	Sample     int             `json:"sample"`
-	CostUSD    float64         `json:"cost_usd"`
-	Summary    EvalSummary     `json:"summary"`
-	ByTask     []EvalTaskRow   `json:"by_task"`
-	Error      string          `json:"error,omitempty"`
-	Note       string          `json:"note,omitempty"`
+	ID         string        `json:"id"`
+	Status     string        `json:"status"`
+	StartedAt  time.Time     `json:"started_at"`
+	FinishedAt *time.Time    `json:"finished_at,omitempty"`
+	Sample     int           `json:"sample"`
+	CostUSD    float64       `json:"cost_usd"`
+	Summary    EvalSummary   `json:"summary"`
+	ByTask     []EvalTaskRow `json:"by_task"`
+	Error      string        `json:"error,omitempty"`
+	Note       string        `json:"note,omitempty"`
 }
 
 // EvalSummary 是三类结果计数。

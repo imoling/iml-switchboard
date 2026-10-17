@@ -71,15 +71,25 @@ func Serve(ctx context.Context, baseURL, version string) error {
 		JobID string `json:"job_id" jsonschema:"任务号"`
 	}
 	sdk.AddTool(srv, &sdk.Tool{Name: "generate_image", Description: "生成图片并保存到项目里。需要封面、配图、插图、海报时用它，不要自己写 SVG 冒充插图。"},
-		func(ctx context.Context, r *sdk.CallToolRequest, a imageArgs) (*sdk.CallToolResult, any, error) { return call("generate_image", a) })
+		func(ctx context.Context, r *sdk.CallToolRequest, a imageArgs) (*sdk.CallToolResult, any, error) {
+			return call("generate_image", a)
+		})
 	sdk.AddTool(srv, &sdk.Tool{Name: "generate_video", Description: "生成短视频。90 秒内没完成会返回任务号，之后用 get_job 查询。"},
-		func(ctx context.Context, r *sdk.CallToolRequest, a videoArgs) (*sdk.CallToolResult, any, error) { return call("generate_video", a) })
+		func(ctx context.Context, r *sdk.CallToolRequest, a videoArgs) (*sdk.CallToolResult, any, error) {
+			return call("generate_video", a)
+		})
 	sdk.AddTool(srv, &sdk.Tool{Name: "make_animation", Description: "按描述做动效视频：由强模型写 Remotion 代码并在本机渲染成 mp4。需要标题动效、转场、数据动画时用它。"},
-		func(ctx context.Context, r *sdk.CallToolRequest, a animArgs) (*sdk.CallToolResult, any, error) { return call("make_animation", a) })
+		func(ctx context.Context, r *sdk.CallToolRequest, a animArgs) (*sdk.CallToolResult, any, error) {
+			return call("make_animation", a)
+		})
 	sdk.AddTool(srv, &sdk.Tool{Name: "ask_model", Description: "把不需要读写本地文件的杂活交给更便宜的模型：分类、摘要、改写、翻译、抽取；tier=mid 可以要第二意见。"},
-		func(ctx context.Context, r *sdk.CallToolRequest, a askArgs) (*sdk.CallToolResult, any, error) { return call("ask_model", a) })
+		func(ctx context.Context, r *sdk.CallToolRequest, a askArgs) (*sdk.CallToolResult, any, error) {
+			return call("ask_model", a)
+		})
 	sdk.AddTool(srv, &sdk.Tool{Name: "get_job", Description: "查询视频或动画任务的进度和结果路径。"},
-		func(ctx context.Context, r *sdk.CallToolRequest, a jobArgs) (*sdk.CallToolResult, any, error) { return call("get_job", a) })
+		func(ctx context.Context, r *sdk.CallToolRequest, a jobArgs) (*sdk.CallToolResult, any, error) {
+			return call("get_job", a)
+		})
 	return srv.Run(ctx, &sdk.StdioTransport{})
 }
 

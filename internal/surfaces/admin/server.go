@@ -48,14 +48,14 @@ type IntegrationOps interface {
 
 // Deps 是接口层需要的全部依赖。
 type Deps struct {
-	Router   *core.Router
-	Jobs     *core.MemJobStore
-	Bus      *core.Bus
-	Accounts AccountOps
-	Media    MediaOps
-	Integr   IntegrationOps
-	Secrets  core.Secrets
-	StartedAt time.Time
+	Router        *core.Router
+	Jobs          *core.MemJobStore
+	Bus           *core.Bus
+	Accounts      AccountOps
+	Media         MediaOps
+	Integr        IntegrationOps
+	Secrets       core.Secrets
+	StartedAt     time.Time
 	NodeAvailable func() bool
 }
 
@@ -163,7 +163,7 @@ type httpError struct {
 }
 
 func (e *httpError) Error() string { return e.msg }
-func notFound(msg string) error  { return &httpError{404, msg} }
+func notFound(msg string) error    { return &httpError{404, msg} }
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -207,10 +207,14 @@ func (s *Server) statusBody() map[string]any {
 	}
 }
 
-func (s *Server) status(w http.ResponseWriter, r *http.Request) (any, error) { return s.statusBody(), nil }
+func (s *Server) status(w http.ResponseWriter, r *http.Request) (any, error) {
+	return s.statusBody(), nil
+}
 
 func (s *Server) pause(w http.ResponseWriter, r *http.Request) (any, error) {
-	var in struct{ Paused bool `json:"paused"` }
+	var in struct {
+		Paused bool `json:"paused"`
+	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
@@ -220,7 +224,9 @@ func (s *Server) pause(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func (s *Server) mode(w http.ResponseWriter, r *http.Request) (any, error) {
-	var in struct{ Mode string `json:"mode"` }
+	var in struct {
+		Mode string `json:"mode"`
+	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
@@ -235,7 +241,9 @@ func (s *Server) mode(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func (s *Server) projectionToggle(w http.ResponseWriter, r *http.Request) (any, error) {
-	var in struct{ On bool `json:"on"` }
+	var in struct {
+		On bool `json:"on"`
+	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
@@ -266,8 +274,8 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) (any, error) {
 		"calls": ov.Calls, "prev_calls": ov.PrevCalls, "api_cost_usd": ov.APICostUSD, "baseline_cost_usd": ov.BaselineCostUSD,
 		"saved_usd": ov.SavedUSD, "saved_pct": ov.SavedPct, "escalation_rate": ov.EscalationRate, "escalation_hot_task": ov.EscalationHot,
 		"escalation_hot_name": s.d.Router.TaskName(ov.EscalationHot),
-		"tier_dist": ov.TierDist, "lane_dist": ov.LaneDist, "daily": ov.Daily, "quotas": quotas,
-		"budget": map[string]float64{"month_usd": ov.MonthAPICostUSD, "limit_usd": cfg.Settings.MonthlyAPILimitUSD},
+		"tier_dist":           ov.TierDist, "lane_dist": ov.LaneDist, "daily": ov.Daily, "quotas": quotas,
+		"budget":    map[string]float64{"month_usd": ov.MonthAPICostUSD, "limit_usd": cfg.Settings.MonthlyAPILimitUSD},
 		"top_tasks": s.namedTasks(ov.TopTasks),
 	}, nil
 }
@@ -281,14 +289,14 @@ func (s *Server) namedTasks(ts []core.TopTask) []map[string]any {
 }
 
 type quotaRow struct {
-	AccountID string    `json:"account_id"`
-	Label     string    `json:"label"`
-	Provider  string    `json:"provider"`
-	Window    string    `json:"window"`
-	WindowLabel string  `json:"window_label"`
-	Pct       float64   `json:"pct"`
-	ResetsAt  time.Time `json:"resets_at"`
-	Sub       bool      `json:"sub,omitempty"`
+	AccountID   string    `json:"account_id"`
+	Label       string    `json:"label"`
+	Provider    string    `json:"provider"`
+	Window      string    `json:"window"`
+	WindowLabel string    `json:"window_label"`
+	Pct         float64   `json:"pct"`
+	ResetsAt    time.Time `json:"resets_at"`
+	Sub         bool      `json:"sub,omitempty"`
 }
 
 func (s *Server) quotas(cfg *config.Config) []quotaRow {
@@ -501,7 +509,9 @@ func (s *Server) suggestions(w http.ResponseWriter, r *http.Request) (any, error
 }
 
 func (s *Server) applySuggestion(w http.ResponseWriter, r *http.Request) (any, error) {
-	var in struct{ Action string `json:"action"` }
+	var in struct {
+		Action string `json:"action"`
+	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
@@ -541,21 +551,21 @@ func (s *Server) importRules(w http.ResponseWriter, r *http.Request) (any, error
 // --- 账号 ---
 
 type accountView struct {
-	ID          string             `json:"id"`
-	Kind        string             `json:"kind"`
-	Provider    string             `json:"provider"`
-	Label       string             `json:"label"`
-	Status      string             `json:"status"`
-	Detail      string             `json:"detail"`
-	MonthCostUSD float64           `json:"month_cost_usd"`
-	MonthCostNative float64        `json:"month_cost_native"`
-	Currency    string             `json:"currency"`
-	Quota       []core.QuotaWindow `json:"quota,omitempty"`
-	Tiers       map[string]any     `json:"tiers,omitempty"`
-	Models      []string           `json:"models"`
-	NeedsProxy  bool               `json:"needs_proxy,omitempty"`
-	Enabled     bool               `json:"enabled"`
-	InstallHint string             `json:"install_hint,omitempty"`
+	ID              string             `json:"id"`
+	Kind            string             `json:"kind"`
+	Provider        string             `json:"provider"`
+	Label           string             `json:"label"`
+	Status          string             `json:"status"`
+	Detail          string             `json:"detail"`
+	MonthCostUSD    float64            `json:"month_cost_usd"`
+	MonthCostNative float64            `json:"month_cost_native"`
+	Currency        string             `json:"currency"`
+	Quota           []core.QuotaWindow `json:"quota,omitempty"`
+	Tiers           map[string]any     `json:"tiers,omitempty"`
+	Models          []string           `json:"models"`
+	NeedsProxy      bool               `json:"needs_proxy,omitempty"`
+	Enabled         bool               `json:"enabled"`
+	InstallHint     string             `json:"install_hint,omitempty"`
 }
 
 func (s *Server) accountViews() []accountView {
@@ -563,11 +573,11 @@ func (s *Server) accountViews() []accountView {
 	costs, _ := s.d.Router.Ledger().MonthCostByAccount(time.Local)
 	out := []accountView{}
 	subs := []struct {
-		lane  core.LaneID
-		label string
+		lane   core.LaneID
+		label  string
 		detail string
-		prov  string
-		hint  string
+		prov   string
+		hint   string
 	}{
 		{core.LaneClaudeSub, "Claude", "用本机 claude 命令的登录，消耗你的订阅额度", "anthropic", ""},
 		{core.LaneCodexSub, "ChatGPT", "用本机 codex 命令的登录；含订阅出图", "openai", ""},
@@ -702,9 +712,9 @@ func (s *Server) addAccount(w http.ResponseWriter, r *http.Request) (any, error)
 func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, error) {
 	id := r.PathValue("id")
 	var in struct {
-		Enabled *bool               `json:"enabled"`
-		Tiers   map[string][]string `json:"tiers"`
-		SubTiers map[string]string  `json:"sub_tiers"`
+		Enabled  *bool               `json:"enabled"`
+		Tiers    map[string][]string `json:"tiers"`
+		SubTiers map[string]string   `json:"sub_tiers"`
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
@@ -837,7 +847,9 @@ func (s *Server) jobRetry(w http.ResponseWriter, r *http.Request) (any, error) {
 	if s.d.Media == nil {
 		return nil, errors.New("媒体渠道未启用")
 	}
-	var in struct{ Model string `json:"model"` }
+	var in struct {
+		Model string `json:"model"`
+	}
 	_ = decode(r, &in)
 	return s.d.Media.Retry(context.Background(), r.PathValue("id"), in.Model)
 }
@@ -846,7 +858,9 @@ func (s *Server) jobRevise(w http.ResponseWriter, r *http.Request) (any, error) 
 	if s.d.Media == nil {
 		return nil, errors.New("媒体渠道未启用")
 	}
-	var in struct{ Instruction string `json:"instruction"` }
+	var in struct {
+		Instruction string `json:"instruction"`
+	}
 	if err := decode(r, &in); err != nil || strings.TrimSpace(in.Instruction) == "" {
 		return nil, errors.New("写一句要怎么改")
 	}
@@ -860,7 +874,9 @@ func (s *Server) integrations(w http.ResponseWriter, r *http.Request) (any, erro
 }
 
 func (s *Server) integrationConnect(w http.ResponseWriter, r *http.Request) (any, error) {
-	var in struct{ Options map[string]bool `json:"options"` }
+	var in struct {
+		Options map[string]bool `json:"options"`
+	}
 	_ = decode(r, &in)
 	return s.d.Integr.Connect(r.PathValue("id"), in.Options)
 }
@@ -870,7 +886,9 @@ func (s *Server) integrationDisconnect(w http.ResponseWriter, r *http.Request) (
 }
 
 func (s *Server) integrationUpdate(w http.ResponseWriter, r *http.Request) (any, error) {
-	var in struct{ Options map[string]bool `json:"options"` }
+	var in struct {
+		Options map[string]bool `json:"options"`
+	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
@@ -937,7 +955,9 @@ func (s *Server) evaluations(w http.ResponseWriter, r *http.Request) (any, error
 }
 
 func (s *Server) startEvaluation(w http.ResponseWriter, r *http.Request) (any, error) {
-	var in struct{ Sample int `json:"sample"` }
+	var in struct {
+		Sample int `json:"sample"`
+	}
 	_ = decode(r, &in)
 	ev := &core.Evaluation{ID: core.NewID("eval"), Status: "running", StartedAt: time.Now(), Sample: in.Sample}
 	s.mu.Lock()
@@ -963,7 +983,9 @@ func (s *Server) evaluation(w http.ResponseWriter, r *http.Request) (any, error)
 }
 
 func (s *Server) evaluationAccept(w http.ResponseWriter, r *http.Request) (any, error) {
-	var in struct{ TaskType string `json:"task_type"` }
+	var in struct {
+		TaskType string `json:"task_type"`
+	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
@@ -1046,14 +1068,14 @@ func (s *Server) quickRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Prompt    string `json:"prompt"`
-		ImagePath string `json:"image_path"`
-		Tier      string `json:"tier"`
-		MediaTier string `json:"media_tier"`
-		Model     string `json:"model"`
-		Lane      string `json:"lane"`
-		Kind      string `json:"kind"`
-		Seconds   int    `json:"seconds"`
+		Prompt     string `json:"prompt"`
+		ImagePath  string `json:"image_path"`
+		Tier       string `json:"tier"`
+		MediaTier  string `json:"media_tier"`
+		Model      string `json:"model"`
+		Lane       string `json:"lane"`
+		Kind       string `json:"kind"`
+		Seconds    int    `json:"seconds"`
 		ProjectDir string `json:"project_dir"`
 	}
 	if err := decode(r, &in); err != nil {

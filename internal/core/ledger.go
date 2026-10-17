@@ -142,10 +142,10 @@ func (l *Ledger) Get(id string) (*Call, error) {
 // ListFilter 是请求记录的筛选条件。
 type ListFilter struct {
 	Source, Lane, Tier, Query, Kind, Host string
-	Before                               time.Time
-	Limit                                int
-	Since                                time.Time
-	OnlyOK                               bool
+	Before                                time.Time
+	Limit                                 int
+	Since                                 time.Time
+	OnlyOK                                bool
 }
 
 // List 按时间倒序列出。
@@ -220,19 +220,19 @@ func (l *Ledger) Escalate(id string) (taskType string, n int, err error) {
 
 // Overview 是概览页的聚合结果。
 type Overview struct {
-	Calls           int                `json:"calls"`
-	APICostUSD      float64            `json:"api_cost_usd"`
-	BaselineCostUSD float64            `json:"baseline_cost_usd"`
-	SavedUSD        float64            `json:"saved_usd"`
-	SavedPct        float64            `json:"saved_pct"`
-	EscalationRate  float64            `json:"escalation_rate"`
-	EscalationHot   string             `json:"escalation_hot_task,omitempty"`
-	TierDist        map[string]int     `json:"tier_dist"`
-	LaneDist        map[string]int     `json:"lane_dist"`
-	Daily           []DailyPoint       `json:"daily"`
-	TopTasks        []TopTask          `json:"top_tasks"`
-	PrevCalls       int                `json:"prev_calls"`
-	MonthAPICostUSD float64            `json:"month_api_cost_usd"`
+	Calls           int            `json:"calls"`
+	APICostUSD      float64        `json:"api_cost_usd"`
+	BaselineCostUSD float64        `json:"baseline_cost_usd"`
+	SavedUSD        float64        `json:"saved_usd"`
+	SavedPct        float64        `json:"saved_pct"`
+	EscalationRate  float64        `json:"escalation_rate"`
+	EscalationHot   string         `json:"escalation_hot_task,omitempty"`
+	TierDist        map[string]int `json:"tier_dist"`
+	LaneDist        map[string]int `json:"lane_dist"`
+	Daily           []DailyPoint   `json:"daily"`
+	TopTasks        []TopTask      `json:"top_tasks"`
+	PrevCalls       int            `json:"prev_calls"`
+	MonthAPICostUSD float64        `json:"month_api_cost_usd"`
 }
 
 // DailyPoint 是每天的花费与基线。

@@ -58,34 +58,36 @@ type Message struct {
 
 // Task 是三个接入面统一后的请求。
 type Task struct {
-	ID        string `json:"id"`
-	Kind      Kind   `json:"kind"`
-	Prompt    string `json:"prompt"`
-	Messages  []Message `json:"messages,omitempty"` // 多轮时存在；Prompt 是最后一条用户消息
-	System    string `json:"system,omitempty"`
-	Tools     json.RawMessage `json:"tools,omitempty"` // OpenAI 格式的 tools，非空表示 has_tools
-	Tier      Tier   `json:"tier,omitempty"`      // 调用方显式指定的档位
-	MediaTier string `json:"media_tier,omitempty"` // cheap default best free
-	Model     string `json:"model,omitempty"`      // 调用方点名的模型
-	Lane      LaneID `json:"lane,omitempty"`       // 调用方点名的渠道
-	SessionID string `json:"session_id,omitempty"`
-	Source    string `json:"source"` // mcp facade cli quick redo
-	Host      string `json:"host,omitempty"`
-	EstTokens int    `json:"est_tokens"`
+	ID        string          `json:"id"`
+	Kind      Kind            `json:"kind"`
+	Prompt    string          `json:"prompt"`
+	Messages  []Message       `json:"messages,omitempty"` // 多轮时存在；Prompt 是最后一条用户消息
+	System    string          `json:"system,omitempty"`
+	Tools     json.RawMessage `json:"tools,omitempty"`      // OpenAI 格式的 tools，非空表示 has_tools
+	Tier      Tier            `json:"tier,omitempty"`       // 调用方显式指定的档位
+	MediaTier string          `json:"media_tier,omitempty"` // cheap default best free
+	Model     string          `json:"model,omitempty"`      // 调用方点名的模型
+	Lane      LaneID          `json:"lane,omitempty"`       // 调用方点名的渠道
+	SessionID string          `json:"session_id,omitempty"`
+	Source    string          `json:"source"` // mcp facade cli quick redo
+	Host      string          `json:"host,omitempty"`
+	EstTokens int             `json:"est_tokens"`
 	// 媒体参数
-	ImagePath string `json:"image_path,omitempty"`
-	Seconds   int    `json:"seconds,omitempty"`
-	Size      string `json:"size,omitempty"`
-	OutDir    string `json:"out_dir,omitempty"`
-	Engine    string `json:"engine,omitempty"`
-	ProjectDir string `json:"project_dir,omitempty"` // 宿主的工作目录，媒体产物落到它的 assets/
-	Stream    bool   `json:"stream,omitempty"`
-	MaxTokens int    `json:"max_tokens,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ImagePath  string    `json:"image_path,omitempty"`
+	Seconds    int       `json:"seconds,omitempty"`
+	Size       string    `json:"size,omitempty"`
+	OutDir     string    `json:"out_dir,omitempty"`
+	Engine     string    `json:"engine,omitempty"`
+	ProjectDir string    `json:"project_dir,omitempty"` // 宿主的工作目录，媒体产物落到它的 assets/
+	Stream     bool      `json:"stream,omitempty"`
+	MaxTokens  int       `json:"max_tokens,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // HasTools 表示调用方传了工具定义；这类请求不能走订阅渠道。
-func (t *Task) HasTools() bool { return len(t.Tools) > 0 && string(t.Tools) != "null" && string(t.Tools) != "[]" }
+func (t *Task) HasTools() bool {
+	return len(t.Tools) > 0 && string(t.Tools) != "null" && string(t.Tools) != "[]"
+}
 
 // Target 是一个候选执行目标。
 type Target struct {
@@ -132,32 +134,32 @@ type Event struct {
 
 // Result 是执行的最终结果。
 type Result struct {
-	Text    string `json:"text,omitempty"`
-	Path    string `json:"path,omitempty"`
-	JobID   string `json:"job_id,omitempty"`
-	Model   string `json:"model"`
-	Usage   Usage  `json:"usage"`
-	Raw     json.RawMessage `json:"-"`
+	Text  string          `json:"text,omitempty"`
+	Path  string          `json:"path,omitempty"`
+	JobID string          `json:"job_id,omitempty"`
+	Model string          `json:"model"`
+	Usage Usage           `json:"usage"`
+	Raw   json.RawMessage `json:"-"`
 }
 
 // Job 是异步媒体任务（视频、动画）。
 type Job struct {
-	ID           string    `json:"id"`
-	Kind         Kind      `json:"kind"`
-	Status       string    `json:"status"` // queued submitted running done failed canceled timeout
-	Progress     float64   `json:"progress"`
-	ETASeconds   int       `json:"eta_seconds,omitempty"`
-	Provider     string    `json:"provider"`
-	Model        string    `json:"model"`
-	PromptExcerpt string   `json:"prompt_excerpt"`
-	ResultPath   string    `json:"result_path,omitempty"`
-	Error        string    `json:"error,omitempty"`
-	CostUSD      float64   `json:"cost_usd,omitempty"`
-	CallID       string    `json:"call_id"`
-	CodeDir      string    `json:"code_dir,omitempty"` // 动画：Remotion 工程目录
-	RetryOptions []Target  `json:"retry_options,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	Kind          Kind      `json:"kind"`
+	Status        string    `json:"status"` // queued submitted running done failed canceled timeout
+	Progress      float64   `json:"progress"`
+	ETASeconds    int       `json:"eta_seconds,omitempty"`
+	Provider      string    `json:"provider"`
+	Model         string    `json:"model"`
+	PromptExcerpt string    `json:"prompt_excerpt"`
+	ResultPath    string    `json:"result_path,omitempty"`
+	Error         string    `json:"error,omitempty"`
+	CostUSD       float64   `json:"cost_usd,omitempty"`
+	CallID        string    `json:"call_id"`
+	CodeDir       string    `json:"code_dir,omitempty"` // 动画：Remotion 工程目录
+	RetryOptions  []Target  `json:"retry_options,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 	// 内部字段
 	ProviderRef string `json:"-"`
 	Task        *Task  `json:"-"`
@@ -168,8 +170,8 @@ type Health struct {
 	Status string `json:"status"` // ok warn missing error cooldown disabled
 	Detail string `json:"detail"`
 	// 订阅渠道的额度窗口估算
-	Quota []QuotaWindow `json:"quota,omitempty"`
-	CooldownUntil time.Time `json:"cooldown_until,omitempty"`
+	Quota         []QuotaWindow `json:"quota,omitempty"`
+	CooldownUntil time.Time     `json:"cooldown_until,omitempty"`
 }
 
 // QuotaWindow 是一个额度窗口。
@@ -191,9 +193,9 @@ func (e *ErrRateLimited) Error() string { return string(e.Lane) + " 额度暂时
 
 // ErrProvider 是供应商侧的失败，带一行人话和原始回包。
 type ErrProvider struct {
-	Summary string // 界面上显示的一行
-	Raw     string // 详情
-	Retryable bool // 换一个候选是否有意义
+	Summary   string // 界面上显示的一行
+	Raw       string // 详情
+	Retryable bool   // 换一个候选是否有意义
 }
 
 func (e *ErrProvider) Error() string { return e.Summary }

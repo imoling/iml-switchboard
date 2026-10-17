@@ -14,7 +14,10 @@ import (
 	"github.com/imoling/iml-switchboard/internal/core"
 )
 
-type fake struct{ id core.LaneID; last *core.Task }
+type fake struct {
+	id   core.LaneID
+	last *core.Task
+}
 
 func (f *fake) ID() core.LaneID { return f.id }
 func (f *fake) Run(ctx context.Context, t *core.Task, tg core.Target, emit func(core.Event)) (*core.Result, error) {

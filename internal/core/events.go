@@ -8,8 +8,8 @@ import (
 
 // Bus 是给界面的事件总线：请求、任务、额度、通知、状态。
 type Bus struct {
-	mu   sync.Mutex
-	subs map[chan Envelope]struct{}
+	mu     sync.Mutex
+	subs   map[chan Envelope]struct{}
 	recent []Envelope
 }
 
