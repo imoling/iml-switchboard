@@ -1,0 +1,3 @@
+{"id":"dianjiang","name":"点将台","words":{
+"app.title":"iML 点将台","app.open":"打开点将台","dispatch.noun":"点将","dispatch.once":"点一员将","dispatch.today":"今日点将 {n} 次","dispatch.recent":"最近点将",
+"model":"将","tier.low":"偏将","tier.mid":"副将","tier.high":"大将","tier.top":"主帅","records":"点将簿","escalate":"用人不当","pause":"收兵","resume":"升帐"}}

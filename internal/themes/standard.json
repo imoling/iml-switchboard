@@ -1,0 +1,4 @@
+{"id":"standard","name":"标准","words":{
+"app.title":"iML Switchboard","app.open":"打开 Switchboard","dispatch.noun":"调度","dispatch.once":"调度一次","dispatch.today":"今天调度 {n} 次","dispatch.recent":"最近",
+"model":"模型","tier.low":"低档","tier.mid":"中档","tier.high":"高档","tier.top":"顶配","records":"请求记录","escalate":"这次判低了","pause":"暂停调度","resume":"恢复调度",
+"nav.overview":"概览","nav.rules":"路由规则","nav.eval":"评估","nav.accounts":"模型与账号","nav.media":"媒体库","nav.integrations":"接入","nav.settings":"设置"}}
