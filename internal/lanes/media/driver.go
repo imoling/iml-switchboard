@@ -59,6 +59,15 @@ type MediaDriver struct {
 
 	mu      sync.Mutex
 	waiters map[string]chan struct{}
+	// active 记录正在后台跑的任务，供 Cancel 使用。
+	active map[string]*activeJob
+}
+
+// activeJob 是一个后台任务的句柄。
+type activeJob struct {
+	cancel context.CancelFunc
+	video  VideoProvider
+	ref    string
 }
 
 // New 构造媒体驱动。
@@ -78,7 +87,7 @@ func New(opt Options) *MediaDriver {
 	if opt.OutDir == nil {
 		opt.OutDir = DefaultOutDir
 	}
-	d := &MediaDriver{opt: opt, waiters: map[string]chan struct{}{}}
+	d := &MediaDriver{opt: opt, waiters: map[string]chan struct{}{}, active: map[string]*activeJob{}}
 	d.remotion = &Remotion{Claude: opt.Claude, Root: opt.AnimRoot, Exec: opt.Exec, Now: opt.Now}
 	return d
 }
@@ -308,48 +317,142 @@ func extForMime(m, url string) string {
 }
 
 func (d *MediaDriver) runVideo(ctx context.Context, task *core.Task, target core.Target, emit func(core.Event)) (*core.Result, error) {
-	if d.opt.Jobs == nil {
-		return nil, &core.ErrProvider{Summary: "视频任务不可用：没有接入任务存储"}
-	}
-	vp, err := d.videoProvider(target)
+	job, done, err := d.startVideo(task, target, emit)
 	if err != nil {
 		return nil, err
 	}
-	path, err := d.artifactPath(task, ".mp4")
-	if err != nil {
-		return nil, err
-	}
-	job := d.newJob(task, target)
-	job.ResultPath = ""
-	if err := d.opt.Jobs.Put(job); err != nil {
-		return nil, &core.ErrProvider{Summary: "无法登记视频任务", Raw: err.Error()}
-	}
-	done := d.waiter(job.ID)
-	go d.runVideoJob(job, vp, task, target, path, emit, done)
 	return d.waitJob(ctx, job.ID, done, emit)
 }
 
-func (d *MediaDriver) runAnimation(ctx context.Context, task *core.Task, target core.Target, emit func(core.Event)) (*core.Result, error) {
+// startVideo 登记并在后台启动视频任务，立即返回。
+func (d *MediaDriver) startVideo(task *core.Task, target core.Target, emit func(core.Event)) (*core.Job, chan struct{}, error) {
 	if d.opt.Jobs == nil {
-		return nil, &core.ErrProvider{Summary: "动画任务不可用：没有接入任务存储"}
+		return nil, nil, &core.ErrProvider{Summary: "视频任务不可用：没有接入任务存储"}
 	}
-	if err := d.remotion.Precheck(); err != nil {
-		return nil, err
+	vp, err := d.videoProvider(target)
+	if err != nil {
+		return nil, nil, err
 	}
 	path, err := d.artifactPath(task, ".mp4")
 	if err != nil {
+		return nil, nil, err
+	}
+	job := d.newJob(task, target)
+	if err := d.opt.Jobs.Put(job); err != nil {
+		return nil, nil, &core.ErrProvider{Summary: "无法登记视频任务", Raw: err.Error()}
+	}
+	done := d.waiter(job.ID)
+	go d.runVideoJob(job, vp, task, target, path, emit, done)
+	return job, done, nil
+}
+
+func (d *MediaDriver) runAnimation(ctx context.Context, task *core.Task, target core.Target, emit func(core.Event)) (*core.Result, error) {
+	job, done, err := d.startAnimation(task, target, emit)
+	if err != nil {
 		return nil, err
+	}
+	return d.waitJob(ctx, job.ID, done, emit)
+}
+
+// startAnimation 登记并在后台启动动画任务，立即返回。
+func (d *MediaDriver) startAnimation(task *core.Task, target core.Target, emit func(core.Event)) (*core.Job, chan struct{}, error) {
+	if d.opt.Jobs == nil {
+		return nil, nil, &core.ErrProvider{Summary: "动画任务不可用：没有接入任务存储"}
+	}
+	if err := d.remotion.Precheck(); err != nil {
+		return nil, nil, err
+	}
+	path, err := d.artifactPath(task, ".mp4")
+	if err != nil {
+		return nil, nil, err
 	}
 	job := d.newJob(task, target)
 	if job.Provider == "" {
 		job.Provider = "remotion"
 	}
 	if err := d.opt.Jobs.Put(job); err != nil {
-		return nil, &core.ErrProvider{Summary: "无法登记动画任务", Raw: err.Error()}
+		return nil, nil, &core.ErrProvider{Summary: "无法登记动画任务", Raw: err.Error()}
 	}
 	done := d.waiter(job.ID)
 	go d.runAnimationJob(job, task, path, "", emit, done)
-	return d.waitJob(ctx, job.ID, done, emit)
+	return job, done, nil
+}
+
+// Cancel 取消一个进行中的任务：停止后台轮询、调供应商 Cancel（如有），状态改为 canceled。
+func (d *MediaDriver) Cancel(ctx context.Context, jobID string) (*core.Job, error) {
+	job, ok := d.opt.Jobs.Get(jobID)
+	if !ok {
+		return nil, &core.ErrProvider{Summary: "找不到任务：" + jobID}
+	}
+	switch job.Status {
+	case "done", "failed", "canceled", "timeout":
+		return nil, &core.ErrProvider{Summary: "任务已经结束，不能取消：" + job.Status}
+	}
+	d.mu.Lock()
+	a := d.active[jobID]
+	d.mu.Unlock()
+	var provErr error
+	if a != nil {
+		a.cancel()
+		if a.video != nil && a.ref != "" {
+			provErr = a.video.Cancel(ctx, a.ref)
+		}
+	}
+	now := d.opt.Now()
+	updated, err := d.opt.Jobs.Update(jobID, func(j *core.Job) {
+		j.Status = "canceled"
+		j.Error = "已取消"
+		if provErr != nil {
+			j.Error = "已取消；供应商侧取消失败：" + firstLine(provErr.Error())
+		}
+		j.UpdatedAt = now
+	})
+	if err != nil {
+		return nil, &core.ErrProvider{Summary: "更新任务状态失败", Raw: err.Error()}
+	}
+	return updated, nil
+}
+
+// Retry 用同一个 Task 换模型重跑，返回新任务。model 为空时取 job.RetryOptions[0]。
+func (d *MediaDriver) Retry(ctx context.Context, jobID string, model string) (*core.Job, error) {
+	job, ok := d.opt.Jobs.Get(jobID)
+	if !ok {
+		return nil, &core.ErrProvider{Summary: "找不到任务：" + jobID}
+	}
+	if job.Task == nil {
+		return nil, &core.ErrProvider{Summary: "这个任务的原始请求已丢失（服务重启过），请重新发起"}
+	}
+	target := core.Target{Lane: core.LaneMedia, Provider: job.Provider, Model: model}
+	if model == "" {
+		if len(job.RetryOptions) == 0 {
+			return nil, &core.ErrProvider{Summary: "没有可换的模型：指定一个模型再试"}
+		}
+		target = job.RetryOptions[0]
+	} else {
+		for _, opt := range job.RetryOptions {
+			if opt.Model == model {
+				target = opt
+				break
+			}
+		}
+	}
+	task := *job.Task
+	task.ID = ""
+	task.CreatedAt = d.opt.Now()
+	var newJob *core.Job
+	var err error
+	switch job.Kind {
+	case core.KindVideo:
+		newJob, _, err = d.startVideo(&task, target, nil)
+	case core.KindAnimation:
+		newJob, _, err = d.startAnimation(&task, target, nil)
+	default:
+		return nil, &core.ErrProvider{Summary: "只有视频和动画任务可以重试"}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return newJob, nil
 }
 
 // ReviseAnimation 在已有动画工程目录上按新指令再跑一轮改代码与渲染。
@@ -358,8 +461,11 @@ func (d *MediaDriver) ReviseAnimation(ctx context.Context, jobID, instruction st
 	if !ok {
 		return nil, &core.ErrProvider{Summary: "找不到动画任务：" + jobID}
 	}
-	if job.Kind != core.KindAnimation || job.CodeDir == "" || job.Task == nil {
+	if job.Kind != core.KindAnimation {
 		return nil, &core.ErrProvider{Summary: "这个任务不是动画，不能修改：" + jobID}
+	}
+	if job.Task == nil || job.CodeDir == "" {
+		return nil, &core.ErrProvider{Summary: "这个动画的原始请求已丢失（服务重启过），请重新生成"}
 	}
 	if job.Status == "running" || job.Status == "submitted" {
 		return nil, &core.ErrProvider{Summary: "动画还在生成中，等它完成再修改", Retryable: true}

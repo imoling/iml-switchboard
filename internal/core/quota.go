@@ -16,6 +16,23 @@ type QuotaManager struct {
 	windowCap map[LaneID]float64
 	weekCap   map[LaneID]float64
 	fableWeekCap float64
+	// observed 是官方 CLI 自己报告的窗口利用率（Claude 的 rate_limit_event），比估算准，15 分钟内优先用。
+	observed map[LaneID]observedQuota
+}
+
+type observedQuota struct {
+	windows []QuotaWindow
+	at      time.Time
+}
+
+// Observe 记录渠道自报的额度窗口。
+func (q *QuotaManager) Observe(lane LaneID, windows []QuotaWindow) {
+	if len(windows) == 0 {
+		return
+	}
+	q.mu.Lock()
+	q.observed[lane] = observedQuota{windows: append([]QuotaWindow(nil), windows...), at: time.Now()}
+	q.mu.Unlock()
 }
 
 type cool struct {
@@ -28,7 +45,7 @@ func NewQuotaManager(l *Ledger, yieldPct func() float64) *QuotaManager {
 	q := &QuotaManager{cooldown: map[LaneID]cool{}, ledger: l, yieldPct: yieldPct,
 		windowCap: map[LaneID]float64{LaneClaudeSub: 35, LaneCodexSub: 8, LaneAgySub: 10},
 		weekCap:   map[LaneID]float64{LaneClaudeSub: 180, LaneCodexSub: 40, LaneAgySub: 50},
-		fableWeekCap: 90}
+		fableWeekCap: 90, observed: map[LaneID]observedQuota{}}
 	var saved map[LaneID]cool
 	if l != nil && l.KVGet("cooldown", &saved) {
 		for k, v := range saved {
@@ -76,6 +93,32 @@ func (q *QuotaManager) Windows(lane LaneID, models map[string]string) []QuotaWin
 	}
 	now := time.Now()
 	out := []QuotaWindow{}
+	q.mu.Lock()
+	obs, hasObs := q.observed[lane]
+	q.mu.Unlock()
+	if hasObs && now.Sub(obs.at) < 15*time.Minute {
+		for _, w := range obs.windows {
+			if w.Label == "" {
+				w.Label = map[string]string{"5h": "5 小时窗口", "week": "本周", "7d": "本周"}[w.Window]
+			}
+			if w.Window == "7d" {
+				w.Window = "week"
+			}
+			out = append(out, w)
+		}
+		if lane == LaneClaudeSub {
+			if fm, ok := models["top"]; ok && q.ledger != nil {
+				wd := int(now.Weekday())
+				if wd == 0 {
+					wd = 7
+				}
+				start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(wd - 1))
+				fu, _, _ := q.ledger.QuotaWindowUsage(lane, start, fm)
+				out = append(out, QuotaWindow{Window: "week_fable", Label: "其中 Fable", Pct: clamp(fu / q.fableWeekCap * 100), ResetsAt: start.AddDate(0, 0, 7)})
+			}
+		}
+		return out
+	}
 	if cap := q.windowCap[lane]; cap > 0 {
 		start := now.Truncate(5 * time.Hour)
 		u, _, _ := q.ledger.QuotaWindowUsage(lane, start, "")

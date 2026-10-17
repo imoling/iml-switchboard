@@ -19,7 +19,7 @@ pre { font: 12px/1.6 ui-monospace, Menlo, monospace; background: var(--page); bo
 
 /* 控制台骨架 */
 .app { display: flex; height: 100vh; background: var(--bg); }
-.side { width: 190px; background: var(--side); border-right: 1px solid var(--line); padding: 44px 8px 12px; display: flex; flex-direction: column; flex-shrink: 0; }
+.side { position: relative; width: 190px; background: var(--side); border-right: 1px solid var(--line); padding: 44px 8px 12px; display: flex; flex-direction: column; flex-shrink: 0; }
 .side .nav { padding: 6px 10px; border-radius: 6px; color: #3a3a3f; margin-bottom: 2px; display: flex; justify-content: space-between; align-items: center; background: none; border: 0; width: 100%; text-align: left; }
 .side .nav:hover { background: rgba(0,0,0,.04); }
 .side .nav.on { background: var(--side-on); color: var(--fg); font-weight: 600; }

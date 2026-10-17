@@ -298,8 +298,14 @@ func (s *Server) quotas(cfg *config.Config) []quotaRow {
 		if !ok || !sl.Enabled {
 			continue
 		}
-		if d, ok := s.d.Router.Driver(lane); !ok || d.Health(context.Background()).Status == "missing" {
+		d, ok := s.d.Router.Driver(lane)
+		if !ok {
 			continue
+		}
+		if h := d.Health(context.Background()); h.Status == "missing" {
+			continue
+		} else {
+			s.d.Router.Quota().Observe(lane, h.Quota)
 		}
 		label := map[core.LaneID]string{core.LaneClaudeSub: "Claude 订阅", core.LaneCodexSub: "ChatGPT 订阅", core.LaneAgySub: "Google AI 订阅"}[lane]
 		for _, wnd := range s.d.Router.Quota().Windows(lane, sl.Models) {
@@ -578,6 +584,7 @@ func (s *Server) accountViews() []accountView {
 		v.Tiers = tiers
 		if d, ok := s.d.Router.Driver(sb.lane); ok {
 			h := d.Health(context.Background())
+			s.d.Router.Quota().Observe(sb.lane, h.Quota)
 			v.Status = h.Status
 			if h.Detail != "" {
 				v.Detail = h.Detail

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Decision, ExplicitRule, Rules as RulesT, Tier } from '../api/types';
-import { ErrorLine, GroupChip, Seg, SetRow, TierChip, Toggle, toast } from '../components/ui';
+import { ErrorLine, GroupChip, Seg, SetRow, TierChip, Toggle } from '../components/ui';
 import { Vendor } from '../components/Vendor';
 import { usd } from '../format';
 import { errText, useDebounced, useLoad } from '../hooks';
@@ -164,7 +164,6 @@ function ExplicitTab({ rules, onSave }: { rules: RulesT; onSave: (r: RulesT) => 
           </div>
         ) : <button className="btn sm" onClick={() => setAdding(true)}>＋ 添加指令</button>}
       </div>
-      <div className="hint mt8" style={{ display: 'none' }}>{toast && ''}</div>
     </div>
   );
 }

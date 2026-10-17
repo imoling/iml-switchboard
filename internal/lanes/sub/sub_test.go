@@ -196,11 +196,11 @@ func TestCodexArgs(t *testing.T) {
 func TestParseRetryAfter(t *testing.T) {
 	now := time.Date(2026, 10, 18, 10, 0, 0, 0, time.Local)
 	cases := map[string]time.Duration{
-		"try again in 2 hours 15 minutes":        2*time.Hour + 15*time.Minute,
-		"Your limit will reset at 3pm":           5 * time.Hour,
-		"resets 9am (Asia/Shanghai)":             23 * time.Hour,
-		`"resetsAt":1892278000`:                  time.Unix(1892278000, 0).Sub(now),
-		"try again at Oct 29th, 2026 8:54 AM.":   time.Date(2026, 10, 29, 8, 54, 0, 0, time.Local).Sub(now),
+		"try again in 2 hours 15 minutes":      2*time.Hour + 15*time.Minute,
+		"Your limit will reset at 3pm":         5 * time.Hour,
+		"resets 9am (Asia/Shanghai)":           23 * time.Hour,
+		`"resetsAt":1892278000`:                time.Unix(1892278000, 0).Sub(now),
+		"try again at Oct 29th, 2026 8:54 AM.": time.Date(2026, 10, 29, 8, 54, 0, 0, time.Local).Sub(now),
 	}
 	for in, want := range cases {
 		got, ok := parseRetryAfter(in, now)

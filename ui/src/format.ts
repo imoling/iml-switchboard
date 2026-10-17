@@ -1,6 +1,6 @@
 import type { Call, Job, Lane, Tier } from './api/types';
 
-export const usd = (n: number) => `$${n.toFixed(2)}`;
+export const usd = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
 export const cny = (n: number) => `¥${n.toFixed(2)}`;
 
 /** 订阅渠道没有钱的概念，显示「订阅」；人民币账号显示原币 */

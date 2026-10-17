@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Call, Job } from '../api/types';
-import { Empty, ErrorLine, GroupChip, LaneChip, Modal, Seg, toast } from '../components/ui';
+import { Empty, ErrorLine, GroupChip, LaneChip, Modal, RevealButton, Seg, toast } from '../components/ui';
 import { Model, Vendor } from '../components/Vendor';
 import { cost, eta, jobCost } from '../format';
 import { errText, useLoad } from '../hooks';
@@ -45,7 +45,7 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
           {active.length > 0 && <div className="hint mb6">进行中</div>}
           {active.map((j) => (
             <div key={j.id} className={`job ${j.status === 'failed' || j.status === 'timeout' ? 'failed' : ''}`}>
-              <GroupChip group="media" /><span className="chip c-m" style={{ display: 'none' }} />
+              <GroupChip group="media" />
               <span className="name" onClick={() => j.kind === 'animation' && setOpen(j)} style={j.kind === 'animation' ? { cursor: 'pointer' } : undefined}>
                 <span className="muted">{KIND_LABEL[j.kind]}</span> {j.prompt_excerpt}{j.seconds ? ` ${j.seconds} 秒` : ''} · <Model provider={j.provider} name={j.model} />
               </span>
@@ -99,7 +99,6 @@ function Thumb({ c }: { c: Call }) {
 
 /** 4.12 动画详情：重做是在现有代码上改，不从头生成 */
 export function AnimationDetail({ job, onClose, onChanged }: { job: Job; onClose: () => void; onChanged: (j: Job) => void }) {
-  const { t } = useTheme();
   const [instruction, setInstruction] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<ApiError | null>(null);
@@ -114,7 +113,7 @@ export function AnimationDetail({ job, onClose, onChanged }: { job: Job; onClose
         <div className="preview">
           <div className="screen">{job.title ?? job.prompt_excerpt} ▶</div>
           <div className="row mt12">
-            <button className="btn sm" disabled={!job.result_path} onClick={() => job.result_path && desktop.revealInFinder(job.result_path)}>在 Finder 中显示</button>
+            <RevealButton path={job.result_path} />
             <button className="btn sm" disabled={!job.result_path} onClick={() => toast('导出 GIF 由后台完成，做好后会在媒体库出现')}>导出 GIF</button>
             <button className="btn sm" disabled={!job.code_dir} onClick={() => job.code_dir && desktop.revealInFinder(job.code_dir)}>打开代码</button>
           </div>
@@ -132,7 +131,6 @@ export function AnimationDetail({ job, onClose, onChanged }: { job: Job; onClose
           <input className="input" placeholder="标题改成从下往上滑入，再慢一点" value={instruction} onChange={(e) => setInstruction(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && redo()} />
           {err && <div className="hint err-text mt8">{err.message}</div>}
           <div className="mt8"><button className="btn pri sm" disabled={busy || !instruction.trim()} onClick={redo}>{busy ? '正在重做…' : '重做'}</button>　<span className="hint">在这一版代码上改，通常 1 分钟内</span></div>
-          <div className="hint mt12" style={{ display: 'none' }}>{t('model')}</div>
         </div>
       </div>
     </Modal>

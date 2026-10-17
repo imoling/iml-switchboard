@@ -2,7 +2,6 @@ package media
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -21,6 +20,7 @@ func (d *MediaDriver) waiter(jobID string) chan struct{} {
 func (d *MediaDriver) finish(jobID string, done chan struct{}) {
 	d.mu.Lock()
 	delete(d.waiters, jobID)
+	delete(d.active, jobID)
 	d.mu.Unlock()
 	close(done)
 }
@@ -107,8 +107,14 @@ func (d *MediaDriver) runVideoJob(job *core.Job, vp VideoProvider, task *core.Ta
 	defer d.finish(job.ID, done)
 	ctx, cancel := context.WithTimeout(context.Background(), d.opt.JobTimeout)
 	defer cancel()
+	d.mu.Lock()
+	d.active[job.ID] = &activeJob{cancel: cancel, video: vp}
+	d.mu.Unlock()
 
 	fail := func(err error) {
+		if ctx.Err() == context.Canceled {
+			return // 已被 Cancel 处理
+		}
 		msg, retryable := classifyJobError(err)
 		var opts []core.Target
 		if retryable {
@@ -126,6 +132,11 @@ func (d *MediaDriver) runVideoJob(job *core.Job, vp VideoProvider, task *core.Ta
 		fail(err)
 		return
 	}
+	d.mu.Lock()
+	if a := d.active[job.ID]; a != nil {
+		a.ref = ref
+	}
+	d.mu.Unlock()
 	d.update(job.ID, emit, func(j *core.Job) {
 		j.Status = "submitted"
 		j.ProviderRef = ref
@@ -136,6 +147,9 @@ func (d *MediaDriver) runVideoJob(job *core.Job, vp VideoProvider, task *core.Ta
 	for {
 		select {
 		case <-ctx.Done():
+			if ctx.Err() == context.Canceled {
+				return // 用户取消，状态已由 Cancel 写好
+			}
 			// 10 分钟没完成：标记超时并尽力取消
 			cctx, ccancel := context.WithTimeout(context.Background(), 15*time.Second)
 			_ = vp.Cancel(cctx, ref)
@@ -150,8 +164,8 @@ func (d *MediaDriver) runVideoJob(job *core.Job, vp VideoProvider, task *core.Ta
 		}
 		st, err := vp.Poll(ctx, ref)
 		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				continue
+			if ctx.Err() != nil {
+				continue // 交给上面的 ctx.Done 分支处理
 			}
 			fail(err)
 			return

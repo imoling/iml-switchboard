@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Mode, Settings as S, ThemeId } from '../api/types';
-import { ErrorLine, Seg, SetRow, Toggle, toast } from '../components/ui';
+import { ErrorLine, RevealButton, Seg, SetRow, Toggle, toast } from '../components/ui';
 import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop } from '../tauri';
@@ -88,7 +88,7 @@ export function Settings() {
             <Toggle on={data.save_prompts} onChange={(v) => save({ save_prompts: v })} />
           </SetRow>
           <SetRow title="数据位置" desc="账本和规则存在这里；媒体文件存在各项目里">
-            <button className="btn sm" onClick={() => desktop.revealInFinder(data.data_dir)}>在 Finder 中显示</button>
+            <RevealButton path={data.data_dir} />
           </SetRow>
           <SetRow title="通知" desc="只发四类：额度、预算、媒体完成或失败、规则建议">
             {(['quota', 'budget', 'media', 'suggestions'] as const).map((k) => (

@@ -284,8 +284,14 @@ func (d *MediaDriver) runAnimationJob(job *core.Job, task *core.Task, outPath, i
 	defer d.finish(job.ID, done)
 	ctx, cancel := context.WithTimeout(context.Background(), d.opt.JobTimeout*3)
 	defer cancel()
+	d.mu.Lock()
+	d.active[job.ID] = &activeJob{cancel: cancel}
+	d.mu.Unlock()
 
 	progress := func(pct float64, status string) {
+		if ctx.Err() != nil {
+			return
+		}
 		d.update(job.ID, emit, func(j *core.Job) {
 			j.Status = status
 			if pct > j.Progress {
@@ -302,12 +308,14 @@ func (d *MediaDriver) runAnimationJob(job *core.Job, task *core.Task, outPath, i
 		mp4, err = d.remotion.Revise(ctx, dir, instruction, task, progress)
 	}
 	if err != nil {
-		msg, retryable := classifyJobError(err)
+		if ctx.Err() == context.Canceled {
+			return // 用户取消，状态已由 Cancel 写好
+		}
+		msg, _ := classifyJobError(err)
 		d.update(job.ID, emit, func(j *core.Job) {
 			j.Status = "failed"
 			j.Error = msg
 			j.CodeDir = dir
-			_ = retryable
 		})
 		return
 	}

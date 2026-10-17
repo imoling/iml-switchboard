@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Call } from '../api/types';
 import { Empty, ErrorLine, LaneChip, TierChip, toast } from '../components/ui';
-import { Model, Vendor } from '../components/Vendor';
+import { Model } from '../components/Vendor';
 import { cost, hhmm, hostLabel, secs, tokens, usd } from '../format';
 import { errText, useDebounced, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
@@ -104,7 +104,6 @@ function Drawer({ call: c, onUpdate }: { call: Call; onUpdate: (c: Call) => void
       <div className="why"><b>为什么这样选</b>
         <ol>
           {c.reason.map((r, i) => <li key={i}>{r}</li>)}
-          {c.candidates.length > 1 && <li>候选：{c.candidates.map((x, i) => <span key={i}>{i > 0 && '、'}<Vendor provider={x.provider} />{x.model}{x.skipped && <span className="muted">（{x.skipped}）</span>}</span>)}</li>}
         </ol>
       </div>
       {c.prompt_excerpt && <div className="why"><b>内容</b><div className="muted" style={{ marginTop: 4, whiteSpace: 'normal', userSelect: 'text' }}>{c.prompt_excerpt}</div></div>}

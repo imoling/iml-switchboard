@@ -277,6 +277,7 @@ func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer [
 				tgt.Skipped = "未接入"
 			} else if h := r.drivers[lid].Health(context.Background()); h.Status == "missing" || h.Status == "error" || h.Status == "disabled" {
 				tgt.Skipped = h.Detail
+			} else if r.quota.Observe(lid, h.Quota); false {
 			} else if ok, why := r.quota.Healthy(lid, tier, sl.Models); !ok {
 				tgt.Skipped = why
 			}

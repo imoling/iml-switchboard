@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Tier } from '../api/types';
 import { LANE_CHIP, LANE_LABEL, TIER_CHIP, laneGroup } from '../format';
 import { useTheme } from '../theme/ThemeContext';
+import { desktop } from '../tauri';
 
 export function Seg<T extends string>({ value, options, onChange, full }: { value: T; options: { id: T; label: string }[]; onChange: (v: T) => void; full?: boolean }) {
   return (
@@ -79,3 +80,8 @@ export function Modal({ title, onClose, children, width }: { title: string; onCl
     </div>
   );
 }
+
+/** 同一个动作在哪儿都叫这一个名字 */
+export const RevealButton = ({ path, disabled }: { path?: string; disabled?: boolean }) => (
+  <button className="btn sm" disabled={disabled || !path} onClick={() => path && desktop.revealInFinder(path)}>在 Finder 中显示</button>
+);
