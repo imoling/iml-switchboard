@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/imoling/iml-switchboard/internal/core"
@@ -83,20 +84,12 @@ func (d *MediaDriver) waitJob(ctx context.Context, jobID string, done chan struc
 }
 
 func isModerationMessage(s string) bool {
-	return len(s) > 0 && (contains(s, "审核") || contains(s, "moderation") || contains(s, "sensitive") || contains(s, "违规"))
-}
-
-func contains(s, sub string) bool {
-	return len(sub) > 0 && len(s) >= len(sub) && (func() bool { return indexOf(s, sub) >= 0 })()
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
+	for _, m := range []string{"审核", "moderation", "sensitive", "违规"} {
+		if strings.Contains(s, m) {
+			return true
 		}
 	}
-	return -1
+	return false
 }
 
 func secondsOf(task *core.Task) int {
