@@ -1,0 +1,10 @@
+/bin/
+/dist/
+/ui/node_modules/
+/ui/dist/
+/ui/src-tauri/target/
+/ui/src-tauri/gen/schemas/
+*.db
+*.db-journal
+.DS_Store
+/.local/
