@@ -216,17 +216,17 @@ func (r *Router) Decide(t *Task) *Decision {
 	// 7. 候选排序
 	prefer := tt.Prefer
 	if len(prefer) == 0 {
-		prefer = []string{"claude_sub", "api", "codex_sub"}
+		prefer = []string{"claude_sub", "api", "codex_sub", "agy_sub"}
 		if tier == TierLow {
-			prefer = []string{"api", "codex_sub", "claude_sub"}
+			prefer = []string{"api", "codex_sub", "agy_sub", "claude_sub"}
 		}
 	}
 	if hit.SubOnly {
-		prefer = []string{"claude_sub", "codex_sub"}
+		prefer = []string{"claude_sub", "codex_sub", "agy_sub"}
 		d.Reason = append(d.Reason, "显式要求只用订阅")
 	} else {
 		// prefer 是优先顺序而不是白名单：没列到的渠道排在后面当回退
-		for _, lane := range []string{"claude_sub", "api", "codex_sub"} {
+		for _, lane := range []string{"claude_sub", "api", "codex_sub", "agy_sub"} {
 			found := false
 			for _, p := range prefer {
 				if p == lane {
@@ -239,7 +239,54 @@ func (r *Router) Decide(t *Task) *Decision {
 		}
 	}
 	d.Candidates = r.textCandidates(cfg, t, tier, prefer, sig.HasImage, &d.Reason)
+	r.pinChoice(t, d)
 	return d
+}
+
+// pinChoice 让调用方点名的渠道或模型排在最前：点了渠道只留该渠道，点了模型把它提到首位（没有就临时构造一个候选）。
+func (r *Router) pinChoice(t *Task, d *Decision) {
+	if t.Lane == "" && t.Model == "" {
+		return
+	}
+	var pinned, rest []Target
+	for _, c := range d.Candidates {
+		switch {
+		case t.Model != "" && c.Model == t.Model && (t.Lane == "" || c.Lane == t.Lane):
+			pinned = append(pinned, c)
+		case t.Lane != "" && c.Lane == t.Lane:
+			pinned = append(pinned, c)
+		default:
+			rest = append(rest, c)
+		}
+	}
+	if len(pinned) == 0 && t.Model != "" {
+		lane := t.Lane
+		if lane == "" {
+			lane = LaneAPI
+			if info, ok := r.reg.Lookup(t.Model); ok {
+				switch info.Provider {
+				case "anthropic":
+					lane = LaneClaudeSub
+				case "openai":
+					lane = LaneCodexSub
+				case "google":
+					lane = LaneAgySub
+				}
+			}
+		}
+		pinned = append(pinned, Target{Lane: lane, Provider: providerOf(lane), Model: t.Model, EstCostUSD: r.reg.EstimateText(t.Model, t.EstTokens)})
+	}
+	if len(pinned) == 0 {
+		d.Reason = append(d.Reason, "点名的渠道不可用，按默认顺序")
+		return
+	}
+	if t.Lane != "" {
+		d.Reason = append(d.Reason, "调用方指定渠道 "+string(t.Lane))
+		d.Candidates = pinned
+		return
+	}
+	d.Reason = append(d.Reason, "调用方指定模型 "+t.Model)
+	d.Candidates = append(pinned, rest...)
 }
 
 func kindLabel(k Kind) string {

@@ -30,8 +30,8 @@ func Default() *Config {
 	}
 	c.Sub = map[string]SubLane{
 		"claude_sub": {Enabled: true, Models: map[string]string{"top": "fable", "high": "opus", "mid": "sonnet", "low": "haiku"}},
-		"codex_sub":  {Enabled: true, Models: map[string]string{"high": "gpt-5.6-sol", "mid": "gpt-5.6-terra", "low": "gpt-5.6-luna"}, ImageGen: true}, // ChatGPT 登录只接受这几个
-		"agy_sub":    {Enabled: false, Models: map[string]string{"high": "gemini-3.1-pro", "mid": "gemini-3.1-flash", "low": "gemini-3.1-flash-lite"}},
+		"codex_sub":  {Enabled: true, Models: map[string]string{"high": "gpt-5.6-sol", "mid": "gpt-5.6-terra", "low": "gpt-5.6-luna"}, ImageGen: true},                                          // ChatGPT 登录只接受这几个
+		"agy_sub":    {Enabled: true, Models: map[string]string{"top": "claude-opus-4-6-thinking", "high": "claude-sonnet-4-6", "mid": "gemini-3.8-flash-high", "low": "gemini-3.8-flash-low"}}, // agy models 列出的型号
 	}
 	c.Media.Image = map[string]MediaTarget{
 		"cheap":   {Provider: "ark", Model: "doubao-seedream-5-0-flash-260915"},

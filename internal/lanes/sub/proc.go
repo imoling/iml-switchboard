@@ -25,6 +25,8 @@ var scrubbedEnv = []string{
 	"ANTHROPIC_BASE_URL",
 	"CLAUDE_CODE_USE_BEDROCK",
 	"CLAUDE_CODE_USE_VERTEX",
+	"GEMINI_API_KEY",
+	"GOOGLE_API_KEY",
 	"OPENAI_API_KEY",
 	"OPENAI_BASE_URL",
 	// 嵌套在 Claude Code 里运行时，这两个变量会让子进程以为自己是被嵌套调用的实例。

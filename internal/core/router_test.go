@@ -163,3 +163,16 @@ func TestErrors(t *testing.T) {
 		t.Fatal("errors.As")
 	}
 }
+
+func TestPinnedLaneAndModel(t *testing.T) {
+	r, claude, api := newTestRouter(t)
+	_ = r.cfg.Update(func(c *config.Config) error { c.API[0].Models["high"] = []string{"glm-5.3"}; return nil })
+	call, _, err := r.Run(context.Background(), &Task{Prompt: "这个系统的架构怎么设计", Lane: LaneAPI, Source: "quick"}, nil)
+	if err != nil || call.Lane != LaneAPI || claude.calls != 0 {
+		t.Fatalf("点名按量付费应只走按量付费：%+v %v", call, err)
+	}
+	call, _, err = r.Run(context.Background(), &Task{Prompt: "翻译：hi", Model: "sonnet", Source: "quick"}, nil)
+	if err != nil || call.Model != "sonnet" || api.calls != 1 {
+		t.Fatalf("点名模型应优先：%+v %v", call, err)
+	}
+}

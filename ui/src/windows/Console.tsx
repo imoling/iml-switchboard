@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, subscribeEvents } from '../api/client';
 import type { Call, Job, Onboarding as Ob, Quota, Status } from '../api/types';
 import { ToastHost } from '../components/ui';
-import appIcon from '../assets/app-icon.svg';
+import appMark from '../assets/app-mark.svg';
 import { Accounts } from '../pages/Accounts';
 import { Calls } from '../pages/Calls';
 import { Evaluation } from '../pages/Evaluation';
@@ -80,7 +80,7 @@ export function Console() {
     <div className="app">
       <aside className="side">
         <div className="drag" data-tauri-drag-region style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 38 }} />
-        <div className="brand"><img src={appIcon} alt="" />{t('app.title')}</div>
+        <div className="brand"><img src={appMark} alt="" />{t('app.title')}</div>
         <hr />
         {NAV.map((n) => (
           <button key={n.id} className={`nav ${page === n.id ? 'on' : ''}`} onClick={() => setPage(n.id)}>

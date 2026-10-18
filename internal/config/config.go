@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -303,6 +304,12 @@ func fillMissing(c *Config) {
 	}
 	if c.Media.Animation.Renderer == "" {
 		c.Media.Animation = d.Media.Animation
+	}
+	// 早期版本把 Antigravity 写成停用且型号已过期；检测到旧型号就换成当前默认并启用
+	if sl, ok := c.Sub["agy_sub"]; ok {
+		if strings.HasPrefix(sl.Models["high"], "gemini-3.1") || len(sl.Models) == 0 {
+			c.Sub["agy_sub"] = d.Sub["agy_sub"]
+		}
 	}
 	// 内置显式指令不能删，被删了就补回来
 	have := map[string]bool{}

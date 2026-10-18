@@ -56,6 +56,13 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "gpt-5.6-sol", Provider: "openai", Display: "GPT-5.6 Sol", InputPerM: 2.5, OutputPerM: 15, CacheReadPerM: 0.25, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
 	add(ModelInfo{ID: "gpt-5.6-terra", Provider: "openai", Display: "GPT-5.6 Terra", InputPerM: 1, OutputPerM: 6, CacheReadPerM: 0.1, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
 	add(ModelInfo{ID: "gpt-5.6-luna", Provider: "openai", Display: "GPT-5.6 Luna", InputPerM: 0.3, OutputPerM: 2, CacheReadPerM: 0.03, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
+	// Antigravity（Google AI 订阅里可选的型号；订阅不计费，价格只用于额度权重与基线）
+	add(ModelInfo{ID: "gemini-3.8-flash-high", Provider: "google", Display: "Gemini 3.8 Flash（高）", InputPerM: 0.5, OutputPerM: 3, CacheReadPerM: 0.05, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "gemini-3.8-flash-medium", Provider: "google", Display: "Gemini 3.8 Flash（中）", InputPerM: 0.3, OutputPerM: 2, CacheReadPerM: 0.03, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "gemini-3.8-flash-low", Provider: "google", Display: "Gemini 3.8 Flash（低）", InputPerM: 0.15, OutputPerM: 1, CacheReadPerM: 0.015, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "claude-sonnet-4-6", Provider: "google", Display: "Sonnet 4.6（Antigravity）", InputPerM: 3, OutputPerM: 15, CacheReadPerM: 0.3, Currency: "USD", Context: 200000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "claude-opus-4-6-thinking", Provider: "google", Display: "Opus 4.6（Antigravity）", InputPerM: 5, OutputPerM: 25, CacheReadPerM: 0.5, Currency: "USD", Context: 200000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "gpt-oss-120b-medium", Provider: "google", Display: "GPT-OSS 120B", InputPerM: 0.1, OutputPerM: 0.5, Currency: "USD", Context: 128000, Tools: true})
 	// 国产
 	add(ModelInfo{ID: "glm-5.3", Provider: "zhipu", Display: "GLM-5.3", InputPerM: cny(8), OutputPerM: cny(28), CacheReadPerM: cny(1.6), Currency: "CNY", Context: 200000, Vision: false, Tools: true})
 	add(ModelInfo{ID: "glm-5.3-flash", Provider: "zhipu", Display: "GLM-5.3-Flash", InputPerM: cny(0.8), OutputPerM: cny(2.8), CacheReadPerM: cny(0.16), Currency: "CNY", Context: 200000, Tools: true})
