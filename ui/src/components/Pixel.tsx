@@ -126,6 +126,29 @@ const MASCOTS: Record<Exclude<ThemeId, 'standard'>, SpriteDef> = {
   },
 };
 
+// 媒体小人：生图是举画笔的画师，生视频是扛摄像机的影师；配色跟各主题走
+const brush = { 4: '....SSSS...R', 5: '.....SS....R', 6: '...CCCCCC..K', 7: '..CCCWWCCC.K', 8: '..CCCCCCCS.K', 9: '..CCCCCCCCK.' };
+const camera = { 6: '..CCCCCC.KKK', 7: '..CCCWWC.KWK', 8: '..CCCCCCSKKK' };
+const MEDIA_SPRITES: Record<Exclude<ThemeId, 'standard'>, Record<'image' | 'video', SpriteDef>> = {
+  dianjiang: {
+    image: person('....HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#5F7A4A', '#3E5230', brush),
+    video: person('....HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#5F7A4A', '#3E5230', camera),
+  },
+  harem: {
+    image: person('..G.HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#8FA88A', '#5F7A4A', brush),
+    video: person('..G.HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#8FA88A', '#5F7A4A', camera),
+  },
+  seaking: {
+    image: person('....HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#3F8F8A', '#2C6B67', brush),
+    video: person('....HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#3F8F8A', '#2C6B67', camera),
+  },
+};
+
+export function mediaSprite(theme: ThemeId, kind: 'image' | 'video'): SpriteDef | null {
+  if (theme === 'standard') return null;
+  return MEDIA_SPRITES[theme][kind];
+}
+
 export function tierSprite(theme: ThemeId, tier: Tier | null | undefined): SpriteDef | null {
   if (theme === 'standard' || !tier) return null;
   return TIER_SPRITES[theme][tier];
@@ -169,6 +192,14 @@ export function TierSprite({ tier, scale = 1 }: { tier: Tier | null | undefined;
   return <Sprite def={def} scale={scale} className="px" />;
 }
 
+/** 当前主题的媒体小人；标准主题不显示 */
+export function MediaSprite({ kind, scale = 1 }: { kind: 'image' | 'video'; scale?: number }) {
+  const { effectiveId } = useTheme();
+  const def = mediaSprite(effectiveId, kind);
+  if (!def) return null;
+  return <Sprite def={def} scale={scale} className="px" />;
+}
+
 /** 吉祥物：轻微上下浮动，隔几秒眨一次眼 */
 export function Mascot({ scale = 3, className }: { scale?: number; className?: string }) {
   const { effectiveId } = useTheme();
@@ -191,4 +222,4 @@ export function Mascot({ scale = 3, className }: { scale?: number; className?: s
   return <Sprite def={def} scale={scale} blink={blink} className={`px px-bob ${className ?? ''}`} />;
 }
 
-export const ALL_SPRITES: SpriteDef[] = [...Object.values(TIER_SPRITES).flatMap((m) => Object.values(m)), ...Object.values(MASCOTS)];
+export const ALL_SPRITES: SpriteDef[] = [...Object.values(TIER_SPRITES).flatMap((m) => Object.values(m)), ...Object.values(MASCOTS), ...Object.values(MEDIA_SPRITES).flatMap((m) => Object.values(m))];

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Account, Tier } from '../api/types';
 import { Dot, ErrorLine, Modal, toast } from '../components/ui';
-import { TierSprite } from '../components/Pixel';
+import { MediaSprite, TierSprite } from '../components/Pixel';
 import { VendorLogo } from '../components/Vendor';
 import { cny, usd } from '../format';
 import { errText, useLoad } from '../hooks';
@@ -55,7 +55,7 @@ export function Accounts() {
         <span key={k} className={`tile ${v ? '' : 'off'}`}>{isTier(k) && <TierSprite tier={k} scale={2} />}<span className="tn">{isTier(k) ? t(`tier.${k}`) : k}</span><span className="tm">{name(a, v)}</span></span>
       ))}
       {(a.media ?? []).map((m) => (
-        <span key={m.model} className="tile media" title={m.model}><span className="chip c-m">{t(m.kind === 'video' ? 'media.video' : 'media.image')}</span><span className="tm">{m.display}</span></span>
+        <span key={m.model} className="tile media" title={m.model}><MediaSprite kind={m.kind} scale={2} /><span className="chip c-m">{t(m.kind === 'video' ? 'media.video' : 'media.image')}</span><span className="tm">{m.display}</span></span>
       ))}
       <span className="chev">▾</span>
     </div>
