@@ -1174,6 +1174,7 @@ func (s *Server) verifyAccount(w http.ResponseWriter, r *http.Request) (any, err
 			s.d.Router.Quota().MarkCooldown(core.LaneID("acct:"+id), time.Hour, err.Error())
 			return nil, err
 		}
+		s.d.Router.Quota().ClearCooldown(core.LaneID("acct:" + id))
 		for _, v := range s.accountViews() {
 			if v.ID == id {
 				return v, nil

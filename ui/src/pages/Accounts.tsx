@@ -97,10 +97,10 @@ export function Accounts() {
               {a.status === 'error' && a.top_up_url
                 ? <button className="btn sm" onClick={() => desktop.openUrl(a.top_up_url!)}>去充值</button>
                 : a.status === 'error'
-                  ? <button className="btn sm" disabled={busy === a.id} onClick={() => act(a.id, () => api.verifyAccount(a.id))}>重新验证</button>
+                  ? <button className="btn sm" disabled={busy === a.id} onClick={() => act(a.id, async () => { await api.verifyAccount(a.id); toast(`${a.label} 验证通过，密钥可用`); })}>重新验证</button>
                   : <span className="muted">{monthCost(a) && `本月 ${monthCost(a)}`}</span>}
 
-              <select className="sel" value="" onChange={(e) => { const v = e.target.value; if (v === 'toggle') void act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled })); if (v === 'verify') void act(a.id, () => api.verifyAccount(a.id)); if (v === 'delete') void act(a.id, () => api.deleteAccount(a.id)); }}>
+              <select className="sel" value="" onChange={(e) => { const v = e.target.value; if (v === 'toggle') void act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled })); if (v === 'verify') void act(a.id, async () => { await api.verifyAccount(a.id); toast(`${a.label} 验证通过，密钥可用`); }); if (v === 'delete') void act(a.id, () => api.deleteAccount(a.id)); }}>
                 <option value="">操作 ▾</option><option value="verify">重新验证</option><option value="toggle">{a.enabled ? '停用' : '启用'}</option><option value="delete">删除</option>
               </select>
               {((a.tiers && Object.keys(a.tiers).length > 0) || (a.media && a.media.length > 0)) && tierTiles(a)}

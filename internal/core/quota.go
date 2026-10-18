@@ -297,3 +297,17 @@ func clamp(v float64) float64 {
 	}
 	return v
 }
+
+// ClearCooldown 解除某渠道或账号的冷却（比如重新验证通过后）。
+func (q *QuotaManager) ClearCooldown(lane LaneID) {
+	q.mu.Lock()
+	delete(q.cooldown, lane)
+	cp := map[LaneID]cool{}
+	for k, v := range q.cooldown {
+		cp[k] = v
+	}
+	q.mu.Unlock()
+	if q.ledger != nil {
+		_ = q.ledger.KVSet("cooldown", cp)
+	}
+}
