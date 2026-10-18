@@ -176,3 +176,21 @@ func TestPinnedLaneAndModel(t *testing.T) {
 		t.Fatalf("点名模型应优先：%+v %v", call, err)
 	}
 }
+
+func TestQuotaObserveMerge(t *testing.T) {
+	r, _, _ := newTestRouter(t)
+	q := r.quota
+	q.Observe(LaneClaudeSub, []QuotaWindow{{Window: "5h", Pct: 7}, {Window: "week", Pct: 18}, {Window: "week_fable", Pct: 34}})
+	q.Observe(LaneClaudeSub, []QuotaWindow{{Window: "5h", Pct: 9}, {Window: "week", Pct: 19}})
+	ws := q.Windows(LaneClaudeSub, map[string]string{"top": "fable"})
+	got := map[string]QuotaWindow{}
+	for _, w := range ws {
+		got[w.Window] = w
+	}
+	if got["5h"].Pct != 9 || got["week_fable"].Pct != 34 || got["week_fable"].Estimated || got["week_fable"].Label != "其中 Fable" {
+		t.Fatalf("合并后应保留 Fable 窗口：%+v", ws)
+	}
+	if !q.fableStale(LaneCodexSub) {
+		t.Fatal("没有观测过的渠道应视为过期")
+	}
+}

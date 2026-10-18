@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { api } from '../api/client';
+import { useEffect, useState } from 'react';
+import { api, subscribeEvents } from '../api/client';
+import type { Quota } from '../api/types';
 import { Bar, ErrorLine, GroupChip, Seg } from '../components/ui';
 import { Vendor } from '../components/Vendor';
 import { QUOTA_ESTIMATE_NOTE } from '../copy';
@@ -10,6 +11,10 @@ import { useTheme } from '../theme/ThemeContext';
 type Range = 'today' | '7d' | '30d';
 
 export function Overview() {
+  const [quotas, setQuotas] = useState<Quota[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  useEffect(() => subscribeEvents((e) => { if (e.type === 'quota') { setQuotas(e.data.quotas); setRefreshing(false); } }), []);
+  const refreshQuota = async () => { setRefreshing(true); try { await api.refreshQuota(); } catch { setRefreshing(false); } setTimeout(() => setRefreshing(false), 120000); };
   const { t } = useTheme();
   const [range, setRange] = useState<Range>('7d');
   const { data, error } = useLoad(() => api.overview(range), [range]);
@@ -44,8 +49,8 @@ export function Overview() {
               </div>
             </div>
             <div className="panel">
-              <h5>订阅额度</h5>
-              {data.quotas.map((q, i) => (
+              <h5 style={{ display: 'flex', alignItems: 'center' }}>订阅额度<button className="btn sm" style={{ marginLeft: 'auto' }} disabled={refreshing} onClick={refreshQuota}>{refreshing ? '正在刷新…' : '刷新'}</button></h5>
+              {(quotas ?? data.quotas).map((q, i) => (
                 <div key={i}>
                   <div className="qline">
                     <span style={q.sub ? { paddingLeft: 18 } : undefined}>{!q.sub && <Vendor provider={q.provider} />}{q.label}</span>

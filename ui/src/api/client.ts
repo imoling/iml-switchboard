@@ -1,4 +1,4 @@
-import type {
+import type { Quota,
   Account, Call, Decision, Evaluation, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview,
   QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier,
 } from './types';
@@ -52,6 +52,7 @@ export const api = {
   mode: (mode: Mode) => post<Status>('/api/mode', { mode }),
   projection: (on: boolean) => post<Status>('/api/projection', { on }),
   overview: (range: 'today' | '7d' | '30d') => get<Overview>(`/api/overview?range=${range}`),
+  refreshQuota: () => post<{ started: boolean; quotas: Quota[] }>('/api/quota/refresh'),
   calls: (q: { source?: string; lane?: string; tier?: string; q?: string; limit?: number; before?: string } = {}) => get<Call[]>(`/api/calls${qs(q)}`),
   call: (id: string) => get<Call>(`/api/calls/${id}`),
   escalate: (id: string) => post<{ ok: boolean; escalations_for_task: number }>(`/api/calls/${id}/escalate`),

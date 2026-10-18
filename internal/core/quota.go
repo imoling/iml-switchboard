@@ -36,8 +36,22 @@ func (q *QuotaManager) Observe(lane LaneID, windows []QuotaWindow) {
 	if len(windows) == 0 {
 		return
 	}
+	now := time.Now()
 	q.mu.Lock()
-	q.observed[lane] = observedQuota{Windows: append([]QuotaWindow(nil), windows...), At: time.Now()}
+	// 合并：这次没报的窗口（比如只有调用 Fable 才出现的 Fable 周窗口）保留上次的值和时间
+	merged := make([]QuotaWindow, 0, len(windows)+2)
+	seen := map[string]bool{}
+	for _, w := range windows {
+		w.ObservedAt = now
+		merged = append(merged, w)
+		seen[w.Window] = true
+	}
+	for _, w := range q.observed[lane].Windows {
+		if !seen[w.Window] && now.Sub(w.ObservedAt) < 7*24*time.Hour {
+			merged = append(merged, w)
+		}
+	}
+	q.observed[lane] = observedQuota{Windows: merged, At: now}
 	cp := map[LaneID]observedQuota{}
 	for k, v := range q.observed {
 		cp[k] = v
@@ -73,7 +87,24 @@ func (q *QuotaManager) Refresh(ctx context.Context, drivers map[LaneID]Driver, f
 		if ws, err := p.ProbeQuota(ctx); err == nil {
 			q.Observe(lane, ws)
 		}
+		if deep, ok := d.(QuotaProberDeep); ok && force && q.fableStale(lane) {
+			if ws, err := deep.ProbeQuotaDeep(ctx); err == nil {
+				q.Observe(lane, ws)
+			}
+		}
 	}
+}
+
+// fableStale 判断 Fable 周窗口是否超过 6 小时没更新。
+func (q *QuotaManager) fableStale(lane LaneID) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, w := range q.observed[lane].Windows {
+		if strings.Contains(strings.ToLower(w.Window), "fable") {
+			return time.Since(w.ObservedAt) > 6*time.Hour
+		}
+	}
+	return true
 }
 
 type cool struct {
@@ -146,7 +177,9 @@ func (q *QuotaManager) Windows(lane LaneID, models map[string]string) []QuotaWin
 	if hasObs && now.Sub(obs.At) < observedTTL {
 		sawFable := false
 		for _, w := range obs.Windows {
-			w.ObservedAt = obs.At
+			if w.ObservedAt.IsZero() {
+				w.ObservedAt = obs.At
+			}
 			key := strings.ToLower(w.Window)
 			switch {
 			case strings.Contains(key, "fable"):

@@ -9,4 +9,4 @@ export function quotaWarning(quotas: Quota[], yieldPct: number): string | null {
   return `${name} 额度已过 ${Math.floor(hot.pct / 10) * 10}%，低档和中档任务改走按量付费`;
 }
 
-export const QUOTA_ESTIMATE_NOTE = '额度为本应用记录的估算，以官方显示为准';
+export const QUOTA_ESTIMATE_NOTE = '带「估算」的行是按本应用记录估的；其余由官方命令回报，以官方显示为准';

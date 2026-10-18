@@ -271,6 +271,9 @@ func windowName(s string) string {
 		return "week"
 	case "monthly":
 		return "month"
+	case "seven_day_overage_included":
+		// 只在调用 Fable 时出现，就是 Claude Code 面板上的「Fable limit」
+		return "week_fable"
 	}
 	return s
 }
@@ -365,6 +368,24 @@ func (d *ClaudeDriver) ProbeQuota(ctx context.Context) ([]core.QuotaWindow, erro
 	pctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	if _, err := d.Run(pctx, &core.Task{Prompt: "回复 OK", Kind: core.KindText, Source: "probe"}, core.Target{Lane: d.ID(), Model: "haiku"}, nil); err != nil {
+		var rl *core.ErrRateLimited
+		if !errors.As(err, &rl) {
+			return nil, err
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.lastQuota) == 0 {
+		return nil, errors.New("CLI 没有回报额度")
+	}
+	return append([]core.QuotaWindow(nil), d.lastQuota...), nil
+}
+
+// ProbeQuotaDeep 用一次最小的 Fable 调用拿到 Fable 专属的周窗口；只在手动刷新且上次数据过期时用。
+func (d *ClaudeDriver) ProbeQuotaDeep(ctx context.Context) ([]core.QuotaWindow, error) {
+	pctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+	if _, err := d.Run(pctx, &core.Task{Prompt: "回复 OK", Kind: core.KindText, Source: "probe"}, core.Target{Lane: d.ID(), Model: "fable"}, nil); err != nil {
 		var rl *core.ErrRateLimited
 		if !errors.As(err, &rl) {
 			return nil, err

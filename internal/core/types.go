@@ -189,6 +189,11 @@ type QuotaProber interface {
 	ProbeQuota(ctx context.Context) ([]QuotaWindow, error)
 }
 
+// QuotaProberDeep 是更贵的探测：会用到顶配模型，只在手动刷新时调用。
+type QuotaProberDeep interface {
+	ProbeQuotaDeep(ctx context.Context) ([]QuotaWindow, error)
+}
+
 // ErrRateLimited 由驱动返回，表示该渠道被限流或额度用完。
 type ErrRateLimited struct {
 	Lane       LaneID
