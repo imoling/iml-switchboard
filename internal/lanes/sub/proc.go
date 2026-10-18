@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -33,6 +34,9 @@ var scrubbedEnv = []string{
 	"CLAUDECODE",
 	"CLAUDE_CODE_ENTRYPOINT",
 }
+
+// InnerEnv 是给订阅子进程打的标记。
+const InnerEnv = "IMLS_INNER"
 
 // cleanEnv 返回清洗后的环境变量列表。
 func cleanEnv(base []string) []string {
@@ -76,59 +80,142 @@ type procResult struct {
 	Err error
 }
 
-// runProc 带上下文取消、超时、stderr 收集、环境清洗地运行子进程，并逐行回调 stdout。
-func runProc(ctx context.Context, spec procSpec) procResult {
-	timeout := spec.Timeout
-	if timeout <= 0 {
-		timeout = DefaultTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+// started 是已经启动、还没交任务的子进程。预热池里放的就是它：启动开销提前付掉，任务来了直接写标准输入。
+type started struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout *os.File // 自己建的管道：后台等进程退出时不会提前关掉它，读完最后一行之前数据不丢
+	stderr *bytes.Buffer
+	exited chan struct{}
+	err    error // Wait 的结果，exited 关闭后可读
+}
 
-	cmd := exec.CommandContext(ctx, spec.Bin, spec.Args...)
+// startProc 启动子进程：清洗环境、打上 InnerEnv 标记，标准输入留着等任务。
+func startProc(spec procSpec) (*started, error) {
+	cmd := exec.Command(spec.Bin, spec.Args...)
 	cmd.Dir = spec.Dir
 	base := spec.Env
 	if base == nil {
 		base = os.Environ()
 	}
-	cmd.Env = cleanEnv(base)
-	if spec.Stdin != "" {
-		cmd.Stdin = strings.NewReader(spec.Stdin)
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	stdout, err := cmd.StdoutPipe()
+	// InnerEnv 标记「这是 Switchboard 拉起的子进程」：子进程里若又拉起 imls mcp，它会直接退出，不形成循环
+	cmd.Env = append(cleanEnv(base), InnerEnv+"=1")
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return procResult{ExitCode: -1, Err: err}
+		return nil, err
 	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	cmd.Stdout = w
+	ownGroup(cmd)
+	// 进程退出后最多再等 2 秒就关掉错误输出的管道：防止它的子进程还握着管道，让 Wait 一直等下去
+	cmd.WaitDelay = 2 * time.Second
+	s := &started{cmd: cmd, stdin: stdin, stdout: r, stderr: &bytes.Buffer{}, exited: make(chan struct{})}
+	cmd.Stderr = s.stderr
 	if err := cmd.Start(); err != nil {
-		return procResult{ExitCode: -1, Err: err}
+		r.Close()
+		w.Close()
+		return nil, err
 	}
+	w.Close() // 子进程拿着写端；它退出后读端才会读到结尾
+	go func() {
+		s.err = cmd.Wait()
+		close(s.exited)
+	}()
+	return s, nil
+}
 
-	sc := bufio.NewScanner(stdout)
+// alive 表示进程还在等任务。
+func (s *started) alive() bool {
+	select {
+	case <-s.exited:
+		return false
+	default:
+		return true
+	}
+}
+
+// kill 结束进程（连同它的子进程）并回收。
+func (s *started) kill() {
+	_ = s.stdin.Close()
+	if s.alive() {
+		killTree(s.cmd)
+	}
+	<-s.exited
+	s.stdout.Close()
+}
+
+// finish 把任务写进标准输入，逐行读输出直到结束。done 非空时，它返回 true 就不再等进程自己退出（有的 CLI 读完输入还会挂着）。
+func (s *started) finish(ctx context.Context, input string, timeout time.Duration, onLine func(string), done func() bool) procResult {
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	go func() {
+		select {
+		case <-ctx.Done():
+			killTree(s.cmd)
+		case <-s.exited:
+		}
+	}()
+	if input != "" {
+		_, _ = io.WriteString(s.stdin, input)
+	}
+	_ = s.stdin.Close()
+
+	stoppedEarly := false
+	sc := bufio.NewScanner(s.stdout)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	for sc.Scan() {
-		if spec.OnLine != nil {
-			spec.OnLine(sc.Text())
+		if onLine != nil {
+			onLine(sc.Text())
+		}
+		if done != nil && done() {
+			stoppedEarly = true
+			break
 		}
 	}
-	waitErr := cmd.Wait()
+	if stoppedEarly {
+		// 结果已经拿到：给一秒自己退出，不退就结束它
+		select {
+		case <-s.exited:
+		case <-time.After(time.Second):
+			killTree(s.cmd)
+		}
+	}
+	<-s.exited
+	s.stdout.Close()
 
-	res := procResult{Stderr: stderr.String()}
+	res := procResult{Stderr: s.stderr.String()}
+	if stoppedEarly {
+		return res
+	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		res.TimedOut = errors.Is(ctxErr, context.DeadlineExceeded)
 		res.Canceled = errors.Is(ctxErr, context.Canceled)
 	}
-	if waitErr != nil {
+	if s.err != nil {
 		var ee *exec.ExitError
-		if errors.As(waitErr, &ee) {
+		if errors.As(s.err, &ee) {
 			res.ExitCode = ee.ExitCode()
 		} else {
 			res.ExitCode = -1
-			res.Err = waitErr
+			res.Err = s.err
 		}
 	}
 	return res
+}
+
+// runProc 带上下文取消、超时、stderr 收集、环境清洗地运行子进程，并逐行回调 stdout。
+func runProc(ctx context.Context, spec procSpec) procResult {
+	s, err := startProc(spec)
+	if err != nil {
+		return procResult{ExitCode: -1, Err: err}
+	}
+	return s.finish(ctx, spec.Stdin, spec.Timeout, spec.OnLine, nil)
 }
 
 // lookBin 查找可执行文件；找不到返回空串。

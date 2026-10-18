@@ -19,9 +19,31 @@ type AntigravityDriver struct {
 	Bin     string
 	Timeout time.Duration
 	Now     func() time.Time
+	// Prewarm 为真时，只读任务用完一个进程就在后台预热下一个（后台服务里打开）。
+	Prewarm bool
 
+	pool     *warmPool
 	mu       sync.Mutex
 	cooldown time.Time
+}
+
+func (d *AntigravityDriver) warm() *warmPool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.Prewarm && d.pool == nil {
+		// 闲置上限要短于 --print-timeout：agy 从启动就开始计时
+		d.pool = newWarmPool(5*time.Minute, 1)
+	}
+	return d.pool
+}
+
+// Close 关掉预热的进程。
+func (d *AntigravityDriver) Close() { d.warm().close() }
+
+// AgyStdinPayload 是写进 agy 标准输入的一条消息。格式是试出来的：event 必填，message 要是对象。
+func AgyStdinPayload(task *core.Task) string {
+	b, _ := json.Marshal(map[string]any{"event": "user", "message": map[string]string{"role": "user", "content": buildPrompt(task)}})
+	return string(b) + "\n"
 }
 
 // NewAntigravityDriver 构造驱动。
@@ -53,7 +75,8 @@ func (d *AntigravityDriver) timeout() time.Duration {
 
 // BuildArgs 组装参数：纯文本任务用 plan 模式（不改文件），需要写文件的任务用 accept-edits 并指定工作目录。
 func (d *AntigravityDriver) BuildArgs(task *core.Task, target core.Target) []string {
-	args := []string{"-p", buildPrompt(task), "--output-format", "stream-json", "--disable-slash-commands",
+	// 提示词从标准输入传；-p 必须带一个值，否则 agy 会把下一个参数当成提示词
+	args := []string{"-p", "", "--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands",
 		"--print-timeout", d.timeout().String()}
 	if target.Model != "" {
 		args = append(args, "--model", target.Model)
@@ -161,11 +184,26 @@ func (d *AntigravityDriver) Run(ctx context.Context, task *core.Task, target cor
 		return nil, &core.ErrProvider{Summary: "Antigravity 不可用：本机没有找到 agy 命令", Retryable: true}
 	}
 	parser := &agyParser{emit: emit}
-	spec := procSpec{Bin: bin, Args: d.BuildArgs(task, target), Timeout: d.timeout() + 30*time.Second, OnLine: parser.feed}
+	spec := procSpec{Bin: bin, Args: d.BuildArgs(task, target)}
+	var pool *warmPool
 	if needsWrite(task) {
 		spec.Dir = task.ProjectDir
+	} else {
+		pool = d.warm()
 	}
-	res := runProc(ctx, spec)
+	var res procResult
+	p := pool.take(spec)
+	if p == nil {
+		var err error
+		if p, err = startProc(spec); err != nil {
+			res = procResult{ExitCode: -1, Err: err}
+		}
+	}
+	pool.refill(spec)
+	if p != nil {
+		// agy 读完输入、出了结果也不一定自己退出：看到 result 就收工
+		res = p.finish(ctx, AgyStdinPayload(task), d.timeout()+30*time.Second, parser.feed, func() bool { return parser.p.SawResult })
+	}
 	parsed := parser.done()
 	if res.Err != nil {
 		return nil, &core.ErrProvider{Summary: "Antigravity 启动失败：" + firstLine(res.Err.Error()), Raw: res.Stderr, Retryable: true}

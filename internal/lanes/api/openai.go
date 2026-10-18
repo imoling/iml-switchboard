@@ -186,8 +186,11 @@ func (d *APIDriver) resolve(target core.Target) (Account, error) {
 // ---- 请求体 ----
 
 type chatMessage struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
+	Role       string          `json:"role"`
+	Content    interface{}     `json:"content"`
+	ToolCalls  json.RawMessage `json:"tool_calls,omitempty"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
+	Name       string          `json:"name,omitempty"`
 }
 
 type contentPart struct {
@@ -202,6 +205,7 @@ type chatRequest struct {
 	Model         string          `json:"model"`
 	Messages      []chatMessage   `json:"messages"`
 	Tools         json.RawMessage `json:"tools,omitempty"`
+	ToolChoice    json.RawMessage `json:"tool_choice,omitempty"`
 	Stream        bool            `json:"stream,omitempty"`
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
@@ -291,7 +295,11 @@ func BuildChatRequest(task *core.Task, model string) (*chatRequest, error) {
 			continue // 已经放在最前面
 		}
 		if len(m.Images) == 0 {
-			req.Messages = append(req.Messages, chatMessage{Role: m.Role, Content: m.Content})
+			cm := chatMessage{Role: m.Role, Content: m.Content, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID, Name: m.Name}
+			if len(m.ToolCalls) > 0 && m.Content == "" {
+				cm.Content = nil // 只调工具的助手消息，content 按惯例给 null
+			}
+			req.Messages = append(req.Messages, cm)
 			continue
 		}
 		parts := []contentPart{}
@@ -312,6 +320,9 @@ func BuildChatRequest(task *core.Task, model string) (*chatRequest, error) {
 	}
 	if task.HasTools() {
 		req.Tools = task.Tools
+		if len(task.ToolChoice) > 0 && string(task.ToolChoice) != "null" {
+			req.ToolChoice = task.ToolChoice
+		}
 	}
 	if task.Stream {
 		req.Stream = true
@@ -416,6 +427,8 @@ func (d *APIDriver) readOnce(r io.Reader) (*core.Result, error) {
 	res := &core.Result{Model: cr.Model, Raw: json.RawMessage(b)}
 	if len(cr.Choices) > 0 {
 		res.Text = cr.Choices[0].Message.Content
+		res.FinishReason = cr.Choices[0].FinishReason
+		res.ToolCalls = marshalToolCalls(cr.Choices[0].Message.ToolCalls)
 	}
 	if cr.Usage != nil {
 		res.Usage.InputTokens = cr.Usage.PromptTokens
@@ -500,7 +513,26 @@ func (d *APIDriver) readStream(r io.Reader, emit func(core.Event)) (*core.Result
 		rawMsg["tool_calls"] = tcs
 	}
 	res.Raw, _ = json.Marshal(rawMsg)
+	res.FinishReason = finish
+	res.ToolCalls = marshalToolCalls(tcs)
 	return res, nil
+}
+
+// marshalToolCalls 把工具调用整理成 OpenAI 非流式格式的数组：补上 type，去掉流式才有的 index。没有返回 nil。
+func marshalToolCalls(tcs []toolCall) json.RawMessage {
+	if len(tcs) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(tcs))
+	for _, c := range tcs {
+		typ := c.Type
+		if typ == "" {
+			typ = "function"
+		}
+		out = append(out, map[string]any{"id": c.ID, "type": typ, "function": map[string]string{"name": c.Function.Name, "arguments": c.Function.Arguments}})
+	}
+	b, _ := json.Marshal(out)
+	return b
 }
 
 // Health 只检查是否有账号与密钥可取，不发任何请求。

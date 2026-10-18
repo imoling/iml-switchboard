@@ -2,9 +2,11 @@ package sub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -41,28 +43,45 @@ func TestClaudeArgsNeverContainForbiddenFlag(t *testing.T) {
 
 func TestClaudeArgsTextVsWrite(t *testing.T) {
 	d := NewClaudeDriver()
-	text := strings.Join(d.BuildArgs(&core.Task{Kind: core.KindText, Prompt: "hi", System: "s"}, core.Target{Model: "opus"}), " ")
-	for _, want := range []string{"-p hi", "--output-format stream-json", "--verbose", "--no-session-persistence", "--model opus", "--append-system-prompt s", "--tools "} {
+	textArgs := d.BuildArgs(&core.Task{Kind: core.KindText, Prompt: "hi", System: "s"}, core.Target{Model: "opus"})
+	text := strings.Join(textArgs, " ")
+	for _, want := range []string{"-p --input-format stream-json", "--output-format stream-json", "--verbose", "--no-session-persistence", "--model opus", "--tools "} {
 		if !strings.Contains(text, want) {
 			t.Errorf("缺少 %q：%s", want, text)
 		}
 	}
-	if strings.Contains(text, "--permission-mode") {
-		t.Errorf("纯文本任务不应有 permission-mode")
+	if strings.Contains(text, "hi") {
+		t.Errorf("提示词不该出现在参数里（走标准输入）：%s", text)
 	}
-	write := strings.Join(d.BuildArgs(&core.Task{Kind: core.KindAnimation, Prompt: "x", ProjectDir: "/tmp/p"}, core.Target{Model: "sonnet"}), " ")
-	if strings.Contains(write, "--tools") {
-		t.Errorf("写文件任务不应禁用工具：%s", write)
+	// 文本子任务换掉默认系统提示，宿主自带的系统提示接在后面
+	if i := slices.Index(textArgs, "--system-prompt"); i < 0 || !strings.HasPrefix(textArgs[i+1], subtaskSystem) || !strings.HasSuffix(textArgs[i+1], "\n\ns") {
+		t.Errorf("系统提示不对：%q", textArgs)
 	}
-	for _, want := range []string{"--permission-mode acceptEdits", "--max-turns 12"} {
+	if strings.Contains(text, "--permission-mode") || strings.Contains(text, "--append-system-prompt") {
+		t.Errorf("纯文本任务不应有 permission-mode 或追加系统提示：%s", text)
+	}
+	write := strings.Join(d.BuildArgs(&core.Task{Kind: core.KindAnimation, Prompt: "x", ProjectDir: "/tmp/p", System: "s"}, core.Target{Model: "sonnet"}), " ")
+	if strings.Contains(write, "--tools") || strings.Contains(write, "--system-prompt") {
+		t.Errorf("写文件任务不应禁用工具或换掉默认系统提示：%s", write)
+	}
+	for _, want := range []string{"--permission-mode acceptEdits", "--max-turns 12", "--append-system-prompt s"} {
 		if !strings.Contains(write, want) {
 			t.Errorf("缺少 %q：%s", want, write)
 		}
 	}
-	// 多轮消息拍平
-	multi := d.BuildArgs(&core.Task{Kind: core.KindText, Prompt: "p", Messages: []core.Message{{Role: "user", Content: "a"}, {Role: "assistant", Content: "b"}, {Role: "user", Content: "p"}}}, core.Target{})
-	if !strings.Contains(multi[1], "[assistant]\nb") || !strings.HasSuffix(multi[1], "当前请求：\np") {
-		t.Errorf("多轮拍平不对：%q", multi[1])
+	// 多轮消息拍平后作为一条 stream-json 消息走标准输入
+	payload := StdinPayload(&core.Task{Kind: core.KindText, Prompt: "p", Messages: []core.Message{{Role: "user", Content: "a"}, {Role: "assistant", Content: "b"}, {Role: "user", Content: "p"}}})
+	var msg struct {
+		Type    string `json:"type"`
+		Message struct {
+			Content []struct{ Text string } `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(payload), &msg); err != nil || msg.Type != "user" || len(msg.Message.Content) != 1 {
+		t.Fatalf("标准输入不是一条用户消息：%q %v", payload, err)
+	}
+	if got := msg.Message.Content[0].Text; !strings.Contains(got, "[assistant]\nb") || !strings.HasSuffix(got, "当前请求：\np") {
+		t.Errorf("多轮拍平不对：%q", got)
 	}
 }
 
@@ -176,6 +195,7 @@ func TestParseCodexFixtures(t *testing.T) {
 
 func TestCodexArgs(t *testing.T) {
 	d := NewCodexDriver()
+	d.Home = t.TempDir() // 不读本机真实的 ~/.codex：那里可能已经接入了 Switchboard
 	args, stdin := d.BuildArgs(&core.Task{Kind: core.KindText, Prompt: "回复 OK"}, core.Target{Model: "gpt-5.6-luna"})
 	joined := strings.Join(args, " ")
 	if joined != "exec --json --skip-git-repo-check -m gpt-5.6-luna --ephemeral -" {
@@ -214,6 +234,7 @@ func TestParseRetryAfter(t *testing.T) {
 }
 
 func TestRunProcWithFakeBinary(t *testing.T) {
+	needShell(t)
 	dir := t.TempDir()
 	script := filepath.Join(dir, "fake.sh")
 	os.WriteFile(script, []byte("#!/bin/sh\necho line1\necho line2\necho err >&2\nif [ -n \"$ANTHROPIC_API_KEY\" ]; then echo LEAK; fi\nexit 3\n"), 0o755)
@@ -234,6 +255,7 @@ func TestRunProcWithFakeBinary(t *testing.T) {
 }
 
 func TestClaudeRunWithFakeBinary(t *testing.T) {
+	needShell(t)
 	dir := t.TempDir()
 	home := t.TempDir()
 	os.MkdirAll(filepath.Join(home, ".claude"), 0o755)
@@ -294,6 +316,7 @@ func TestHealthMissing(t *testing.T) {
 }
 
 func TestCodexRunWithFakeBinary(t *testing.T) {
+	needShell(t)
 	dir := t.TempDir()
 	home := t.TempDir()
 	os.MkdirAll(filepath.Join(home, ".codex", "generated_images"), 0o755)

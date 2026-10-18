@@ -37,7 +37,8 @@ type CodexDriver struct {
 	Now func() time.Time
 
 	mu       sync.Mutex
-	planType string // 最近一次探测到的套餐类型（free / plus / pro）
+	problems []string // 最近一次自检发现的问题，受 mu 保护
+	planType string   // 最近一次探测到的套餐类型（free / plus / pro）
 	cooldown time.Time
 }
 
@@ -79,6 +80,19 @@ func isImageTask(task *core.Task, target core.Target) bool {
 	return task.Kind == core.KindImage && target.Model == CodexImageModel
 }
 
+// SwitchboardMCPName 是 Switchboard 在宿主里注册的 MCP 名字。
+const SwitchboardMCPName = "iml-switchboard"
+
+// switchboardRegistered 看 Codex 的 config.toml 里有没有 Switchboard 这一节。只认节名，不读别的内容。
+func (d *CodexDriver) switchboardRegistered() bool {
+	b, err := os.ReadFile(filepath.Join(d.codexHome(), "config.toml"))
+	if err != nil {
+		return false
+	}
+	s := string(b)
+	return strings.Contains(s, "[mcp_servers."+SwitchboardMCPName+"]") || strings.Contains(s, `[mcp_servers."`+SwitchboardMCPName+`"]`)
+}
+
 // BuildArgs 生成 codex 的命令行参数与 stdin 内容（导出以便测试断言）。
 func (d *CodexDriver) BuildArgs(task *core.Task, target core.Target) (args []string, stdin string) {
 	args = []string{"exec", "--json", "--skip-git-repo-check"}
@@ -94,6 +108,11 @@ func (d *CodexDriver) BuildArgs(task *core.Task, target core.Target) (args []str
 	}
 	if d.Ephemeral {
 		args = append(args, "--ephemeral")
+	}
+	// 用户把 Switchboard 接进了 Codex 时，这次子进程里关掉它，免得绕回来调用自己。
+	// 没注册时不能加：覆盖一个不存在的服务器，Codex 会报配置加载失败
+	if d.switchboardRegistered() {
+		args = append(args, "-c", "mcp_servers."+SwitchboardMCPName+".enabled=false")
 	}
 	// `-` 表示提示词从 stdin 读（codex exec --help 已确认），避开参数长度限制。
 	args = append(args, "-")
@@ -450,5 +469,8 @@ func (d *CodexDriver) Health(ctx context.Context) core.Health {
 		h.CooldownUntil = cd
 		h.Detail = "额度暂时用完，" + cd.Format("01-02 15:04") + " 后恢复"
 	}
-	return h
+	d.mu.Lock()
+	p := d.problems
+	d.mu.Unlock()
+	return withSelfCheck(p, h)
 }

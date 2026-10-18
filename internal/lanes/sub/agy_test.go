@@ -41,10 +41,16 @@ func TestAgyArgs(t *testing.T) {
 	d := NewAntigravityDriver()
 	args := d.BuildArgs(&core.Task{Prompt: "你好", Kind: core.KindText}, core.Target{Model: "gemini-3.8-flash-low"})
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"-p 你好", "--output-format stream-json", "--model gemini-3.8-flash-low", "--mode plan"} {
+	for _, want := range []string{"--input-format stream-json", "--output-format stream-json", "--model gemini-3.8-flash-low", "--mode plan"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("缺少 %q：%s", want, joined)
 		}
+	}
+	if args[0] != "-p" || args[1] != "" || strings.Contains(joined, "你好") {
+		t.Fatalf("-p 要带空值，提示词走标准输入：%q", args)
+	}
+	if got := AgyStdinPayload(&core.Task{Prompt: "你好", Kind: core.KindText}); got != `{"event":"user","message":{"content":"你好","role":"user"}}`+"\n" {
+		t.Fatalf("标准输入格式不对：%q", got)
 	}
 	args = d.BuildArgs(&core.Task{Prompt: "改代码", Kind: core.KindAnimation, ProjectDir: "/tmp/x", Engine: "remotion"}, core.Target{Model: "claude-sonnet-4-6"})
 	if !strings.Contains(strings.Join(args, " "), "--mode accept-edits") {
