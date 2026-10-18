@@ -35,7 +35,8 @@ MCP、stdio、OAuth、钥匙串、LiteLLM、JSONL、SSE、base_url、prompt cach
 4. 启动 `claude -p` 前清掉 `ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`；永远不传 `--bare`。
 5. 只监听 `127.0.0.1`。
 
-`go test ./...` 里有一条测试扫描源码保证 1 和 4。
+`go test ./...` 里有一条测试扫描源码保证 1 和 4；`internal/lanes/sub/redline_runtime_test.go` 用假 CLI 在运行时再查 3 和 4。
+路由改动要过 `TestGoldenTiers`（金标）和 `TestHoldoutTiers`（盲测，不许照着它调规则），门槛只升不降。
 
 ## 开发
 
