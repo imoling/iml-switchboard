@@ -1,0 +1,5 @@
+# 所有平台检出时都用 LF：Windows 上默认转 CRLF 会让比较文本的测试和嵌入的模板出错
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary

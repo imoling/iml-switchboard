@@ -123,16 +123,18 @@ func TestPrices(t *testing.T) {
 }
 
 func TestDefaultOutDirAndSlug(t *testing.T) {
-	if p, _ := DefaultOutDir(&core.Task{OutDir: "/x/out", ProjectDir: "/p"}); p != "/x/out" {
+	// 用本系统真正的绝对路径：Windows 上 /x/out 没有盘符，不算绝对路径
+	out, proj := filepath.Join(t.TempDir(), "out"), t.TempDir()
+	if p, _ := DefaultOutDir(&core.Task{OutDir: out, ProjectDir: proj}); p != out {
 		t.Errorf("OutDir 应优先：%s", p)
 	}
-	if p, _ := DefaultOutDir(&core.Task{OutDir: "assets", ProjectDir: "/p"}); p != "/p/assets" {
+	if p, _ := DefaultOutDir(&core.Task{OutDir: "assets", ProjectDir: proj}); p != filepath.Join(proj, "assets") {
 		t.Errorf("相对 OutDir 应接在 ProjectDir 后：%s", p)
 	}
-	if p, _ := DefaultOutDir(&core.Task{ProjectDir: "/p"}); p != "/p/assets" {
+	if p, _ := DefaultOutDir(&core.Task{ProjectDir: proj}); p != filepath.Join(proj, "assets") {
 		t.Errorf("ProjectDir/assets：%s", p)
 	}
-	if p, _ := DefaultOutDir(&core.Task{}); !strings.HasSuffix(p, "Switchboard/media") {
+	if p, _ := DefaultOutDir(&core.Task{}); !strings.HasSuffix(p, filepath.Join("Switchboard", "media")) {
 		t.Errorf("默认目录不对：%s", p)
 	}
 	if s := Slug("一只 在月球上 跳舞的猫, with hat!"); s != "一只-在月球上-跳舞的猫-with-hat" {
