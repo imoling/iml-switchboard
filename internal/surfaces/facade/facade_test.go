@@ -104,3 +104,39 @@ func TestChat(t *testing.T) {
 		t.Fatal(buf.String())
 	}
 }
+
+// 接入时写进密钥的宿主标记要进账本：Pi、OpenClaw 这些走兼容入口的宿主才分得清。
+func TestHostTaggedKey(t *testing.T) {
+	ts, _, api := setup(t)
+	for key, want := range map[string]int{"k.pi": 200, "k.openclaw": 200, "kk.pi": 401, "k.": 401, "k.PI": 401, "x.pi": 401} {
+		resp, _ := post(ts, "/v1/chat/completions", key, map[string]any{"model": "router-auto", "messages": []map[string]string{{"role": "user", "content": "这个系统的架构怎么设计"}}})
+		if resp.StatusCode != want {
+			t.Errorf("密钥 %q：状态 %d，想要 %d", key, resp.StatusCode, want)
+		}
+	}
+	api.last = nil
+	post(ts, "/v1/chat/completions", "k.pi", map[string]any{"model": "router-auto", "tools": []map[string]string{{"type": "function"}}, "messages": []map[string]string{{"role": "user", "content": "hi"}}})
+	if api.last == nil || api.last.Host != "pi" {
+		t.Fatalf("宿主没记成 pi：%+v", api.last)
+	}
+}
+
+// 谁都装不下时回 400 + context_length_exceeded：宿主认这个码，会自己压缩再重试。流式也要在开始输出前就报。
+func TestContextLengthExceeded(t *testing.T) {
+	ts, claude, api := setup(t)
+	huge := strings.Repeat("abcd", 950000)
+	for _, stream := range []bool{false, true} {
+		resp, body := post(ts, "/v1/chat/completions", "k", map[string]any{"model": "router-auto", "stream": stream, "messages": []map[string]string{{"role": "user", "content": huge}}})
+		if resp.StatusCode != 400 || !strings.Contains(body, `"code":"context_length_exceeded"`) {
+			t.Fatalf("stream=%v：%d %.200s", stream, resp.StatusCode, body)
+		}
+	}
+	if claude.last != nil || api.last != nil {
+		t.Fatal("装不下就不该转给任何模型")
+	}
+	// 装得下的照常
+	resp, _ := post(ts, "/v1/chat/completions", "k", map[string]any{"model": "router-auto", "messages": []map[string]string{{"role": "user", "content": strings.Repeat("abcd", 300000)}}})
+	if resp.StatusCode != 200 {
+		t.Fatalf("30 万应装得下：%d", resp.StatusCode)
+	}
+}

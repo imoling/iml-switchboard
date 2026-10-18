@@ -1,5 +1,6 @@
-// Package launchd 管理开机自启：往 ~/Library/LaunchAgents 写一个 plist，让 imls serve 登录即起。
-package launchd
+package autostart
+
+// macOS：往 ~/Library/LaunchAgents 写一个 plist，让 imls serve 登录即起。
 
 import (
 	"fmt"

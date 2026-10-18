@@ -48,6 +48,7 @@ type App struct {
 	Media   *media.MediaDriver
 	Claude  *sub.ClaudeDriver
 	Codex   *sub.CodexDriver
+	Agy     *sub.AntigravityDriver
 	Admin   *admin.Server
 	Facade  *facade.Server
 	Integr  *integrations.Manager
@@ -98,7 +99,8 @@ func New(version string) (*App, error) {
 	a.Media = media.New(a.mediaOptions(client))
 	a.Router.Register(a.Claude)
 	a.Router.Register(a.Codex)
-	a.Router.Register(sub.NewAntigravityDriver())
+	a.Agy = sub.NewAntigravityDriver()
+	a.Router.Register(a.Agy)
 	a.Router.Register(a.API)
 	a.Router.Register(a.Media)
 	a.Router.OnCall(func(c *core.Call) { a.Bus.Publish("call", a.Router.Decorate(c)); a.checkBudget(c) })
@@ -268,12 +270,65 @@ func (a *App) Serve(ctx context.Context) error {
 		defer cancel()
 		_ = srv.Shutdown(sctx)
 	}()
+	// 常驻时才预热：命令行一次性调用跑完就退出，预热了也白费
+	a.Claude.Prewarm, a.Agy.Prewarm = true, true
 	a.startMonthlyEvaluation(ctx)
+	a.startSelfCheck(ctx)
+	a.startHousekeeping(ctx)
 	err = srv.Serve(ln)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err
+}
+
+// fullTextKeep 是为评估保存完整原话的天数，和评估的抽样范围一致；过期只清原话，摘录和费用照留。
+const fullTextKeep = 30 * 24 * time.Hour
+
+// startHousekeeping 启动时和之后每天清一次过期的完整原话。
+func (a *App) startHousekeeping(ctx context.Context) {
+	go func() {
+		for {
+			_, _ = a.Ledger.PruneFull(time.Now().Add(-fullTextKeep))
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(24 * time.Hour):
+			}
+		}
+	}()
+}
+
+// startSelfCheck 启动一分钟后、之后每天一次，检查官方 CLI 的参数还对不对；同一个问题只通知一次。
+func (a *App) startSelfCheck(ctx context.Context) {
+	go func() {
+		wait := time.Minute
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			wait = 24 * time.Hour
+			for _, c := range []struct {
+				lane  core.LaneID
+				name  string
+				check func(context.Context) (string, []string)
+			}{{core.LaneClaudeSub, "Claude", a.Claude.SelfCheck}, {core.LaneCodexSub, "ChatGPT", a.Codex.SelfCheck}} {
+				ver, problems := c.check(ctx)
+				key := "selfcheck:" + string(c.lane)
+				sig := ver + "|" + strings.Join(problems, "|")
+				var last string
+				if a.Ledger.KVGet(key, &last) && last == sig {
+					continue
+				}
+				_ = a.Ledger.KVSet(key, sig)
+				if len(problems) > 0 {
+					a.Bus.Publish("notice", core.Notice{Title: c.name + " 订阅可能用不了", Body: problems[0] + "；先更新 Switchboard", Level: "warn"})
+				}
+			}
+		}
+	}()
 }
 
 // startMonthlyEvaluation 每月 1 日凌晨自动评估（设置里开了才跑）。
@@ -302,7 +357,11 @@ func (a *App) startMonthlyEvaluation(ctx context.Context) {
 }
 
 // Close 释放资源。
-func (a *App) Close() { _ = a.Ledger.Close() }
+func (a *App) Close() {
+	a.Claude.Close()
+	a.Agy.Close()
+	_ = a.Ledger.Close()
+}
 
 // ---- admin 依赖的两个适配器 ----
 

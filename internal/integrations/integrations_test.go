@@ -13,6 +13,7 @@ func setup(t *testing.T) (*Manager, string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows 上主目录看的是它
 	t.Setenv("IMLS_DATA_DIR", filepath.Join(home, "data"))
 	cs, err := config.Open()
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/imoling/iml-switchboard/internal/config"
 	"net/http"
 	"os"
 	"os/exec"
@@ -19,6 +20,10 @@ import (
 
 // Serve 在 stdio 上跑 MCP server。
 func Serve(ctx context.Context, baseURL, version string) error {
+	// Switchboard 拉起的 claude、codex 子进程里不再提供工具，否则子任务可能又派回来，一层套一层
+	if os.Getenv("IMLS_INNER") != "" {
+		return errors.New("在 Switchboard 派出的子任务里，不再提供调度工具")
+	}
 	if err := ensureBackend(baseURL); err != nil {
 		return err
 	}
@@ -49,10 +54,13 @@ func HTTPHandler(baseURL, version string, key func() string) http.Handler {
 		return NewServer(baseURL, version, host, "")
 	}, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if k := key(); k == "" || got != k {
+		host, ok := config.CheckHostKey(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), key())
+		if !ok {
 			http.Error(w, "密钥不对：到设置里复制门面密钥", http.StatusUnauthorized)
 			return
+		}
+		if host != "" && r.Header.Get("X-IMLS-Host") == "" {
+			r.Header.Set("X-IMLS-Host", host)
 		}
 		h.ServeHTTP(w, r)
 	})
@@ -146,9 +154,10 @@ func ensureBackend(baseURL string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(self, "serve")
-	cmd.Stdout, cmd.Stderr = nil, os.Stderr
+	cmd := exec.Command(self, "serve", "--background")
+	cmd.Stdout, cmd.Stderr = nil, nil // 后台自己写日志文件；挂着宿主的输出会让宿主关不掉
 	cmd.Env = os.Environ()
+	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("后台启动失败：%w", err)
 	}

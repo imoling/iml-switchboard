@@ -1,4 +1,4 @@
-// Package integrations 负责把调度台接进三个宿主：Claude Code、Hermes Agent、WorkBuddy。
+// Package integrations 负责把 Switchboard 接进各个宿主（Claude Code、Codex、Gemini CLI、Hermes、WorkBuddy 等）。
 // 原则：能用宿主官方命令就用官方命令；改文件前先备份；只增删带标记的内容。
 package integrations
 
@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -60,7 +61,7 @@ func (m *Manager) dshEnv() string      { return filepath.Join(m.dshHome(), ".env
 
 // List 返回三个宿主的状态。
 func (m *Manager) List() []map[string]any {
-	return []map[string]any{m.view("claude_code"), m.view("workbuddy"), m.view("doubao_work"), m.view("deepseek_harness"), m.view("pi"), m.view("openclaw"), m.view("hermes")}
+	return []map[string]any{m.view("claude_code"), m.view("codex"), m.view("gemini_cli"), m.view("workbuddy"), m.view("doubao_work"), m.view("deepseek_harness"), m.view("pi"), m.view("openclaw"), m.view("hermes")}
 }
 
 func (m *Manager) view(id string) map[string]any {
@@ -80,6 +81,22 @@ func (m *Manager) view(id string) map[string]any {
 		}
 		opts := map[string]bool{"write_claude_md": m.claudeMdHasBlock(), "opusplan": m.claudeModelIs("opusplan"), "commands": m.commandsInstalled()}
 		v["options"] = opts
+	case "codex":
+		if _, err := exec.LookPath("codex"); err != nil {
+			v["available"] = false
+			v["detail"] = "本机没有找到 codex 命令"
+		}
+		if m.codexRegistered() {
+			v["status"] = "connected"
+		}
+	case "gemini_cli":
+		if _, err := exec.LookPath("gemini"); err != nil {
+			v["available"] = false
+			v["detail"] = "本机没有找到 gemini 命令"
+		}
+		if m.geminiRegistered() {
+			v["status"] = "connected"
+		}
 	case "hermes":
 		if _, err := os.Stat(m.hermesCfg()); err != nil {
 			v["available"] = false
@@ -99,7 +116,8 @@ func (m *Manager) view(id string) map[string]any {
 		v["snippet"] = m.workbuddySnippet()
 	case "doubao_work":
 		v["status"] = "manual"
-		if _, err := os.Stat(m.doubaoWorkApp()); err != nil {
+		// 只在 macOS 上能可靠判断装没装；其他系统照常给出手动配置的片段
+		if _, err := os.Stat(m.doubaoWorkApp()); err != nil && runtime.GOOS == "darwin" {
 			v["available"] = false
 			v["detail"] = "本机没有安装豆包工作"
 		}
@@ -144,6 +162,10 @@ func (m *Manager) Connect(id string, opts map[string]bool) (map[string]any, erro
 	switch id {
 	case "claude_code":
 		err = m.connectClaude(opts)
+	case "codex":
+		err = m.connectCodex()
+	case "gemini_cli":
+		err = m.connectGemini()
 	case "hermes":
 		err = m.connectHermes()
 	case "workbuddy":
@@ -183,6 +205,10 @@ func (m *Manager) Disconnect(id string) (map[string]any, error) {
 	switch id {
 	case "claude_code":
 		err = m.disconnectClaude()
+	case "codex":
+		err = m.disconnectCodex()
+	case "gemini_cli":
+		err = m.disconnectGemini()
 	case "hermes":
 		err = m.disconnectHermes()
 	case "workbuddy":
@@ -305,23 +331,7 @@ func (m *Manager) claudeMdHasBlock() bool {
 }
 
 func (m *Manager) setClaudeMd(on bool) error {
-	path := m.claudeMdPath()
-	b, _ := os.ReadFile(path)
-	s := string(b)
-	// 先去掉旧块
-	if i := strings.Index(s, markStart); i >= 0 {
-		if j := strings.Index(s, markEnd); j > i {
-			s = strings.TrimRight(s[:i], "\n") + s[j+len(markEnd):]
-		}
-	}
-	if on {
-		snippet, _ := assets.ReadFile("assets/CLAUDE.snippet.md")
-		s = strings.TrimRight(s, "\n") + "\n\n" + strings.TrimSpace(string(snippet)) + "\n"
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(s), 0o644)
+	return setInstructionBlock(m.claudeMdPath(), on)
 }
 
 func (m *Manager) commandsInstalled() bool {
@@ -672,7 +682,7 @@ type piProvider struct {
 }
 
 func (m *Manager) piProvider() piProvider {
-	return piProvider{BaseURL: m.facade + "/v1", API: "openai-completions", APIKey: m.facadeKey(), Models: []piModel{
+	return piProvider{BaseURL: m.facade + "/v1", API: "openai-completions", APIKey: m.hostKey("pi"), Models: []piModel{
 		{ID: "router-auto", Name: "Switchboard 自动", Input: []string{"text", "image"}, ContextWindow: 200000, MaxTokens: 32000},
 		{ID: "router-sub", Name: "Switchboard 订阅优先", Input: []string{"text"}, ContextWindow: 200000, MaxTokens: 32000},
 	}}
@@ -751,7 +761,7 @@ func (m *Manager) dshRoute() map[string]any {
 
 func (m *Manager) dshSnippet() string {
 	route, _ := yaml.Marshal([]map[string]any{{"id": "llm-pi-ai", "config": map[string]any{"providers": map[string]any{"switchboard": m.dshRoute()}}}})
-	return fmt.Sprintf("# 追加到 %s（对 web、headless 等所有配置都生效）\n%s\n# 密钥写在 %s 里一行：\n%s=%s\n# 之后在 dsh web 的模型列表里选 Switchboard\n", m.dshPatch(), route, m.dshEnv(), dshKeyRef, m.facadeKey())
+	return fmt.Sprintf("# 追加到 %s（对 web、headless 等所有配置都生效）\n%s\n# 密钥写在 %s 里一行：\n%s=%s\n# 之后在 dsh web 的模型列表里选 Switchboard\n", m.dshPatch(), route, m.dshEnv(), dshKeyRef, m.hostKey("deepseek_harness"))
 }
 
 func (m *Manager) dshHas() bool {
@@ -805,7 +815,7 @@ func (m *Manager) connectDsh() error {
 	if err := os.WriteFile(path, out, 0o600); err != nil {
 		return err
 	}
-	return m.setEnvLine(m.dshEnv(), dshKeyRef, m.facadeKey())
+	return m.setEnvLine(m.dshEnv(), dshKeyRef, m.hostKey("deepseek_harness"))
 }
 
 func (m *Manager) disconnectDsh() error {
@@ -876,7 +886,7 @@ func (m *Manager) setEnvLine(path, key, val string) error {
 func (m *Manager) openclawProvider() map[string]any {
 	return map[string]any{
 		"baseUrl": m.facade + "/v1",
-		"apiKey":  m.facadeKey(),
+		"apiKey":  m.hostKey("openclaw"),
 		"api":     "openai-completions",
 		"models": []map[string]any{
 			{"id": "router-auto", "name": "Switchboard 自动", "reasoning": false, "input": []string{"text", "image"}, "contextWindow": 200000, "maxTokens": 32000},

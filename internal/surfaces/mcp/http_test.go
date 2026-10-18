@@ -67,3 +67,10 @@ func (h headerRT) RoundTrip(r *http.Request) (*http.Response, error) {
 	r.Header.Set("X-IMLS-Host", h.host)
 	return http.DefaultTransport.RoundTrip(r)
 }
+
+func TestServeRefusesInsideSubprocess(t *testing.T) {
+	t.Setenv("IMLS_INNER", "1")
+	if err := Serve(t.Context(), "http://127.0.0.1:1", "test"); err == nil || !strings.Contains(err.Error(), "子任务") {
+		t.Fatalf("子进程里应拒绝启动：%v", err)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/imoling/iml-switchboard/internal/config"
 	"github.com/imoling/iml-switchboard/internal/core"
 )
 
@@ -40,14 +41,14 @@ func RunTool(ctx context.Context, r *core.Router, jobs *core.MemJobStore, req To
 		if err != nil {
 			return "", err
 		}
-		return strings.TrimSpace(res.Text) + "\n\n（" + reg.Display(call.Model) + " · " + fmtCost(call) + "）", nil
+		return strings.TrimSpace(res.Text) + "\n\n（" + reg.Display(call.Model) + " · " + fmtCost(r.Config().Get().Settings, call) + "）", nil
 	case "generate_image":
 		t := &core.Task{Prompt: a.Prompt, Kind: core.KindImage, MediaTier: a.Tier, Size: a.Size, OutDir: a.OutDir, ProjectDir: req.ProjectDir, Source: "mcp", Host: host}
 		call, res, err := r.Run(ctx, t, nil)
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("已生成 %s（%s · %s）", res.Path, reg.Display(call.Model), fmtCost(call)), nil
+		return fmt.Sprintf("已生成 %s（%s · %s）", res.Path, reg.Display(call.Model), fmtCost(r.Config().Get().Settings, call)), nil
 	case "generate_video", "make_animation":
 		kind := core.KindVideo
 		prompt := a.Prompt
@@ -69,7 +70,7 @@ func RunTool(ctx context.Context, r *core.Router, jobs *core.MemJobStore, req To
 			return "", err
 		}
 		if res.Path != "" {
-			return fmt.Sprintf("已生成 %s（%s · %s）", res.Path, reg.Display(call.Model), fmtCost(call)), nil
+			return fmt.Sprintf("已生成 %s（%s · %s）", res.Path, reg.Display(call.Model), fmtCost(r.Config().Get().Settings, call)), nil
 		}
 		return fmt.Sprintf("任务 %s 进行中，用 get_job 查询（%s）", res.JobID, reg.Display(call.Model)), nil
 	case "get_job":
@@ -93,13 +94,9 @@ func RunTool(ctx context.Context, r *core.Router, jobs *core.MemJobStore, req To
 	return "", fmt.Errorf("不认识的工具：%s", req.Name)
 }
 
-func fmtCost(c *core.Call) string {
-	switch {
-	case c.Lane != core.LaneAPI && c.Lane != core.LaneMedia:
+func fmtCost(st config.Settings, c *core.Call) string {
+	if c.Lane != core.LaneAPI && c.Lane != core.LaneMedia {
 		return "订阅"
-	case c.Currency == "CNY" && c.CostNative > 0:
-		return fmt.Sprintf("¥%.3f", c.CostNative)
-	default:
-		return fmt.Sprintf("$%.4f", c.CostUSD)
 	}
+	return st.MoneyNative(c.CostUSD, c.CostNative, c.Currency)
 }

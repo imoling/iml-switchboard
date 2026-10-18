@@ -209,7 +209,15 @@ func (s *Server) statusBody() map[string]any {
 		"mode": s.d.Router.Mode(), "theme": theme, "configured_theme": cfg.Settings.Theme,
 		"paused": s.d.Router.Paused(), "projection": s.Projection(), "node_available": node,
 		"data_dir": config.DataDir(), "app_title": themes.Word(theme, "app.title"),
+		"currency": currencyOf(cfg.Settings), "usd_per_cny": cfg.Settings.USDPerCNY,
 	}
+}
+
+func currencyOf(st config.Settings) string {
+	if st.CNY() {
+		return "CNY"
+	}
+	return "USD"
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -345,7 +353,7 @@ func (s *Server) namedTasks(ts []core.TopTask) []map[string]any {
 	for _, t := range ts {
 		metric := fmt.Sprintf("%d 次", t.Count)
 		if t.CostUSD > 0 {
-			metric = fmt.Sprintf("$%.2f", t.CostUSD)
+			metric = s.d.Router.Config().Get().Settings.Money(t.CostUSD)
 		}
 		out = append(out, map[string]any{"task_type": t.TaskType, "name": s.d.Router.TaskName(t.TaskType), "lane": t.Lane, "count": t.Count, "cost_usd": t.CostUSD, "metric": metric})
 	}
@@ -740,8 +748,12 @@ func (s *Server) decorate(d *core.Decision) map[string]any {
 	for _, c := range d.Candidates {
 		cands = append(cands, map[string]any{"lane": c.Lane, "provider": c.Provider, "model": c.Model, "display": reg.Display(c.Model), "est_cost_usd": c.EstCostUSD, "skipped": c.Skipped, "account_id": c.AccountID})
 	}
+	reason := d.Reason
+	if d.Unsure && !d.Sticky && !s.d.Router.Config().Get().Settings.RulesOnly {
+		reason = append(append([]string(nil), reason...), "规则拿不准，执行时先请低档模型判档")
+	}
 	return map[string]any{"task_type": d.TaskType, "task_name": s.d.Router.TaskName(d.TaskType), "kind": d.Kind, "tier": d.Tier, "tier_label": core.TierLabel(d.Tier),
-		"media_tier": d.MediaTier, "candidates": cands, "reason": d.Reason, "sticky": d.Sticky}
+		"media_tier": d.MediaTier, "candidates": cands, "reason": reason, "sticky": d.Sticky, "unsure": d.Unsure}
 }
 
 func (s *Server) suggestions(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -1289,8 +1301,29 @@ func (s *Server) jobRevise(w http.ResponseWriter, r *http.Request) (any, error) 
 
 // --- 接入 ---
 
+// hostTagged 是请求里带宿主标记的接入：MCP 靠 IMLS_HOST，兼容入口靠请求头或密钥后缀。
+// pi、OpenClaw、DeepSeek Harness 早先接入时写的密钥没有后缀，重新接入一次才计得上。
+var hostTagged = map[string]bool{"claude_code": true, "codex": true, "gemini_cli": true, "workbuddy": true, "hermes": true, "doubao_work": true,
+	"pi": true, "openclaw": true, "deepseek_harness": true}
+
 func (s *Server) integrations(w http.ResponseWriter, r *http.Request) (any, error) {
-	return s.d.Integr.List(), nil
+	list := s.d.Integr.List()
+	act, err := s.d.Router.Ledger().HostActivity(time.Now().AddDate(0, 0, -7))
+	if err != nil {
+		return list, nil
+	}
+	for _, it := range list {
+		id, _ := it["id"].(string)
+		if !hostTagged[id] {
+			continue
+		}
+		a := act[id]
+		it["calls_7d"] = a.Calls
+		if !a.Last.IsZero() {
+			it["last_call"] = a.Last
+		}
+	}
+	return list, nil
 }
 
 func (s *Server) integrationConnect(w http.ResponseWriter, r *http.Request) (any, error) {

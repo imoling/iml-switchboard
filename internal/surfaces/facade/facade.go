@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/imoling/iml-switchboard/internal/config"
 	"io"
 	"net/http"
 	"os"
@@ -34,13 +36,44 @@ func (s *Server) Routes(mux *http.ServeMux) {
 
 func (s *Server) auth(fn http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if got == "" || got != s.key() {
+		host, ok := config.CheckHostKey(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), s.key())
+		if !ok {
 			oaiErr(w, 401, "invalid_api_key", "密钥不对：到设置里复制门面密钥")
 			return
 		}
+		if host != "" && r.Header.Get("X-IMLS-Host") == "" {
+			r.Header.Set("X-IMLS-Host", host) // 接入时写进密钥的宿主标记
+		}
 		fn(w, r)
 	}
+}
+
+// finishReason 把供应商的结束原因转给宿主；有工具调用时必须是 tool_calls，宿主才会去执行工具。
+func finishReason(res *core.Result) string {
+	switch {
+	case res == nil:
+		return "stop"
+	case len(res.ToolCalls) > 0:
+		return "tool_calls"
+	case res.FinishReason == "length":
+		return "length"
+	}
+	return "stop"
+}
+
+// contextTooLong 用 OpenAI 的标准错误码回，宿主据此自己压缩对话再重试。
+// 有的宿主不看错误码、按文字匹配（OpenClaw 认 "context length exceeded"、"maximum context length" 这类说法），
+// 所以文字开头照抄 OpenAI 的经典句子，中文说明放后面。
+func contextTooLong(w http.ResponseWriter, err error) {
+	msg := err.Error()
+	var tl *core.ErrContextTooLong
+	if errors.As(err, &tl) {
+		msg = fmt.Sprintf("This model's maximum context length is %d tokens. However, your messages resulted in about %d tokens. Please reduce the length of the messages (context length exceeded). %s",
+			tl.Usable(), tl.Tokens, err.Error())
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": msg, "type": "invalid_request_error", "param": "messages", "code": "context_length_exceeded"}})
 }
 
 func oaiErr(w http.ResponseWriter, code int, typ, msg string) {
@@ -59,17 +92,21 @@ func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 }
 
 type oaiMessage struct {
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
+	Role       string          `json:"role"`
+	Content    json.RawMessage `json:"content"`
+	ToolCalls  json.RawMessage `json:"tool_calls"`
+	ToolCallID string          `json:"tool_call_id"`
+	Name       string          `json:"name"`
 }
 
 type chatReq struct {
-	Model     string          `json:"model"`
-	Messages  []oaiMessage    `json:"messages"`
-	Stream    bool            `json:"stream"`
-	Tools     json.RawMessage `json:"tools"`
-	MaxTokens int             `json:"max_tokens"`
-	User      string          `json:"user"`
+	Model      string          `json:"model"`
+	Messages   []oaiMessage    `json:"messages"`
+	Stream     bool            `json:"stream"`
+	Tools      json.RawMessage `json:"tools"`
+	ToolChoice json.RawMessage `json:"tool_choice"`
+	MaxTokens  int             `json:"max_tokens"`
+	User       string          `json:"user"`
 }
 
 // 把 OpenAI 的 content（字符串或分段数组）拍平成文本 + 图片列表。
@@ -107,7 +144,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		oaiErr(w, 400, "invalid_request_error", "请求体不是合法 JSON")
 		return
 	}
-	t := &core.Task{Kind: core.KindText, Source: "facade", Host: hostOf(r), Tools: req.Tools, MaxTokens: req.MaxTokens, Stream: req.Stream, SessionID: req.User}
+	t := &core.Task{Kind: core.KindText, Source: "facade", Host: hostOf(r), Tools: req.Tools, ToolChoice: req.ToolChoice, MaxTokens: req.MaxTokens, Stream: req.Stream, SessionID: req.User}
 	hasTools := len(req.Tools) > 0 && string(req.Tools) != "null" && string(req.Tools) != "[]"
 	if req.Model == "router-sub" && hasTools {
 		oaiErr(w, 400, "invalid_request_error", "router-sub 只接不带工具的请求，带工具请改用 router-auto")
@@ -125,7 +162,11 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 			t.System += text + "\n"
 			continue
 		}
-		t.Messages = append(t.Messages, core.Message{Role: m.Role, Content: text, Images: imgs})
+		msg := core.Message{Role: m.Role, Content: text, Images: imgs, ToolCallID: m.ToolCallID, Name: m.Name}
+		if len(m.ToolCalls) > 0 && string(m.ToolCalls) != "null" {
+			msg.ToolCalls = m.ToolCalls
+		}
+		t.Messages = append(t.Messages, msg)
 	}
 	for i := len(t.Messages) - 1; i >= 0; i-- {
 		if t.Messages[i].Role == "user" {
@@ -144,12 +185,26 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		// 多轮对话没有 user 字段时，用首条消息做会话键，保证粘性
 		t.SessionID = "facade:" + hash(t.Messages[0].Content)
 	}
+	// 流式一开始就回了 200，中途发现装不下就没法再报 400：先估一遍，谁都装不下就直接告诉宿主去压缩
+	est := 0
+	for _, m := range t.Messages {
+		est += core.EstimateTokens(m.Content)
+	}
+	if err := s.router.FitsAny(est); err != nil {
+		contextTooLong(w, err)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 	id := "chatcmpl-" + core.NewID("")[1:]
 	created := time.Now().Unix()
 	if !req.Stream {
 		call, res, err := s.router.Run(ctx, t, nil)
+		var tl *core.ErrContextTooLong
+		if errors.As(err, &tl) {
+			contextTooLong(w, err)
+			return
+		}
 		if err != nil {
 			oaiErr(w, 502, "upstream_error", err.Error())
 			return
@@ -157,9 +212,16 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-IMLS-Call-Id", call.ID)
 		w.Header().Set("X-IMLS-Model", call.Model)
+		msg := map[string]any{"role": "assistant", "content": res.Text}
+		if len(res.ToolCalls) > 0 {
+			msg["tool_calls"] = res.ToolCalls
+			if res.Text == "" {
+				msg["content"] = nil
+			}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": id, "object": "chat.completion", "created": created, "model": call.Model,
-			"choices": []map[string]any{{"index": 0, "message": map[string]any{"role": "assistant", "content": res.Text}, "finish_reason": "stop"}},
+			"choices": []map[string]any{{"index": 0, "message": msg, "finish_reason": finishReason(res)}},
 			"usage":   map[string]int{"prompt_tokens": call.InputTokens, "completion_tokens": call.OutputTokens, "total_tokens": call.InputTokens + call.OutputTokens},
 		})
 		return
@@ -187,10 +249,19 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		b, _ := json.Marshal(map[string]any{"error": map[string]any{"message": err.Error(), "type": "upstream_error"}})
 		fmt.Fprintf(w, "data: %s\n\n", b)
 	} else {
-		if !streamed && res != nil {
+		if !streamed && res != nil && res.Text != "" {
 			chunk(map[string]any{"content": res.Text}, nil)
 		}
-		chunk(map[string]any{}, "stop")
+		if res != nil && len(res.ToolCalls) > 0 {
+			// 工具调用在上游拼好后一次发出：流式格式要求每个调用带 index
+			var calls []map[string]any
+			_ = json.Unmarshal(res.ToolCalls, &calls)
+			for i := range calls {
+				calls[i]["index"] = i
+			}
+			chunk(map[string]any{"tool_calls": calls}, nil)
+		}
+		chunk(map[string]any{}, finishReason(res))
 		_ = call
 	}
 	fmt.Fprint(w, "data: [DONE]\n\n")
