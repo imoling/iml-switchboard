@@ -197,7 +197,7 @@ details.raw { margin-top: 6px; font-size: 12px; color: var(--muted); } details.r
 .acct > .grow { min-width: 0; }
 .acct > .grow b { white-space: nowrap; }
 .acct > span { white-space: nowrap; }
-.acct .btn.tiers { display: block; max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.acct { flex-wrap: wrap; }
 
 /* 像素小人 */
 .px { image-rendering: pixelated; vertical-align: middle; }
@@ -208,3 +208,12 @@ details.raw { margin-top: 6px; font-size: 12px; color: var(--muted); } details.r
 .empty { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .btn.tiers .px { margin-right: 3px; vertical-align: -3px; }
 .setrow .tt .px { vertical-align: -6px; margin-right: 2px; }
+
+/* 账号卡片第二行：各档位用谁 */
+.tiles { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--line); cursor: pointer; }
+.tiles .tile { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; border-radius: 8px; background: var(--soft); font-size: 12.5px; }
+.tiles .tile.off { opacity: .55; }
+.tiles .tile .tn { color: var(--muted); }
+.tiles .tile .tm { font-weight: 550; }
+.tiles .chev { color: var(--muted); font-size: 11px; margin-left: auto; }
+.chip .px { margin-right: 4px; vertical-align: -5px; }

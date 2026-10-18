@@ -47,10 +47,15 @@ export function Accounts() {
   const name = (a: Account, m: string) => (m ? a.labels?.[m] ?? m : '不用');
   const sortedTiers = (a: Account) => Object.entries(a.tiers ?? {}).sort(([x], [y]) => ORDER.indexOf(x) - ORDER.indexOf(y));
   const isTier = (k: string): k is Tier => ['low', 'mid', 'high', 'top'].includes(k);
-  const tierText = (a: Account) => sortedTiers(a).map(([k, v]) => (isTier(k) ? `${t(`tier.${k}`)} ${name(a, v)}` : v)).join(' · ');
-  const tierSummary = (a: Account) => sortedTiers(a).map(([k, v], i) => (
-    <span key={k}>{i > 0 && ' · '}{isTier(k) && <><TierSprite tier={k} />{t(`tier.${k}`)} </>}{name(a, v)}</span>
-  ));
+  /** 档位一行瓦片，不做成按钮；点任意一块进编辑 */
+  const tierTiles = (a: Account) => (
+    <div className="tiles" role="button" tabIndex={0} title="点一下改各档位用谁" onClick={() => setTierEdit(a)} onKeyDown={(e) => { if (e.key === 'Enter') setTierEdit(a); }}>
+      {sortedTiers(a).map(([k, v]) => (
+        <span key={k} className={`tile ${v ? '' : 'off'}`}>{isTier(k) && <TierSprite tier={k} scale={2} />}<span className="tn">{isTier(k) ? t(`tier.${k}`) : k}</span><span className="tm">{name(a, v)}</span></span>
+      ))}
+      <span className="chev">▾</span>
+    </div>
+  );
 
   return (
     <>
@@ -72,7 +77,8 @@ export function Accounts() {
               <span><Dot s={STATUS[a.status].dot} />{STATUS[a.status].text(a)}</span>
               {a.status === 'missing'
                 ? <button className="btn sm" onClick={() => a.install_hint && toast(`在终端运行：${a.install_hint}`)}>怎么安装</button>
-                : a.tiers && Object.keys(a.tiers).length > 0 && <button className="btn sm tiers" title={tierText(a)} onClick={() => setTierEdit(a)}>{tierSummary(a)} ▾</button>}
+                : null}
+              {a.tiers && Object.keys(a.tiers).length > 0 && tierTiles(a)}
               {a.status === 'cooldown' && <span className="hint">{a.detail}</span>}
             </div>
           ))}
@@ -88,10 +94,11 @@ export function Accounts() {
                 : a.status === 'error'
                   ? <button className="btn sm" disabled={busy === a.id} onClick={() => act(a.id, () => api.verifyAccount(a.id))}>重新验证</button>
                   : <span className="muted">{monthCost(a) && `本月 ${monthCost(a)}`}</span>}
-              {a.tiers && Object.keys(a.tiers).length > 0 && <button className="btn sm tiers" title={tierText(a)} onClick={() => setTierEdit(a)}>{tierSummary(a)} ▾</button>}
+
               <select className="sel" value="" onChange={(e) => { const v = e.target.value; if (v === 'toggle') void act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled })); if (v === 'verify') void act(a.id, () => api.verifyAccount(a.id)); if (v === 'delete') void act(a.id, () => api.deleteAccount(a.id)); }}>
                 <option value="">操作 ▾</option><option value="verify">重新验证</option><option value="toggle">{a.enabled ? '停用' : '启用'}</option><option value="delete">删除</option>
               </select>
+              {a.tiers && Object.keys(a.tiers).length > 0 && tierTiles(a)}
             </div>
           ))}
           <div className="hint mt12">密钥只存在这台电脑上，不会上传</div>

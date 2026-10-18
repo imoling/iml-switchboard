@@ -22,7 +22,7 @@ export const GroupChip = ({ group }: { group: 'sub' | 'api' | 'media' }) => <spa
 export function TierChip({ tier }: { tier: Tier | null | undefined }) {
   const { t } = useTheme();
   if (!tier) return <GroupChip group="media" />;
-  return <span className={`chip ${TIER_CHIP[tier]}`}><TierSprite tier={tier} />{t(`tier.${tier}`)}</span>;
+  return <span className={`chip ${TIER_CHIP[tier]}`}><TierSprite tier={tier} scale={1.4} />{t(`tier.${tier}`)}</span>;
 }
 
 export const Bar = ({ pct, tone }: { pct: number; tone?: 'blue' | 'amber' | 'gold' }) => (
