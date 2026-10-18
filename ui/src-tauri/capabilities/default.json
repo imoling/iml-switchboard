@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "iML Switchboard windows",
+  "description": "Switchboard windows",
   "windows": ["main", "popover", "quick", "about"],
   "permissions": [
     "core:default",

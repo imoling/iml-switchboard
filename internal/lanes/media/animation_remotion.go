@@ -5,6 +5,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"github.com/imoling/iml-switchboard/internal/config"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -70,11 +71,7 @@ func (r *Remotion) root() (string, error) {
 	if r.Root != "" {
 		return r.Root, nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, "Library", "Application Support", "iML Switchboard", "animations"), nil
+	return filepath.Join(config.DataDir(), "animations"), nil
 }
 
 func (r *Remotion) fixRounds() int {

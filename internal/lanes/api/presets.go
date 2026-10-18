@@ -35,7 +35,7 @@ var Presets = []Preset{
 	{ID: "minimax", Name: "MiniMax", BaseURL: "https://api.minimaxi.com/v1", Currency: "CNY", ProbeModel: "minimax-m3",
 		Models: map[string]ModelPrice{"minimax-m3": {InputPerM: 2.1, OutputPerM: 8.4}}},
 	{ID: "openrouter", Name: "OpenRouter", BaseURL: "https://openrouter.ai/api/v1", Currency: "USD", NeedsProxy: true, ProbeModel: "anthropic/claude-sonnet-5.5",
-		Headers: map[string]string{"HTTP-Referer": "https://github.com/imoling/iml-switchboard", "X-Title": "iML Switchboard"},
+		Headers: map[string]string{"HTTP-Referer": "https://github.com/imoling/iml-switchboard", "X-Title": "Switchboard"},
 		Models:  map[string]ModelPrice{"anthropic/claude-sonnet-5.5": {InputPerM: 2, OutputPerM: 10}, "anthropic/claude-opus-5.5": {InputPerM: 4, OutputPerM: 20}}},
 	// Anthropic 走它的 OpenAI 兼容端点 /v1/chat/completions。
 	{ID: "anthropic", Name: "Anthropic", BaseURL: "https://api.anthropic.com/v1", Currency: "USD", NeedsProxy: true, ProbeModel: "claude-haiku-5-5",

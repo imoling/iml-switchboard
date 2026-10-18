@@ -12,7 +12,7 @@ export function About({ version: given }: { version?: string }) {
     <div className="about drag" data-tauri-drag-region>
       <img src={appIcon} alt="" />
       <div className="name">{t('app.title')}</div>
-      <div className="hint">iML Switchboard · 版本 {version}</div>
+      <div className="hint">Switchboard · 版本 {version}</div>
       <div style={{ margin: '12px 0 4px' }}>iML Studio 出品</div>
       <div className="hint">© 2026 imoling · imoling.cn@gmail.com</div>
     </div>

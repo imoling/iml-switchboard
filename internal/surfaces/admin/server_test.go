@@ -106,11 +106,11 @@ func TestStatusAndAuth(t *testing.T) {
 		t.Fatalf("没有客户端标识应 403，得到 %d", resp.StatusCode)
 	}
 	code, m, _ := do(t, ts, "GET", "/api/status", nil)
-	if code != 200 || m["theme"] != "dianjiang" || m["app_title"] != "iML 点将台" {
+	if code != 200 || m["theme"] != "dianjiang" || m["app_title"] != "点将台" {
 		t.Fatalf("%d %v", code, m)
 	}
 	code, m, _ = do(t, ts, "POST", "/api/projection", map[string]bool{"on": true})
-	if m["theme"] != "standard" || m["app_title"] != "iML Switchboard" {
+	if m["theme"] != "standard" || m["app_title"] != "Switchboard" {
 		t.Fatalf("投屏模式应切回标准：%v", m)
 	}
 }

@@ -1,4 +1,4 @@
-// imls 是 iML Switchboard 的单文件入口：serve / mcp / route / stats / doctor / install。
+// imls 是 Switchboard 的单文件入口：serve / mcp / route / stats / doctor / install。
 package main
 
 import (
@@ -50,7 +50,7 @@ func main() {
 	case "uninstall":
 		err = launchd.Uninstall()
 	case "version", "--version", "-v":
-		fmt.Println("iML Switchboard", version)
+		fmt.Println("Switchboard", version)
 	default:
 		usage()
 		os.Exit(2)
@@ -80,7 +80,7 @@ func serve() error {
 	defer a.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	fmt.Fprintf(os.Stderr, "iML Switchboard %s · %s · 数据目录 %s\n", version, app.BaseURL, config.DataDir())
+	fmt.Fprintf(os.Stderr, "Switchboard %s · %s · 数据目录 %s\n", version, app.BaseURL, config.DataDir())
 	return a.Serve(ctx)
 }
 

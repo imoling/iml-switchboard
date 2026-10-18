@@ -1,6 +1,6 @@
 /** 词表兜底：主题词表 → 标准词表 → 这里。费用、额度、报错永远不经过它 */
 export const DEFAULT_WORDS: Record<string, string> = {
-  'app.title': 'iML Switchboard',
+  'app.title': 'Switchboard',
   'app.open': '打开 Switchboard',
   'dispatch.noun': '调度',
   'dispatch.once': '调度一次',

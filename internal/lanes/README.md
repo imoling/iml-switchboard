@@ -56,12 +56,12 @@ err := preset.Verify(ctx, httpClient, key) // 先 GET /models，404/405/400 时�
 ```go
 m := media.New(media.Options{
     Jobs:     jobStore,          // 必填：core.JobStore
-    OutDir:   nil,               // 产物目录解析器，nil 用 media.DefaultOutDir（OutDir > ProjectDir/assets > ~/Library/Application Support/iML Switchboard/media）
+    OutDir:   nil,               // 产物目录解析器，nil 用 media.DefaultOutDir（OutDir > ProjectDir/assets > ~/Library/Application Support/Switchboard/media）
     Accounts: apiDriver,         // 按量付费账号表（*api.APIDriver 满足 media.AccountLookup）
     Codex:    codexDriver,       // 免费档出图
     Claude:   claudeDriver,      // 动画写代码
     Client:   httpClient,
-    AnimRoot: "",                // 动画工程根目录，空用 ~/Library/Application Support/iML Switchboard/animations/<job>/
+    AnimRoot: "",                // 动画工程根目录，空用 ~/Library/Application Support/Switchboard/animations/<job>/
     // 测试注入：ImageProviders / VideoProviders / Exec / Now / PollBase / PollMax / JobTimeout
 })
 ```

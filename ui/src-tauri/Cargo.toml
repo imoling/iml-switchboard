@@ -1,7 +1,7 @@
 [package]
 name = "iml-switchboard"
 version = "0.1.0"
-description = "iML Switchboard"
+description = "Switchboard"
 authors = ["imoling <imoling.cn@gmail.com>"]
 edition = "2021"
 

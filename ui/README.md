@@ -1,4 +1,4 @@
-# iML Switchboard · 界面
+# Switchboard · 界面
 
 Tauri 2 + React 19 + TypeScript + Vite。菜单栏弹窗、控制台窗口、快速面板、关于窗口都在这一个前端里，按窗口 label 分流。
 所有数据来自后台 `imls serve`（`http://127.0.0.1:18081`，见 `../docs/API.md`），前端不碰任何凭据。

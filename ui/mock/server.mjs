@@ -11,7 +11,7 @@ const now = () => new Date().toISOString();
 const todayAt = (hm) => { const d = new Date(); const [h, m] = hm.split(':').map(Number); d.setHours(h, m, 0, 0); return d.toISOString(); };
 
 // ---------- 状态 ----------
-let status = { version: '1.0.0', uptime_s: 3600, mode: 'balanced', theme: 'dianjiang', paused: false, projection: false, node_available: true, data_dir: `${process.env.HOME}/Library/Application Support/iML Switchboard` };
+let status = { version: '1.0.0', uptime_s: 3600, mode: 'balanced', theme: 'dianjiang', paused: false, projection: false, node_available: true, data_dir: `${process.env.HOME}/Library/Application Support/Switchboard` };
 let onboarding = { done: process.env.MOCK_ONBOARDING !== '1', steps: { cli_detected: false, api_added: false, claude_connected: false, tried: false } };
 
 let settings = {
@@ -254,7 +254,7 @@ const server = http.createServer(async (req, res) => {
       else { const r = rules.task_table.find((x) => x.task_type === task); if (r) delete r.suggest; }
       suggestions = suggestions.filter((x) => x.task_type !== task); return json(res, 200, rules);
     }
-    if (p === '/api/rules/export') { res.writeHead(200, { 'Content-Type': 'text/yaml; charset=utf-8' }); return res.end(`# iML Switchboard 规则\ntask_table:\n${rules.task_table.map((r) => `  - task_type: ${r.task_type}\n    tier: ${r.tier}\n`).join('')}`); }
+    if (p === '/api/rules/export') { res.writeHead(200, { 'Content-Type': 'text/yaml; charset=utf-8' }); return res.end(`# Switchboard 规则\ntask_table:\n${rules.task_table.map((r) => `  - task_type: ${r.task_type}\n    tier: ${r.tier}\n`).join('')}`); }
     if (p === '/api/rules/import') return json(res, 200, rules);
     if (p === '/api/accounts' && m === 'GET') return json(res, 200, accounts);
     if (p === '/api/accounts' && m === 'POST') {

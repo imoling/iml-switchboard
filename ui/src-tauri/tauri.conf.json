@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "iML Switchboard",
+  "productName": "Switchboard",
   "version": "0.1.0",
   "identifier": "cn.imoling.switchboard",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "iML Switchboard",
+        "title": "Switchboard",
         "url": "index.html",
         "width": 1120,
         "height": 740,
@@ -28,7 +28,7 @@
       },
       {
         "label": "popover",
-        "title": "iML Switchboard",
+        "title": "Switchboard",
         "url": "index.html?win=popover",
         "width": 340,
         "height": 600,
@@ -43,7 +43,7 @@
       },
       {
         "label": "quick",
-        "title": "iML Switchboard",
+        "title": "Switchboard",
         "url": "index.html?win=quick",
         "width": 640,
         "height": 460,

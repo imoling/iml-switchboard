@@ -502,8 +502,8 @@ type wbModel struct {
 
 func (m *Manager) wbEntries() []wbModel {
 	return []wbModel{
-		{ID: "router-auto", Name: "iML Switchboard 自动", Vendor: "iML Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: true, SupportsImages: true},
-		{ID: "router-sub", Name: "iML Switchboard 订阅优先", Vendor: "iML Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: false, SupportsImages: false},
+		{ID: "router-auto", Name: "Switchboard 自动", Vendor: "Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: true, SupportsImages: true},
+		{ID: "router-sub", Name: "Switchboard 订阅优先", Vendor: "Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: false, SupportsImages: false},
 	}
 }
 

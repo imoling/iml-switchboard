@@ -1,4 +1,4 @@
-# iML Switchboard
+# Switchboard
 
 通用文案规矩在全局 CLAUDE.md，这里只放本项目的术语和例外。
 

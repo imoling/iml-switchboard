@@ -1,4 +1,4 @@
-//! iML Switchboard 桌面壳：托盘、三个窗口、全局快捷键、后台拉起。
+//! Switchboard 桌面壳：托盘、三个窗口、全局快捷键、后台拉起。
 //! 所有业务数据都在 React 侧通过 http://127.0.0.1:18081 取，这里不碰。
 
 use tauri::{
@@ -112,7 +112,7 @@ fn show_about(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
     WebviewWindowBuilder::new(&app, "about", WebviewUrl::App("index.html?win=about".into()))
-        .title("iML Switchboard")
+        .title("Switchboard")
         .inner_size(360.0, 300.0)
         .resizable(false)
         .minimizable(false)
@@ -181,7 +181,7 @@ pub fn run() {
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(icon)
                 .icon_as_template(true)
-                .tooltip("iML Switchboard")
+                .tooltip("Switchboard")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -230,5 +230,5 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running iML Switchboard");
+        .expect("error while running Switchboard");
 }

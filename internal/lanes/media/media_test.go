@@ -132,7 +132,7 @@ func TestDefaultOutDirAndSlug(t *testing.T) {
 	if p, _ := DefaultOutDir(&core.Task{ProjectDir: "/p"}); p != "/p/assets" {
 		t.Errorf("ProjectDir/assets：%s", p)
 	}
-	if p, _ := DefaultOutDir(&core.Task{}); !strings.HasSuffix(p, "iML Switchboard/media") {
+	if p, _ := DefaultOutDir(&core.Task{}); !strings.HasSuffix(p, "Switchboard/media") {
 		t.Errorf("默认目录不对：%s", p)
 	}
 	if s := Slug("一只 在月球上 跳舞的猫, with hat!"); s != "一只-在月球上-跳舞的猫-with-hat" {

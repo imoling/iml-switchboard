@@ -1,4 +1,4 @@
-// Package config 读写 ~/Library/Application Support/iML Switchboard/config.yaml，
+// Package config 读写 ~/Library/Application Support/Switchboard/config.yaml，
 // 并提供带默认值的配置结构。界面改的每一项都落到这里。
 package config
 
@@ -14,7 +14,10 @@ import (
 )
 
 // AppName 是数据目录名，也是正式产品名。
-const AppName = "iML Switchboard"
+const AppName = "Switchboard"
+
+// legacyAppName 是 0.1 之前的数据目录名，启动时自动迁移。
+const legacyAppName = "iML Switchboard"
 
 // Settings 对应界面「设置」页。
 type Settings struct {
@@ -162,7 +165,14 @@ func DataDir() string {
 		return d
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "Library", "Application Support", AppName)
+	dir := filepath.Join(home, "Library", "Application Support", AppName)
+	legacy := filepath.Join(home, "Library", "Application Support", legacyAppName)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		if _, err := os.Stat(legacy); err == nil {
+			_ = os.Rename(legacy, dir)
+		}
+	}
+	return dir
 }
 
 // Open 加载配置；文件不存在就用默认值创建。

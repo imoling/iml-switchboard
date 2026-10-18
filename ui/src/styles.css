@@ -27,7 +27,7 @@ pre { font: 12px/1.6 ui-monospace, Menlo, monospace; background: var(--page); bo
 .side hr { border: 0; border-top: 1px solid var(--line); margin: 10px 4px; }
 .side .spacer { flex: 1; }
 .side .brand { display: flex; align-items: center; gap: 9px; padding: 6px 10px; font-weight: 650; font-size: 15px; }
-.side .brand img { width: 26px; height: 26px; border-radius: 0; flex-shrink: 0; }
+.side .brand img { height: 20px; width: auto; border-radius: 0; flex-shrink: 0; }
 .drag { -webkit-app-region: drag; }
 .content { flex: 1; padding: 18px 22px; min-width: 0; overflow: auto; }
 .ct { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 12px; }

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"github.com/imoling/iml-switchboard/internal/config"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ type Options struct {
 	Claude core.Driver
 	// Client 是 HTTP 客户端。
 	Client *http.Client
-	// AnimRoot 是动画工程根目录；空串用 ~/Library/Application Support/iML Switchboard/animations。
+	// AnimRoot 是动画工程根目录；空串用 ~/Library/Application Support/Switchboard/animations。
 	AnimRoot string
 	// ImageProviders / VideoProviders 按供应商名注入，优先于按账号自动构造（测试用）。
 	ImageProviders map[string]ImageProvider
@@ -106,11 +107,7 @@ func DefaultOutDir(task *core.Task) (string, error) {
 	case task.ProjectDir != "":
 		return filepath.Join(task.ProjectDir, "assets"), nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, "Library", "Application Support", "iML Switchboard", "media"), nil
+	return filepath.Join(config.DataDir(), "media"), nil
 }
 
 // Slug 从提示词取一小段做文件名。

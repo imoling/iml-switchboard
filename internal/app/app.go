@@ -207,7 +207,7 @@ func (a *App) Handler() http.Handler {
 	a.Admin.Routes(mux)
 	a.Facade.Routes(mux)
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "iML Switchboard %s\n", a.Version)
+		fmt.Fprintf(w, "Switchboard %s\n", a.Version)
 	})
 	return cors(mux)
 }

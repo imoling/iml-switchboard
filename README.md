@@ -1,4 +1,4 @@
-# iML Switchboard · iML 点将台
+# Switchboard · 点将台
 
 订阅额度先用，难事交给强模型，杂活交给便宜模型。
 

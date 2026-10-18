@@ -11,7 +11,7 @@ export const Main: React.FC = () => {
   const opacity = interpolate(frame, [0, fps], [0, 1], { extrapolateRight: "clamp" });
   return (
     <AbsoluteFill style={{ backgroundColor: "#0f172a", justifyContent: "center", alignItems: "center" }}>
-      <h1 style={{ color: "white", fontSize: 120, fontFamily: "sans-serif", opacity }}>iML Switchboard</h1>
+      <h1 style={{ color: "white", fontSize: 120, fontFamily: "sans-serif", opacity }}>Switchboard</h1>
     </AbsoluteFill>
   );
 };
