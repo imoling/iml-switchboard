@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Tier } from '../api/types';
 import { LANE_CHIP, LANE_LABEL, TIER_CHIP, laneGroup } from '../format';
 import { useTheme } from '../theme/ThemeContext';
+import { Mascot, TierSprite } from './Pixel';
 import { desktop } from '../tauri';
 
 export function Seg<T extends string>({ value, options, onChange, full }: { value: T; options: { id: T; label: string }[]; onChange: (v: T) => void; full?: boolean }) {
@@ -21,7 +22,7 @@ export const GroupChip = ({ group }: { group: 'sub' | 'api' | 'media' }) => <spa
 export function TierChip({ tier }: { tier: Tier | null | undefined }) {
   const { t } = useTheme();
   if (!tier) return <GroupChip group="media" />;
-  return <span className={`chip ${TIER_CHIP[tier]}`}>{t(`tier.${tier}`)}</span>;
+  return <span className={`chip ${TIER_CHIP[tier]}`}><TierSprite tier={tier} />{t(`tier.${tier}`)}</span>;
 }
 
 export const Bar = ({ pct, tone }: { pct: number; tone?: 'blue' | 'amber' | 'gold' }) => (
@@ -39,7 +40,7 @@ export function SetRow({ title, desc, children, last }: { title: string; desc?: 
   );
 }
 
-export const Empty = ({ children }: { children: ReactNode }) => <div className="empty">{children}</div>;
+export const Empty = ({ children }: { children: ReactNode }) => <div className="empty"><Mascot scale={3} /><div>{children}</div></div>;
 
 /** 错误三段式：界面上只显示一行，原文折叠 */
 export function ErrorLine({ message, detail }: { message: string; detail?: string }) {

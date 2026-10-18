@@ -3,6 +3,7 @@ import { api, subscribeEvents } from '../api/client';
 import type { Call, Job, Onboarding as Ob, Quota, Status } from '../api/types';
 import { ToastHost } from '../components/ui';
 import appMark from '../assets/app-mark.svg';
+import { Mascot } from '../components/Pixel';
 import { Accounts } from '../pages/Accounts';
 import { Calls } from '../pages/Calls';
 import { Evaluation } from '../pages/Evaluation';
@@ -92,6 +93,7 @@ export function Console() {
         <hr />
         <button className={`nav ${page === 'settings' ? 'on' : ''}`} onClick={() => setPage('settings')}><span>{t('nav.settings')}</span></button>
         <div className="spacer" />
+        <div className="mascot"><Mascot scale={4} /></div>
         {status.paused && <div className="hint" style={{ padding: '0 10px 6px' }}>已{t('pause')}</div>}
         <button className="nav" style={{ color: '#6F6A61' }} onClick={() => (inTauri ? desktop.showAbout() : setAbout(true))}><span>关于</span><small>{status.version}</small></button>
       </aside>

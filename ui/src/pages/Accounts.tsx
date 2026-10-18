@@ -68,7 +68,7 @@ export function Accounts() {
               <span><Dot s={STATUS[a.status].dot} />{STATUS[a.status].text(a)}</span>
               {a.status === 'missing'
                 ? <button className="btn sm" onClick={() => a.install_hint && toast(`在终端运行：${a.install_hint}`)}>怎么安装</button>
-                : a.tiers && Object.keys(a.tiers).length > 0 && <button className="btn sm" onClick={() => setTierEdit(a)}>{tierSummary(a)} ▾</button>}
+                : a.tiers && Object.keys(a.tiers).length > 0 && <button className="btn sm tiers" title={tierSummary(a)} onClick={() => setTierEdit(a)}>{tierSummary(a)} ▾</button>}
               {a.status === 'cooldown' && <span className="hint">{a.detail}</span>}
             </div>
           ))}
@@ -84,7 +84,7 @@ export function Accounts() {
                 : a.status === 'error'
                   ? <button className="btn sm" disabled={busy === a.id} onClick={() => act(a.id, () => api.verifyAccount(a.id))}>重新验证</button>
                   : <span className="muted">{monthCost(a) && `本月 ${monthCost(a)}`}</span>}
-              {a.tiers && Object.keys(a.tiers).length > 0 && <button className="btn sm" onClick={() => setTierEdit(a)}>{tierSummary(a)} ▾</button>}
+              {a.tiers && Object.keys(a.tiers).length > 0 && <button className="btn sm tiers" title={tierSummary(a)} onClick={() => setTierEdit(a)}>{tierSummary(a)} ▾</button>}
               <select className="sel" value="" onChange={(e) => { const v = e.target.value; if (v === 'toggle') void act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled })); if (v === 'verify') void act(a.id, () => api.verifyAccount(a.id)); if (v === 'delete') void act(a.id, () => api.deleteAccount(a.id)); }}>
                 <option value="">操作 ▾</option><option value="verify">重新验证</option><option value="toggle">{a.enabled ? '停用' : '启用'}</option><option value="delete">删除</option>
               </select>

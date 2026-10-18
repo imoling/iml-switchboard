@@ -3,6 +3,7 @@ import { api, subscribeEvents } from '../api/client';
 import type { Quota, Call, Mode, Overview, Settings, Status } from '../api/types';
 import { Bar, Dot, LaneChip, Seg, TierChip } from '../components/ui';
 import { Vendor } from '../components/Vendor';
+import { Mascot } from '../components/Pixel';
 import { quotaWarning } from '../copy';
 import { cost, usd } from '../format';
 import { MODE_OPTIONS } from '../pages/Settings';
@@ -110,7 +111,7 @@ export function Popover() {
 
   return (
     <div ref={rootRef} className="pop" style={{ margin: 0, width: '100%', minHeight: '100vh', overflow: 'auto', borderRadius: 12 }}><div>
-      <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 14 }}>{t('app.title')}</b><span><Dot s={dot} />{dotText}</span></div>
+      <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 8 }}><Mascot scale={2} />{t('app.title')}</b><span><Dot s={dot} />{dotText}</span></div>
       {status === 'offline' && <Offline compact onStarted={load} />}
       {status && status !== 'offline' && ov && (
         <>

@@ -60,8 +60,8 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "gemini-3.8-flash-high", Provider: "google", Display: "Gemini 3.8 Flash（高）", InputPerM: 0.5, OutputPerM: 3, CacheReadPerM: 0.05, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "gemini-3.8-flash-medium", Provider: "google", Display: "Gemini 3.8 Flash（中）", InputPerM: 0.3, OutputPerM: 2, CacheReadPerM: 0.03, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "gemini-3.8-flash-low", Provider: "google", Display: "Gemini 3.8 Flash（低）", InputPerM: 0.15, OutputPerM: 1, CacheReadPerM: 0.015, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "claude-sonnet-4-6", Provider: "google", Display: "Sonnet 4.6（Antigravity）", InputPerM: 3, OutputPerM: 15, CacheReadPerM: 0.3, Currency: "USD", Context: 200000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "claude-opus-4-6-thinking", Provider: "google", Display: "Opus 4.6（Antigravity）", InputPerM: 5, OutputPerM: 25, CacheReadPerM: 0.5, Currency: "USD", Context: 200000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "claude-sonnet-4-6", Provider: "google", Display: "Sonnet 4.6", InputPerM: 3, OutputPerM: 15, CacheReadPerM: 0.3, Currency: "USD", Context: 200000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "claude-opus-4-6-thinking", Provider: "google", Display: "Opus 4.6", InputPerM: 5, OutputPerM: 25, CacheReadPerM: 0.5, Currency: "USD", Context: 200000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "gpt-oss-120b-medium", Provider: "google", Display: "GPT-OSS 120B", InputPerM: 0.1, OutputPerM: 0.5, Currency: "USD", Context: 128000, Tools: true})
 	// 国产
 	add(ModelInfo{ID: "glm-5.3", Provider: "zhipu", Display: "GLM-5.3", InputPerM: cny(8), OutputPerM: cny(28), CacheReadPerM: cny(1.6), Currency: "CNY", Context: 200000, Vision: false, Tools: true})
