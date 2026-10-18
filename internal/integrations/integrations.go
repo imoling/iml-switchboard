@@ -48,10 +48,18 @@ func (m *Manager) hermesCfg() string       { return filepath.Join(m.home, ".herm
 func (m *Manager) workbuddyModels() string { return filepath.Join(m.home, ".workbuddy", "models.json") }
 func (m *Manager) piModels() string        { return filepath.Join(m.home, ".pi", "agent", "models.json") }
 func (m *Manager) doubaoWorkApp() string   { return "/Applications/DoubaoWork.app" }
+func (m *Manager) dshHome() string {
+	if h := os.Getenv("DSH_HOME"); h != "" {
+		return h
+	}
+	return filepath.Join(m.home, ".dsh")
+}
+func (m *Manager) dshPatch() string { return filepath.Join(m.dshHome(), "cordis.patch.yml") }
+func (m *Manager) dshEnv() string   { return filepath.Join(m.dshHome(), ".env") }
 
 // List 返回三个宿主的状态。
 func (m *Manager) List() []map[string]any {
-	return []map[string]any{m.view("claude_code"), m.view("doubao_work"), m.view("pi"), m.view("hermes"), m.view("workbuddy")}
+	return []map[string]any{m.view("claude_code"), m.view("doubao_work"), m.view("pi"), m.view("deepseek_harness"), m.view("hermes"), m.view("workbuddy")}
 }
 
 func (m *Manager) view(id string) map[string]any {
@@ -105,6 +113,16 @@ func (m *Manager) view(id string) map[string]any {
 			v["status"] = "connected"
 		}
 		v["snippet"] = m.piSnippet()
+	case "deepseek_harness":
+		_, errBin := exec.LookPath("dsh")
+		_, errDir := os.Stat(m.dshHome())
+		if errBin != nil && errDir != nil {
+			v["available"] = false
+			v["detail"] = "本机没有找到 dsh 命令"
+		} else if m.dshHas() {
+			v["status"] = "connected"
+		}
+		v["snippet"] = m.dshSnippet()
 	}
 	return v
 }
@@ -121,6 +139,8 @@ func (m *Manager) Connect(id string, opts map[string]bool) (map[string]any, erro
 		err = m.connectWorkBuddy()
 	case "pi":
 		err = m.connectPi()
+	case "deepseek_harness":
+		err = m.connectDsh()
 	case "doubao_work":
 		err = nil // 豆包工作只能在它自己的界面里填，这里只记一笔
 	default:
@@ -156,6 +176,8 @@ func (m *Manager) Disconnect(id string) (map[string]any, error) {
 		err = m.disconnectWorkBuddy()
 	case "pi":
 		err = m.disconnectPi()
+	case "deepseek_harness":
+		err = m.disconnectDsh()
 	case "doubao_work":
 		err = nil
 	default:
@@ -693,4 +715,143 @@ func (m *Manager) disconnectPi() error {
 	doc["providers"] = prb
 	out, _ := json.MarshalIndent(doc, "", "  ")
 	return os.WriteFile(path, append(out, '\n'), 0o600)
+}
+
+// ---------- DeepSeek Harness ----------
+
+const dshKeyRef = "SWITCHBOARD_API_KEY"
+
+func (m *Manager) dshRoute() map[string]any {
+	return map[string]any{
+		"displayName": "Switchboard",
+		"apiKeyEnv":   dshKeyRef,
+		"api":         "openai-completions",
+		"baseURL":     m.facade + "/v1",
+		"models": []map[string]any{
+			{"id": "router-auto", "name": "Switchboard 自动", "contextWindow": 200000, "maxTokens": 32000},
+			{"id": "router-sub", "name": "Switchboard 订阅优先", "contextWindow": 200000, "maxTokens": 32000},
+		},
+	}
+}
+
+func (m *Manager) dshSnippet() string {
+	route, _ := yaml.Marshal([]map[string]any{{"id": "llm-pi-ai", "config": map[string]any{"providers": map[string]any{"switchboard": m.dshRoute()}}}})
+	return fmt.Sprintf("# 追加到 %s（对 web、headless 等所有配置都生效）\n%s\n# 密钥写在 %s 里一行：\n%s=%s\n# 之后在 dsh web 的模型列表里选 Switchboard\n", m.dshPatch(), route, m.dshEnv(), dshKeyRef, m.facadeKey())
+}
+
+func (m *Manager) dshHas() bool {
+	b, err := os.ReadFile(m.dshPatch())
+	return err == nil && bytes.Contains(b, []byte("switchboard:"))
+}
+
+// connectDsh：patch 文件是一个顶层数组，找 id 为 llm-pi-ai 的条目合并进 providers.switchboard，没有就追加；密钥引用写进 .env。
+func (m *Manager) connectDsh() error {
+	path := m.dshPatch()
+	var doc yaml.Node
+	if b, err := os.ReadFile(path); err == nil && len(bytes.TrimSpace(b)) > 0 {
+		if err := yaml.Unmarshal(b, &doc); err != nil {
+			return errors.New("dsh 的 cordis.patch.yml 无法解析，按片段手动添加")
+		}
+		_ = os.WriteFile(path+".bak-imls-"+time.Now().Format("20060102-150405"), b, 0o600)
+	}
+	if doc.Kind == 0 || len(doc.Content) == 0 {
+		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.SequenceNode, Tag: "!!seq"}}}
+	}
+	seq := doc.Content[0]
+	if seq.Kind != yaml.SequenceNode {
+		return errors.New("dsh 的 cordis.patch.yml 顶层不是数组，按片段手动添加")
+	}
+	var entry *yaml.Node
+	for _, it := range seq.Content {
+		if it.Kind == yaml.MappingNode && findScalar(it, "id") == "llm-pi-ai" {
+			entry = it
+			break
+		}
+	}
+	if entry == nil {
+		entry = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		setScalar(entry, "id", "llm-pi-ai")
+		seq.Content = append(seq.Content, entry)
+	}
+	providers := ensureMap(ensureMap(entry, "config"), "providers")
+	deleteKey(providers, "switchboard")
+	var routeNode yaml.Node
+	if err := routeNode.Encode(m.dshRoute()); err != nil {
+		return err
+	}
+	providers.Content = append(providers.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "switchboard"}, &routeNode)
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(m.dshHome(), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		return err
+	}
+	return m.setEnvLine(m.dshEnv(), dshKeyRef, m.facadeKey())
+}
+
+func (m *Manager) disconnectDsh() error {
+	path := m.dshPatch()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var doc yaml.Node
+	if yaml.Unmarshal(b, &doc) != nil || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.SequenceNode {
+		return nil
+	}
+	seq := doc.Content[0]
+	keep := seq.Content[:0]
+	for _, it := range seq.Content {
+		if it.Kind == yaml.MappingNode && findScalar(it, "id") == "llm-pi-ai" {
+			if cfg := findMap(it, "config"); cfg != nil {
+				if prov := findMap(cfg, "providers"); prov != nil {
+					deleteKey(prov, "switchboard")
+					if len(prov.Content) == 0 {
+						deleteKey(cfg, "providers")
+					}
+				}
+				if len(cfg.Content) == 0 {
+					deleteKey(it, "config")
+				}
+			}
+			if len(it.Content) <= 2 { // 只剩 id
+				continue
+			}
+		}
+		keep = append(keep, it)
+	}
+	seq.Content = keep
+	out, _ := yaml.Marshal(&doc)
+	if len(keep) == 0 {
+		out = []byte("[]\n")
+	}
+	_ = os.WriteFile(path, out, 0o600)
+	return m.setEnvLine(m.dshEnv(), dshKeyRef, "")
+}
+
+// setEnvLine 在 .env 里写或删一行 KEY=value；其他行原样保留。
+func (m *Manager) setEnvLine(path, key, val string) error {
+	var lines []string
+	if b, err := os.ReadFile(path); err == nil {
+		for _, l := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+			if strings.HasPrefix(l, key+"=") {
+				continue
+			}
+			if l != "" || len(lines) > 0 {
+				lines = append(lines, l)
+			}
+		}
+	}
+	if val != "" {
+		lines = append(lines, key+"="+val)
+	}
+	if len(lines) == 0 {
+		_ = os.Remove(path)
+		return nil
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600)
 }

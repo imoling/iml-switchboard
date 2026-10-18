@@ -116,6 +116,9 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if req.Model == "router-sub" {
 		t.Lane = core.LaneClaudeSub
 	}
+	if hasTools { // 带工具的是智能体回合，只要文字；要出图它们会自己调工具
+		t.Kind = core.KindText
+	}
 	for _, m := range req.Messages {
 		text, imgs := flatten(m.Content)
 		if m.Role == "system" {

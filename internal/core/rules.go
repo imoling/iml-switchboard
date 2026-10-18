@@ -250,3 +250,19 @@ func TierLabel(t Tier) string {
 	}
 	return string(t)
 }
+
+var reminderRe = regexp.MustCompile(`(?s)<system-reminder>.*?</system-reminder>`)
+
+// mediaAskLimit 是「直接要图 / 要视频」的长度上限：超过它的多半是宿主塞进来的上下文，不是一句请求。
+const mediaAskLimit = 400
+
+// StripInjected 去掉宿主注入的提示块（<system-reminder>…</system-reminder>），只留用户自己说的话。
+// 智能体宿主常把技能清单、系统提醒整段塞进用户消息，里面随便一个「动画」「视频」都不该参与路由判断。
+func StripInjected(prompt string) string {
+	return strings.TrimSpace(reminderRe.ReplaceAllString(prompt, ""))
+}
+
+// IsMediaAsk 判断这段话像不像一句直接的媒体请求：去掉注入块后不超过 400 字。
+func IsMediaAsk(prompt string) bool {
+	return len([]rune(StripInjected(prompt))) <= mediaAskLimit
+}

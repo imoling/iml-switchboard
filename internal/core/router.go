@@ -102,7 +102,12 @@ func (r *Router) Decide(t *Task) *Decision {
 	// 2. 模态
 	tt, matched := config.TaskType{}, false
 	if t.Kind == "" || t.Kind == KindText {
-		tt, matched = MatchTaskType(cfg.Routing.TaskTable, t.Prompt, sig)
+		ask := StripInjected(t.Prompt)
+		tt, matched = MatchTaskType(cfg.Routing.TaskTable, ask, sig)
+		if matched && tt.Kind != "" && !IsMediaAsk(ask) {
+			d.Reason = append(d.Reason, "长文本里出现媒体词，不当媒体任务")
+			tt, matched = config.TaskType{}, false
+		}
 		if matched && tt.Kind != "" {
 			t.Kind = Kind(tt.Kind)
 			d.Kind = t.Kind
