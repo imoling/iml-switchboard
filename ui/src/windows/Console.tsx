@@ -72,6 +72,8 @@ export function Console() {
   }, [status === null || status === 'offline', setThemeId, setProjection, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { void desktop.setTitle(t('app.title')); }, [t]);
+  const online = status !== null && status !== 'offline';
+  useEffect(() => { if (online) void api.settings().then((s) => { if (s.hotkey) void desktop.setHotkey(s.hotkey); }).catch(() => undefined); }, [online]);
 
   if (status === null) return <div className="offline"><span className="hint">正在连接后台…</span></div>;
   if (status === 'offline') return <Offline onStarted={boot} />;

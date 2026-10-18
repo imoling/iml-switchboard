@@ -1,3 +1,4 @@
+import { normalizeHotkey as toAccelerator } from './hotkey';
 /** Tauri 桥：在浏览器里开发时所有调用都安全降级 */
 import { invoke } from '@tauri-apps/api/core';
 
@@ -88,14 +89,3 @@ export const desktop = {
 };
 
 /** 设置里存的是 ⌥Space 这种写法，插件要 Alt+Space */
-export function toAccelerator(h: string): string {
-  const map: Record<string, string> = { '⌥': 'Alt', '⌘': 'Super', '⇧': 'Shift', '⌃': 'Control' };
-  const mods: string[] = [];
-  let rest = h.trim();
-  for (;;) {
-    const ch = rest.charAt(0);
-    if (map[ch]) { mods.push(map[ch]); rest = rest.slice(1).trim(); } else break;
-  }
-  rest = rest.replace(/^\+/, '').trim();
-  return [...mods, rest || 'Space'].join('+');
-}

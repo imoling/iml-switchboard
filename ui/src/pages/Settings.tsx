@@ -1,3 +1,4 @@
+import { hotkeyCaps, normalizeHotkey } from '../hotkey';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Mode, Settings as S, ThemeId } from '../api/types';
@@ -29,10 +30,10 @@ export function Settings() {
       e.preventDefault();
       if (['Shift', 'Alt', 'Meta', 'Control'].includes(e.key)) return;
       if (e.key === 'Escape') { setRecording(false); return; }
-      const mods = `${e.ctrlKey ? '⌃' : ''}${e.altKey ? '⌥' : ''}${e.shiftKey ? '⇧' : ''}${e.metaKey ? '⌘' : ''}`;
+      const mods = [e.ctrlKey && 'Control', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean) as string[];
       const key = e.code === 'Space' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key;
-      if (!mods) return;
-      void save({ hotkey: `${mods}${key}` }); setRecording(false);
+      if (mods.length === 0) return;
+      void save({ hotkey: normalizeHotkey([...mods, key].join('+')) }); setRecording(false);
     };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
@@ -52,7 +53,7 @@ export function Settings() {
   };
 
   const themeOptions = (themes.length ? themes : [{ id: 'standard' as ThemeId, name: '标准' }, { id: 'dianjiang' as ThemeId, name: '点将台' }]).map((x) => ({ id: x.id, label: x.name }));
-  const hotkeyParts = (data?.hotkey ?? '⌥Space').match(/[⌃⌥⇧⌘]|[^⌃⌥⇧⌘]+/g) ?? [];
+  const hotkeyParts = hotkeyCaps(data?.hotkey ?? 'Alt+Space');
 
   return (
     <>
@@ -75,7 +76,7 @@ export function Settings() {
             <Seg value={data.theme} onChange={(v) => save({ theme: v })} options={themeOptions} />
           </SetRow>
           <SetRow title="快速面板快捷键" desc={recording ? '按下新的组合键，Esc 取消' : undefined}>
-            <button className="btn" onClick={() => setRecording(true)}>{recording ? '正在录…' : hotkeyParts.map((p, i) => <span key={i} className="kbd" style={{ marginLeft: i ? 4 : 0 }}>{p}</span>)}</button>
+            <button className={`hotkey ${recording ? 'rec' : ''}`} title="点一下换一个" onClick={() => setRecording(true)}>{recording ? '正在录…' : hotkeyParts.map((p, i) => <kbd key={i}>{p}</kbd>)}</button>
           </SetRow>
           <SetRow title="网络代理" desc="只用于需要代理的服务，比如 OpenRouter">
             <input className="input sm" style={{ width: 160 }} placeholder="127.0.0.1:7890" value={data.proxy} onChange={(e) => setData({ ...data, proxy: e.target.value })} onBlur={() => save({ proxy: data.proxy })} />
