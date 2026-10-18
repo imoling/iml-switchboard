@@ -76,6 +76,15 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "minimax-m3", Provider: "minimax", Display: "MiniMax M3", InputPerM: cny(2.1), OutputPerM: cny(8.4), Currency: "CNY", Context: 200000, Tools: true})
 	add(ModelInfo{ID: "anthropic/claude-sonnet-5.5", Provider: "openrouter", Display: "Sonnet 5.5", InputPerM: 2, OutputPerM: 10, CacheReadPerM: 0.2, Currency: "USD", Context: 1000000, Vision: true, Tools: true, NeedsProxy: true})
 	add(ModelInfo{ID: "anthropic/claude-opus-5.5", Provider: "openrouter", Display: "Opus 5.5", InputPerM: 4, OutputPerM: 20, CacheReadPerM: 0.4, Currency: "USD", Context: 1000000, Vision: true, Tools: true, NeedsProxy: true})
+	// Agnes AI（国内直连，人民币；2026-10 官方价目，促销期多数为 0 元，这里记原价）
+	add(ModelInfo{ID: "agnes-3.0-flash", Provider: "agnes", Display: "Agnes 3.0 Flash", InputPerM: cny(0.35), OutputPerM: cny(1.0), CacheReadPerM: cny(0.035), Currency: "CNY", Context: 512000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "agnes-2.5-flash", Provider: "agnes", Display: "Agnes 2.5 Flash", InputPerM: cny(0.35), OutputPerM: cny(1.0), CacheReadPerM: cny(0.035), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "agnes-2.5-pro-beta", Provider: "agnes", Display: "Agnes 2.5 Pro Beta", InputPerM: cny(0.7), OutputPerM: cny(2.1), CacheReadPerM: cny(0.07), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "agnes-2.5-pro", Provider: "agnes", Display: "Agnes 2.5 Pro", InputPerM: cny(3), OutputPerM: cny(6), CacheReadPerM: cny(0.3), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "agnes-3.0-pro", Provider: "agnes", Display: "Agnes 3.0 Pro", InputPerM: cny(3), OutputPerM: cny(6), CacheReadPerM: cny(0.3), Currency: "CNY", Context: 512000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "agnes-image-2.5-flash", Provider: "agnes", Display: "Agnes Image 2.5 Flash", PerImage: cny(0.07), Currency: "CNY"})
+	add(ModelInfo{ID: "agnes-video-2.5-flash", Provider: "agnes", Display: "Agnes Video 2.5 Flash", PerSecond: cny(0.15), Currency: "CNY"})
+	add(ModelInfo{ID: "agnes-video-2.5", Provider: "agnes", Display: "Agnes Video 2.5", PerSecond: cny(0.25), Currency: "CNY"})
 	// 媒体
 	add(ModelInfo{ID: "google/gemini-nano-banana-2.1", Provider: "openrouter", Display: "Nano Banana 2.1", PerImage: 0.045, Currency: "USD", NeedsProxy: true})
 	add(ModelInfo{ID: "gpt-image-2.5-sunburst", Provider: "openai", Display: "GPT Image 2.5", PerImage: 0.17, Currency: "USD", NeedsProxy: true})

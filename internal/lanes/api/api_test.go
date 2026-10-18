@@ -220,8 +220,8 @@ func TestImagesGenerations(t *testing.T) {
 }
 
 func TestPresetsAndVerify(t *testing.T) {
-	if len(Presets) != 8 {
-		t.Errorf("应有 8 个预设，得到 %d", len(Presets))
+	if len(Presets) != 10 {
+		t.Errorf("应有 10 个预设，得到 %d", len(Presets))
 	}
 	for _, p := range Presets {
 		if p.BaseURL == "" || p.Currency == "" || p.Name == "" {

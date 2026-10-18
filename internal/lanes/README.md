@@ -99,3 +99,10 @@ m := media.New(media.Options{
 | `sub/codex.go` | `codex exec --json` 成功事件 | 三次真实调用都没拿到成功输出，`item.completed{agent_message}` / `turn.completed{usage}` 的形状按公开文档写 |
 
 按量付费的 chat completions、images/generations、OpenAI 兼容错误码映射、Claude stream-json 解析均有真实夹具或标准形状支撑。
+
+
+## Agnes AI（2026-10-18 新增）
+
+- 文本：标准 OpenAI 兼容 `/v1/chat/completions`，走 `APIDriver`，预设 id `agnes`。
+- 图片：`AgnesImage`，`POST /v1/images/generations`，`size` 用 1K/2K 档位、`ratio` 单独传、`return_base64: true`；按官方文档写，未实测。
+- 视频：`AgnesVideo`，`POST /v1/videos`（`mode`/`seconds` 字符串/`size: 720P`），轮询 `GET /agnesapi?video_id=&model_name=`（不带 /v1），完成后 `url` 下载；官方未提供取消接口。按文档写，未实测。

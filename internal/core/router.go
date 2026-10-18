@@ -425,6 +425,26 @@ func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) 
 		}
 		out = append(out, tgt)
 	}
+	// 添加了同时会出图 / 出视频的按量付费账号（目前是 Agnes AI）时，自动当作兜底候选，不用改媒体档位配置
+	for _, acc := range cfg.API {
+		if !acc.Enabled || acc.Provider != "agnes" {
+			continue
+		}
+		model := "agnes-image-2.5-flash"
+		if t.Kind == KindVideo {
+			model = "agnes-video-2.5-flash"
+		}
+		dup := false
+		for _, c := range out {
+			if c.Model == model {
+				dup = true
+			}
+		}
+		if !dup {
+			usd, _, _ := r.reg.MediaCost(model, units)
+			out = append(out, Target{Lane: LaneMedia, Provider: "agnes", Model: model, EstCostUSD: usd, AccountID: acc.ID})
+		}
+	}
 	return out
 }
 
@@ -454,6 +474,8 @@ func providerLabel(p string) string {
 		return "MiniMax"
 	case "google":
 		return "Google AI"
+	case "agnes":
+		return "Agnes AI"
 	}
 	return p
 }

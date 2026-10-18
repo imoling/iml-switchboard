@@ -11,9 +11,10 @@ import { desktop } from '../tauri';
 
 const API_PROVIDERS = [
   { id: 'zhipu', label: '智谱', url: 'https://open.bigmodel.cn' },
-  { id: 'bailian', label: '百炼', url: 'https://bailian.console.aliyun.com' },
+  { id: 'dashscope', label: '百炼', url: 'https://bailian.console.aliyun.com' },
   { id: 'deepseek', label: 'DeepSeek', url: 'https://platform.deepseek.com' },
-  { id: 'volcengine', label: '火山方舟', url: 'https://console.volcengine.com/ark' },
+  { id: 'ark', label: '火山方舟', url: 'https://console.volcengine.com/ark' },
+  { id: 'agnes', label: 'Agnes AI', url: 'https://www.agnes-ai.cn' },
   { id: 'moonshot', label: 'Moonshot', url: 'https://platform.moonshot.cn' },
   { id: 'minimax', label: 'MiniMax', url: 'https://platform.minimaxi.com' },
   { id: 'openrouter', label: 'OpenRouter', url: 'https://openrouter.ai' },

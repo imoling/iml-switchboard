@@ -291,8 +291,11 @@ func (o *accountOps) Verify(ctx context.Context, provider, baseURL, apiKey strin
 	if baseURL != "" {
 		p.BaseURL = baseURL
 	}
-	if err := p.Verify(ctx, o.a.httpClient(), apiKey); err != nil {
-		return nil, err
+	// 没有探测型号的预设（只做媒体的火山方舟）跳过联网验证，首次出图时再报错
+	if p.ProbeModel != "" {
+		if err := p.Verify(ctx, o.a.httpClient(), apiKey); err != nil {
+			return nil, err
+		}
 	}
 	var ms []string
 	for m := range p.Models {
@@ -310,6 +313,8 @@ var defaultTiers = map[string]map[string][]string{
 	"minimax":    {"low": {"minimax-m3"}, "mid": {}, "high": {}},
 	"openrouter": {"low": {}, "mid": {"anthropic/claude-sonnet-5.5"}, "high": {"anthropic/claude-opus-5.5"}},
 	"anthropic":  {"low": {"claude-haiku-5-5"}, "mid": {"claude-sonnet-5-5"}, "high": {"claude-opus-5-5"}},
+	"agnes":      {"low": {"agnes-3.0-flash", "agnes-2.5-flash"}, "mid": {"agnes-2.5-pro-beta"}, "high": {"agnes-2.5-pro"}},
+	"ark":        {"low": {}, "mid": {}, "high": {}},
 	"302ai":      {"low": {}, "mid": {}, "high": {}},
 }
 

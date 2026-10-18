@@ -198,6 +198,8 @@ func (d *MediaDriver) imageProvider(target core.Target) (ImageProvider, error) {
 		return &OpenRouterImage{Account: acct, Client: d.opt.Client}, nil
 	case "ark", "volcengine", "doubao":
 		return &ArkImage{Account: acct, Client: d.opt.Client}, nil
+	case "agnes":
+		return &AgnesImage{Account: acct, Client: d.opt.Client}, nil
 	default:
 		return &OpenAICompatImage{Account: acct, Client: d.opt.Client}, nil
 	}
@@ -217,6 +219,8 @@ func (d *MediaDriver) videoProvider(target core.Target) (VideoProvider, error) {
 		return &OpenRouterVideo{Account: acct, Client: d.opt.Client}, nil
 	case "ark", "volcengine", "doubao":
 		return &ArkVideo{Account: acct, Client: d.opt.Client}, nil
+	case "agnes":
+		return &AgnesVideo{Account: acct, Client: d.opt.Client}, nil
 	default:
 		return &OpenAICompatVideo{Account: acct, Client: d.opt.Client}, nil
 	}
