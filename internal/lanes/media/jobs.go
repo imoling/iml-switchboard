@@ -29,6 +29,10 @@ func (d *MediaDriver) finish(jobID string, done chan struct{}) {
 func (d *MediaDriver) update(jobID string, emit func(core.Event), fn func(*core.Job)) *core.Job {
 	now := d.opt.Now()
 	j, err := d.opt.Jobs.Update(jobID, func(j *core.Job) {
+		// 用户取消后，后台轮询还可能带着取消前拿到的进度回来写「运行中」：取消必须作数，丢掉这次写入
+		if j.Status == "canceled" {
+			return
+		}
 		fn(j)
 		j.UpdatedAt = now
 	})
