@@ -63,3 +63,21 @@ func TestParseCodexRateLimits(t *testing.T) {
 		t.Fatalf("%+v %q", ws, plan)
 	}
 }
+
+func TestParseAgyUsage(t *testing.T) {
+	txt := "Gemini Models\tWeekly Limit Remaining\t99%\t2026-10-25T03:09:58Z\nGemini Models\tFive Hour Limit Remaining\t97%\t2026-10-18T08:09:58Z\nClaude and GPT models\tWeekly Limit Remaining\t100%\t2026-10-25T04:06:45Z\nClaude and GPT models\tFive Hour Limit Remaining\t60%\t2026-10-18T09:06:45Z\n"
+	ws := ParseAgyUsage(txt)
+	if len(ws) != 4 {
+		t.Fatalf("%+v", ws)
+	}
+	got := map[string]float64{}
+	for _, w := range ws {
+		got[w.Window] = w.Pct
+	}
+	if got["week"] != 1 || got["5h"] != 3 || got["week_claude"] != 0 || got["5h_claude"] != 40 {
+		t.Fatalf("剩余应换算成已用：%+v", got)
+	}
+	if ws[0].ResetsAt.IsZero() {
+		t.Fatal("应解析重置时间")
+	}
+}
