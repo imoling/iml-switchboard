@@ -22,6 +22,7 @@ import (
 	"github.com/imoling/iml-switchboard/internal/lanes/sub"
 	"github.com/imoling/iml-switchboard/internal/surfaces/admin"
 	"github.com/imoling/iml-switchboard/internal/surfaces/facade"
+	mcpsurface "github.com/imoling/iml-switchboard/internal/surfaces/mcp"
 )
 
 // Addr 是后台监听地址，只在本机。环境变量 IMLS_ADDR 可覆盖（测试用）。
@@ -206,6 +207,10 @@ func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	a.Admin.Routes(mux)
 	a.Facade.Routes(mux)
+	mcpH := mcpsurface.HTTPHandler(BaseURL, a.Version, func() string { return a.Cfg.Get().Settings.FacadeKey })
+	mux.Handle("POST /mcp", mcpH)
+	mux.Handle("GET /mcp", mcpH)
+	mux.Handle("DELETE /mcp", mcpH)
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Switchboard %s\n", a.Version)
 	})

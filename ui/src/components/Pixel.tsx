@@ -126,20 +126,24 @@ const MASCOTS: Record<Exclude<ThemeId, 'standard'>, SpriteDef> = {
   },
 };
 
-// 媒体小人：生图是举画笔的画师，生视频是扛摄像机的影师；配色跟各主题走
+// 媒体小人按主题各有造型：点将台是执笔的军中画师和扛机的影师；后宫是丹青（执笔）与伶人（举扇）；海王是举手机自拍和扛机拍短视频
 const brush = { 4: '....SSSS...R', 5: '.....SS....R', 6: '...CCCCCC..K', 7: '..CCCWWCCC.K', 8: '..CCCCCCCS.K', 9: '..CCCCCCCCK.' };
 const camera = { 6: '..CCCCCC.KKK', 7: '..CCCWWC.KWK', 8: '..CCCCCCSKKK' };
+const phone = { 2: '...HSSSSH.KK', 3: '...HKSSKH.WK', 4: '....SSSS..KK', 5: '.....SS...S.', 6: '...CCCCCC.S.', 7: '..CCCWWCCCS.' };
+const fan = { 3: '...HKSSKH.RR', 4: '....SSSS.RRR', 5: '.....SS...K.', 6: '...CCCCCC.K.', 7: '..CCCWWCCCS.' };
+const soldierBrush = { 4: '....SSSS...R', 5: '.....SS....R', 6: '..CCCCCCCC.K', 7: '.CCDCCCCDC.K', 8: '.CCCCGGCCCSK', 9: '..CCCCCCCCK.' };
+const soldierCamera = { 6: '..CCCCCC.KKK', 7: '.CCDCCCC.KWK', 8: '.CCCCGGCSKKK' };
 const MEDIA_SPRITES: Record<Exclude<ThemeId, 'standard'>, Record<'image' | 'video', SpriteDef>> = {
   dianjiang: {
-    image: person('....HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#5F7A4A', '#3E5230', brush),
-    video: person('....HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#5F7A4A', '#3E5230', camera),
+    image: soldier(soldierBrush, '#5F7A4A', '#3E5230'),
+    video: soldier(soldierCamera, '#5F7A4A', '#3E5230'),
   },
   harem: {
     image: person('..G.HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#8FA88A', '#5F7A4A', brush),
-    video: person('..G.HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#8FA88A', '#5F7A4A', camera),
+    video: person('..G.HHHH.G..', '..GGHHHHGG..', '..CCCCCCCC..', '#E8A0B4', '#C97A94', fan),
   },
   seaking: {
-    image: person('....HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#3F8F8A', '#2C6B67', brush),
+    image: person('....HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#3F8F8A', '#2C6B67', phone),
     video: person('....HHHH....', '...HHHHHH...', '..CCCCCCCC..', '#3F8F8A', '#2C6B67', camera),
   },
 };

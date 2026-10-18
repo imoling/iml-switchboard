@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -34,6 +35,31 @@ func Serve(ctx context.Context, baseURL, version string) error {
 			host = "mcp"
 		}
 	}
+	return NewServer(baseURL, version, host, cwd).Run(ctx, &sdk.StdioTransport{})
+}
+
+// HTTPHandler 把同一套工具挂在后台的 /mcp 上，给只会连 HTTP 的宿主（豆包工作等）用。
+// 要求 Authorization: Bearer <门面密钥>；宿主名取 X-IMLS-Host 头，默认 http。
+func HTTPHandler(baseURL, version string, key func() string) http.Handler {
+	h := sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
+		host := r.Header.Get("X-IMLS-Host")
+		if host == "" {
+			host = "http"
+		}
+		return NewServer(baseURL, version, host, "")
+	}, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if k := key(); k == "" || got != k {
+			http.Error(w, "密钥不对：到设置里复制门面密钥", http.StatusUnauthorized)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+// NewServer 组装五个工具；每次调用都转发给后台的 /api/internal/tool。
+func NewServer(baseURL, version, host, cwd string) *sdk.Server {
 	srv := sdk.NewServer(&sdk.Implementation{Name: "iml-switchboard", Version: version}, nil)
 	call := func(name string, args any) (*sdk.CallToolResult, any, error) {
 		raw, _ := json.Marshal(args)
@@ -98,7 +124,7 @@ func Serve(ctx context.Context, baseURL, version string) error {
 		func(ctx context.Context, r *sdk.CallToolRequest, a jobArgs) (*sdk.CallToolResult, any, error) {
 			return call("get_job", a)
 		})
-	return srv.Run(ctx, &sdk.StdioTransport{})
+	return srv
 }
 
 // ensureBackend 探测后台；没起就用同一个可执行文件启动 serve 并等它就绪。

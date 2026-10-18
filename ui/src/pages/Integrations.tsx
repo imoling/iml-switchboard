@@ -7,10 +7,13 @@ import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop } from '../tauri';
 
-const META: Record<IntegrationId, { name: string; desc: string }> = {
+const META: Record<IntegrationId, { name: string; desc: string; manual?: boolean }> = {
   claude_code: { name: 'Claude Code', desc: 'VS Code 和终端里的 Claude Code 都能调用生图、生视频、问别的模型' },
+  doubao_work: { name: '豆包工作', desc: '在豆包工作里新建一个自定义连接器，它就能让{app}出图、出视频、问模型', manual: true },
+  pi: { name: 'pi', desc: '终端里的 pi 多两个模型可选，自动分档或订阅优先' },
+  deepseek_harness: { name: 'DeepSeek Harness', desc: '多一个自定义提供方，模型列表里选 Switchboard' },
   hermes: { name: 'Hermes Agent', desc: '辅助任务和生图交给{app}；改动从下次启动 Hermes 生效' },
-  workbuddy: { name: 'WorkBuddy', desc: '需要在 WorkBuddy 设置里手动添加两个自定义模型' },
+  workbuddy: { name: 'WorkBuddy', desc: '需要在 WorkBuddy 设置里手动添加两个自定义模型', manual: true },
 };
 
 export function Integrations({ onConnected }: { onConnected?: () => void }) {
@@ -35,12 +38,20 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
           <div className="acct" style={it.id === 'claude_code' && it.status === 'connected' ? { marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : undefined}>
             <VendorLogo provider={it.id} />
             <div className="grow"><b>{META[it.id].name}</b><div className="hint">{META[it.id].desc.replace('{app}', appShort)}</div></div>
-            <span><Dot s={it.status === 'connected' ? 'ok' : 'no'} />{it.status === 'connected' ? '已接入' : '未接入'}</span>
-            {it.id === 'workbuddy'
-              ? <button className="btn sm" onClick={async () => { await desktop.copyText(it.snippet ?? ''); toast('已复制，去 WorkBuddy 设置里粘贴'); }}>复制配置</button>
+            {it.available === false
+              ? <span className="muted" title={it.detail}>未安装</span>
+              : <span><Dot s={it.status === 'connected' ? 'ok' : 'no'} />{it.status === 'connected' ? '已接入' : it.status === 'manual' ? '手动' : '未接入'}</span>}
+            {META[it.id].manual
+              ? <button className="btn sm" disabled={it.available === false} onClick={async () => { await desktop.copyText(it.snippet ?? ''); toast(`已复制，去 ${META[it.id].name} 里粘贴`); }}>复制配置</button>
               : it.status === 'connected'
                 ? <button className="btn sm" disabled={busy === it.id} onClick={() => run(it.id, () => api.disconnect(it.id))}>断开</button>
-                : <button className="btn pri sm" disabled={busy === it.id} onClick={() => run(it.id, () => api.connect(it.id, it.id === 'claude_code' ? { write_claude_md: true } : undefined))}>{busy === it.id ? '正在接入…' : '接入'}</button>}
+                : <button className="btn pri sm" disabled={busy === it.id || it.available === false} onClick={() => run(it.id, () => api.connect(it.id, it.id === 'claude_code' ? { write_claude_md: true } : undefined))}>{busy === it.id ? '正在接入…' : '接入'}</button>}
+            {it.snippet && it.id !== 'claude_code' && (
+              <details className="raw cfg">
+                <summary>{META[it.id].manual ? '怎么填' : '写进去的内容'}</summary>
+                <pre>{it.snippet}</pre>
+              </details>
+            )}
           </div>
           {it.id === 'claude_code' && it.status === 'connected' && (
             <div className="panel" style={{ margin: '-1px 0 10px', borderTopLeftRadius: 0, borderTopRightRadius: 0, fontSize: 12.5, padding: '4px 14px' }}>
@@ -52,7 +63,6 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
               </SetRow>
             </div>
           )}
-          {it.id === 'workbuddy' && it.snippet && <pre style={{ margin: '-2px 0 10px' }}>{it.snippet}</pre>}
         </div>
       ))}
     </>

@@ -229,3 +229,4 @@ details.raw { margin-top: 6px; font-size: 12px; color: var(--muted); } details.r
 .spark.dense div { border-radius: 2px 2px 0 0; }
 .days span { white-space: nowrap; overflow: visible; }
 .days.dense { gap: 2px; }
+.acct details.cfg { flex-basis: 100%; margin: 4px 0 0; } .acct details.cfg summary { cursor: pointer; color: var(--muted); font-size: 12px; } .acct details.cfg pre { max-height: 260px; }

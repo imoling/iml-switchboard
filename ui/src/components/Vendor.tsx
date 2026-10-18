@@ -13,6 +13,7 @@ import minimax from '../assets/vendors/minimax-color.svg';
 import nous from '../assets/vendors/nousresearch.svg';
 import workbuddy from '../assets/vendors/workbuddy.png';
 import agnes from '../assets/vendors/agnes.png';
+import pi from '../assets/vendors/pi.svg';
 
 const MAP: Record<string, string> = {
   anthropic: claude, claude: claude, claude_sub: claude, claude_code: claude,
@@ -23,6 +24,7 @@ const MAP: Record<string, string> = {
   volcengine: volcengine, ark: volcengine, doubao: doubao, seedream: volcengine, seedance: volcengine,
   openrouter: openrouter, deepseek: deepseek, moonshot: moonshot, kimi: moonshot, minimax: minimax,
   nous: nous, nousresearch: nous, hermes: nous, workbuddy: workbuddy, agnes: agnes,
+  doubao_work: doubao, pi: pi, deepseek_harness: deepseek,
 };
 
 /** 模型名前的厂商 logo；认不出的厂商不占位 */

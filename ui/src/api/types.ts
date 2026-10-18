@@ -72,10 +72,10 @@ export interface ContextRule { id: string; title: string; off_effect: string; en
 export interface Rules { task_table: TaskRule[]; explicit: ExplicitRule[]; context_rules: ContextRule[]; classifier?: Record<string, unknown> }
 export interface Suggestion { task_type: string; name?: string; escalations: number; from_tier: Tier; to_tier: Tier; weekly_delta_usd: number }
 
-export type IntegrationId = 'claude_code' | 'hermes' | 'workbuddy';
+export type IntegrationId = 'claude_code' | 'doubao_work' | 'pi' | 'deepseek_harness' | 'hermes' | 'workbuddy';
 export interface Integration {
   id: IntegrationId; status: 'connected' | 'disconnected' | 'manual';
-  options: { write_claude_md?: boolean; opusplan?: boolean }; snippet?: string;
+  options: { write_claude_md?: boolean; opusplan?: boolean }; snippet?: string; available?: boolean; detail?: string;
 }
 
 export interface Settings {

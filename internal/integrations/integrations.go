@@ -46,10 +46,12 @@ func New(cfg *config.Store, exe, facadeURL string, facadeKey func() string) *Man
 func (m *Manager) claudeDir() string       { return filepath.Join(m.home, ".claude") }
 func (m *Manager) hermesCfg() string       { return filepath.Join(m.home, ".hermes", "config.yaml") }
 func (m *Manager) workbuddyModels() string { return filepath.Join(m.home, ".workbuddy", "models.json") }
+func (m *Manager) piModels() string        { return filepath.Join(m.home, ".pi", "agent", "models.json") }
+func (m *Manager) doubaoWorkApp() string   { return "/Applications/DoubaoWork.app" }
 
 // List 返回三个宿主的状态。
 func (m *Manager) List() []map[string]any {
-	return []map[string]any{m.view("claude_code"), m.view("hermes"), m.view("workbuddy")}
+	return []map[string]any{m.view("claude_code"), m.view("doubao_work"), m.view("pi"), m.view("hermes"), m.view("workbuddy")}
 }
 
 func (m *Manager) view(id string) map[string]any {
@@ -86,6 +88,23 @@ func (m *Manager) view(id string) map[string]any {
 			v["status"] = "connected"
 		}
 		v["snippet"] = m.workbuddySnippet()
+	case "doubao_work":
+		v["status"] = "manual"
+		if _, err := os.Stat(m.doubaoWorkApp()); err != nil {
+			v["available"] = false
+			v["detail"] = "本机没有安装豆包工作"
+		}
+		v["snippet"] = m.doubaoWorkSnippet()
+	case "pi":
+		_, errBin := exec.LookPath("pi")
+		_, errDir := os.Stat(filepath.Dir(m.piModels()))
+		if errBin != nil && errDir != nil {
+			v["available"] = false
+			v["detail"] = "本机没有找到 pi 命令"
+		} else if m.piHas() {
+			v["status"] = "connected"
+		}
+		v["snippet"] = m.piSnippet()
 	}
 	return v
 }
@@ -100,6 +119,10 @@ func (m *Manager) Connect(id string, opts map[string]bool) (map[string]any, erro
 		err = m.connectHermes()
 	case "workbuddy":
 		err = m.connectWorkBuddy()
+	case "pi":
+		err = m.connectPi()
+	case "doubao_work":
+		err = nil // 豆包工作只能在它自己的界面里填，这里只记一笔
 	default:
 		return nil, errors.New("不认识的宿主")
 	}
@@ -131,6 +154,10 @@ func (m *Manager) Disconnect(id string) (map[string]any, error) {
 		err = m.disconnectHermes()
 	case "workbuddy":
 		err = m.disconnectWorkBuddy()
+	case "pi":
+		err = m.disconnectPi()
+	case "doubao_work":
+		err = nil
 	default:
 		return nil, errors.New("不认识的宿主")
 	}
@@ -568,5 +595,102 @@ func (m *Manager) disconnectWorkBuddy() error {
 		}
 	}
 	out, _ := json.MarshalIndent(keep, "", "  ")
+	return os.WriteFile(path, append(out, '\n'), 0o600)
+}
+
+// ---------- 豆包工作 ----------
+
+// doubaoWorkSnippet 给「技能 · 连接器 · 伙伴 → 新建 → 新建自定义连接器」用；桌面版支持本地命令和 HTTP 两种。
+func (m *Manager) doubaoWorkSnippet() string {
+	return fmt.Sprintf(`豆包工作 → 左侧「技能 · 连接器 · 伙伴」→ 右上角「新建」→「新建自定义连接器」
+
+方式一（推荐）：传输类型选 STDIO / 本地命令
+  命令：%s
+  参数：mcp
+  环境变量：IMLS_HOST=doubao_work
+
+方式二：传输类型选 HTTP
+  地址：%s/mcp
+  请求头：Authorization: Bearer %s
+          X-IMLS-Host: doubao_work
+`, m.exe, m.facade, m.facadeKey())
+}
+
+// ---------- pi ----------
+
+type piModel struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Reasoning     bool     `json:"reasoning"`
+	Input         []string `json:"input"`
+	ContextWindow int      `json:"contextWindow"`
+	MaxTokens     int      `json:"maxTokens"`
+}
+
+type piProvider struct {
+	BaseURL string    `json:"baseUrl"`
+	API     string    `json:"api"`
+	APIKey  string    `json:"apiKey"`
+	Models  []piModel `json:"models"`
+}
+
+func (m *Manager) piProvider() piProvider {
+	return piProvider{BaseURL: m.facade + "/v1", API: "openai-completions", APIKey: m.facadeKey(), Models: []piModel{
+		{ID: "router-auto", Name: "Switchboard 自动", Input: []string{"text", "image"}, ContextWindow: 200000, MaxTokens: 32000},
+		{ID: "router-sub", Name: "Switchboard 订阅优先", Input: []string{"text"}, ContextWindow: 200000, MaxTokens: 32000},
+	}}
+}
+
+func (m *Manager) piSnippet() string {
+	b, _ := json.MarshalIndent(map[string]any{"providers": map[string]any{"switchboard": m.piProvider()}}, "", "  ")
+	return "// 合并进 ~/.pi/agent/models.json；之后 pi --provider switchboard --model router-auto\n" + string(b)
+}
+
+func (m *Manager) piHas() bool {
+	b, err := os.ReadFile(m.piModels())
+	return err == nil && bytes.Contains(b, []byte(`"switchboard"`))
+}
+
+// connectPi 把 switchboard 提供方合并进 models.json，其余内容原样保留。
+func (m *Manager) connectPi() error {
+	path := m.piModels()
+	doc := map[string]json.RawMessage{}
+	if b, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(b, &doc); err != nil {
+			return errors.New("pi 的 models.json 不是预期的格式，按片段手动添加")
+		}
+		_ = os.WriteFile(path+".bak-imls-"+time.Now().Format("20060102-150405"), b, 0o600)
+	}
+	providers := map[string]json.RawMessage{}
+	if raw, ok := doc["providers"]; ok {
+		_ = json.Unmarshal(raw, &providers)
+	}
+	pb, _ := json.Marshal(m.piProvider())
+	providers["switchboard"] = pb
+	prb, _ := json.Marshal(providers)
+	doc["providers"] = prb
+	out, _ := json.MarshalIndent(doc, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0o600)
+}
+
+func (m *Manager) disconnectPi() error {
+	path := m.piModels()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	doc := map[string]json.RawMessage{}
+	if json.Unmarshal(b, &doc) != nil {
+		return nil
+	}
+	providers := map[string]json.RawMessage{}
+	_ = json.Unmarshal(doc["providers"], &providers)
+	delete(providers, "switchboard")
+	prb, _ := json.Marshal(providers)
+	doc["providers"] = prb
+	out, _ := json.MarshalIndent(doc, "", "  ")
 	return os.WriteFile(path, append(out, '\n'), 0o600)
 }
