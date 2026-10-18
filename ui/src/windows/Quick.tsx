@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { IS_WINDOWS } from '../copy';
 import { api, ApiError, quickRun } from '../api/client';
 import type { Call, Job, QuickPreview, Tier } from '../api/types';
 import { LaneChip, TierChip, ToastHost, toast } from '../components/ui';
 import { Vendor } from '../components/Vendor';
-import { MEDIA_TIER_LABEL, cost, secs, usd } from '../format';
+import { MEDIA_TIER_LABEL, cost, secs, setMoney, usd } from '../format';
 import { useDebounced } from '../hooks';
 import { desktop, inTauri } from '../tauri';
 
@@ -27,7 +28,11 @@ export function Quick() {
   const reset = useCallback(() => { abort.current?.abort(); setPrompt(''); setImagePath(undefined); setPreview(null); setPicked(null); setResult(null); setRunning(false); }, []);
   const close = useCallback(() => { reset(); void desktop.hide('quick'); }, [reset]);
 
-  useEffect(() => { let un = () => {}; void desktop.onShown(() => { ta.current?.focus(); }).then((u) => { un = u; }); return () => un(); }, []);
+  // 费用按设置里的币种显示：每次呼出时读一次，设置改了下次呼出就生效
+  const [, setMoneyTick] = useState(0);
+  const loadMoney = useCallback(() => { void api.status().then((st) => { setMoney(st.currency, st.usd_per_cny); setMoneyTick((n) => n + 1); }).catch(() => {}); }, []);
+  useEffect(() => { loadMoney(); }, [loadMoney]);
+  useEffect(() => { let un = () => {}; void desktop.onShown(() => { ta.current?.focus(); loadMoney(); }).then((u) => { un = u; }); return () => un(); }, [loadMoney]);
   useEffect(() => { ta.current?.focus(); }, []);
 
   // 发送前预览：将使用谁、多少钱
@@ -77,7 +82,7 @@ export function Quick() {
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); if (result) { setResult(null); } else close(); return; }
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void run({ best: e.metaKey }); return; }
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void run({ best: e.metaKey || e.ctrlKey }); return; }
     if (e.key === 'Tab' && preview?.alternatives.length) {
       e.preventDefault();
       const list: (Alt | null)[] = [null, ...preview.alternatives];
@@ -154,7 +159,7 @@ export function Quick() {
             </div>
           )}
           <div className="foot">
-            <span><span className="kbd">↵</span> 发送</span><span><span className="kbd">⌘</span><span className="kbd">↵</span> 用最好档</span><span><span className="kbd">Tab</span> 换模型</span>
+            <span><span className="kbd">↵</span> 发送</span><span><span className="kbd">{IS_WINDOWS ? 'Ctrl' : '⌘'}</span><span className="kbd">↵</span> 用最好档</span><span><span className="kbd">Tab</span> 换模型</span>
             <span style={{ marginLeft: 'auto' }}>拖入图片可做图生视频</span>
           </div>
         </>

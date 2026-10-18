@@ -4,7 +4,7 @@ import type { Account, Tier } from '../api/types';
 import { Dot, ErrorLine, Modal, toast } from '../components/ui';
 import { MediaSprite, TierSprite } from '../components/Pixel';
 import { VendorLogo } from '../components/Vendor';
-import { cny, usd } from '../format';
+import { accountCost } from '../format';
 import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop } from '../tauri';
@@ -43,7 +43,7 @@ export function Accounts() {
     setBusy(id); setErr(null);
     try { await fn(); await reload(); } catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
   };
-  const monthCost = (a: Account) => (a.month_cost_native !== undefined && a.currency === 'CNY' ? cny(a.month_cost_native) : a.month_cost_usd !== undefined ? usd(a.month_cost_usd) : '');
+  const monthCost = (a: Account) => accountCost(a);
   const ORDER = ['top', 'high', 'mid', 'low'];
   const name = (a: Account, m: string) => (m ? a.labels?.[m] ?? m : '不用');
   const isFree = (a: Account, m: string) => !!m && (a.free_models ?? []).includes(m);

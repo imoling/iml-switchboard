@@ -3,7 +3,7 @@ import { api, ApiError } from '../api/client';
 import type { Call, Job } from '../api/types';
 import { Empty, ErrorLine, GroupChip, LaneChip, Modal, RevealButton, Seg, toast } from '../components/ui';
 import { Model, Vendor } from '../components/Vendor';
-import { cost, eta, jobCost } from '../format';
+import { cost, eta, jobCost, usd } from '../format';
 import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop, fileUrl } from '../tauri';
@@ -90,7 +90,7 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
         <Modal title="换个模型重做" onClose={() => setPick(null)}>
           {pick.retry_options!.map((o) => (
             <div key={o.model} className="setrow">
-              <div><div className="tt"><Model provider={pick.provider} name={o.model} /></div><div className="ds"><LaneChip lane={o.lane} /> 约 ${o.est_cost_usd.toFixed(2)}</div></div>
+              <div><div className="tt"><Model provider={pick.provider} name={o.model} /></div><div className="ds"><LaneChip lane={o.lane} /> 约 {usd(o.est_cost_usd)}</div></div>
               <button className="btn sm pri" onClick={() => { void act(() => api.retryJob(pick.id, o.model)); setPick(null); }}>用它重做</button>
             </div>
           ))}

@@ -1,8 +1,10 @@
 import { hotkeyCaps, normalizeHotkey } from '../hotkey';
+import { TRAY_NAME } from '../copy';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Mode, Settings as S, ThemeId } from '../api/types';
 import { ErrorLine, RevealButton, Seg, SetRow, Toggle, toast } from '../components/ui';
+import { fromDisplay, moneySymbol, setMoney, toDisplay } from '../format';
 import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop } from '../tauri';
@@ -14,6 +16,8 @@ export function Settings() {
   const { data, setData, error } = useLoad(() => api.settings());
   const [err, setErr] = useState<ApiError | null>(null);
   const [recording, setRecording] = useState(false);
+  // 月上限输入框里正在改的字，按显示币种；失焦时换回美元再存
+  const [limitDraft, setLimitDraft] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const save = async (patch: Partial<S>) => {
@@ -77,11 +81,17 @@ export function Settings() {
             ))}
           </SetRow>
           <div className="hint" style={{ marginTop: 14 }}>调度与花费</div>
-          <SetRow title="默认调度模式" desc={`菜单栏里可以临时切换；质量模式下困难任务用 Fable`}>
+          <SetRow title="默认调度模式" desc={`${TRAY_NAME}里可以临时切换；质量模式下困难任务用 Fable`}>
             <Seg value={data.default_mode} onChange={(v) => save({ default_mode: v })} options={MODE_OPTIONS} />
           </SetRow>
+          <SetRow title="拿不准时先问低档" desc="关掉后只看关键词，没关键词的难题容易判低">
+            <Toggle on={!data.rules_only} onChange={(v) => save({ rules_only: !v })} />
+          </SetRow>
+          <SetRow title="费用显示" desc={`按 1 美元 ≈ ${(1 / (data.usd_per_cny || 1 / 7.1)).toFixed(1)} 元折算；人民币账号显示原价`}>
+            <Seg value={data.currency === 'CNY' ? 'CNY' : 'USD'} onChange={(v) => { setMoney(v, data.usd_per_cny); setLimitDraft(null); void save({ currency: v }); }} options={[{ id: 'CNY', label: '人民币' }, { id: 'USD', label: '美元' }]} />
+          </SetRow>
           <SetRow title="按量付费月上限" desc="到达后只用订阅，媒体生成暂停">
-            <span className="row">$<input className="input num" type="number" min={0} value={data.monthly_api_limit_usd} onChange={(e) => setData({ ...data, monthly_api_limit_usd: Number(e.target.value) })} onBlur={() => save({ monthly_api_limit_usd: data.monthly_api_limit_usd })} /></span>
+            <span className="row">{moneySymbol()}<input className="input num" type="number" min={0} value={limitDraft ?? Math.round(toDisplay(data.monthly_api_limit_usd) * 100) / 100} onChange={(e) => setLimitDraft(e.target.value)} onBlur={() => { if (limitDraft !== null) { const v = fromDisplay(Number(limitDraft) || 0); setLimitDraft(null); setData({ ...data, monthly_api_limit_usd: v }); void save({ monthly_api_limit_usd: v }); } }} /></span>
           </SetRow>
           <SetRow title="订阅额度让出线" desc={`超过后${t('tier.low')}和${t('tier.mid')}任务改走按量付费`}>
             <span className="row"><input className="input num" type="number" min={0} max={100} value={data.subscription_yield_pct} onChange={(e) => setData({ ...data, subscription_yield_pct: Number(e.target.value) })} onBlur={() => save({ subscription_yield_pct: data.subscription_yield_pct })} />%</span>

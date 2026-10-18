@@ -51,7 +51,7 @@ export interface Account {
 
 export interface Status {
   version: string; uptime_s: number; mode: Mode; theme: ThemeId; paused: boolean; projection: boolean;
-  node_available: boolean; data_dir: string;
+  node_available: boolean; data_dir: string; currency?: 'USD' | 'CNY'; usd_per_cny?: number;
 }
 
 export interface Quota { account_id: string; label: string; provider?: string; window: string; pct: number; resets_at?: string; sub?: boolean; sub_label?: string; estimated?: boolean; observed_at?: string }
@@ -72,23 +72,24 @@ export interface ContextRule { id: string; title: string; off_effect: string; en
 export interface Rules { task_table: TaskRule[]; explicit: ExplicitRule[]; context_rules: ContextRule[]; classifier?: Record<string, unknown> }
 export interface Suggestion { task_type: string; name?: string; escalations: number; from_tier: Tier; to_tier: Tier; weekly_delta_usd: number }
 
-export type IntegrationId = 'claude_code' | 'doubao_work' | 'pi' | 'deepseek_harness' | 'openclaw' | 'hermes' | 'workbuddy';
+export type IntegrationId = 'claude_code' | 'codex' | 'gemini_cli' | 'doubao_work' | 'pi' | 'deepseek_harness' | 'openclaw' | 'hermes' | 'workbuddy';
 export interface Integration {
   id: IntegrationId; status: 'connected' | 'disconnected' | 'manual';
   options: { write_claude_md?: boolean; opusplan?: boolean }; snippet?: string; available?: boolean; detail?: string;
+  calls_7d?: number; last_call?: string;
 }
 
 export interface Settings {
   monthly_api_limit_usd: number; subscription_yield_pct: number; default_mode: Mode; theme: ThemeId;
   hotkey: string; proxy: string; save_prompts: boolean; launch_at_login: boolean; data_dir: string; facade_key: string;
-  auto_evaluate_monthly: boolean; notifications: { quota: boolean; budget: boolean; media: boolean; suggestions: boolean };
+  auto_evaluate_monthly: boolean; rules_only: boolean; currency: 'USD' | 'CNY'; usd_per_cny: number; notifications: { quota: boolean; budget: boolean; media: boolean; suggestions: boolean };
 }
 
 export interface Theme { id: ThemeId; name: string; words: Record<string, string> }
 
 export interface Evaluation {
   id: string; status: 'running' | 'done' | 'failed'; started_at: string; finished_at?: string; sample: number; cost_usd: number;
-  range_label?: string; delta_pct?: number;
+  range_label?: string;
   summary: { low_better: number; tie: number; high_better: number };
   error?: string; note?: string;
   by_task: { task_type: string; name?: string; n: number; low_better: number; tie: number; high_better: number; suggestion?: string; to_tier?: Tier; weekly_delta_usd?: number }[];

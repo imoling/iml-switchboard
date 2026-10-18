@@ -1,15 +1,39 @@
 import type { Call, Job, Lane, Tier } from './api/types';
 
-export const usd = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
-export const cny = (n: number) => `¥${n.toFixed(2)}`;
+/** 费用显示的币种。账本一律按美元记，这里只管显示；由各窗口从 /api/status 读到后调 setMoney */
+let display: 'USD' | 'CNY' = 'USD';
+let usdPerCny = 1 / 7.1;
+export function setMoney(currency?: string, rate?: number) {
+  display = currency === 'CNY' ? 'CNY' : 'USD';
+  if (rate && rate > 0) usdPerCny = rate;
+}
+export const moneySymbol = () => (display === 'CNY' ? '¥' : '$');
+/** 美元金额换成显示币种的数值 */
+export const toDisplay = (usdAmount: number) => (display === 'CNY' ? usdAmount / usdPerCny : usdAmount);
+export const fromDisplay = (v: number) => (display === 'CNY' ? v * usdPerCny : v);
 
-/** 订阅渠道没有钱的概念，显示「订阅」；人民币账号显示原币 */
+function digits(n: number) {
+  if (n === 0) return '0';
+  if (Math.abs(n) < 0.01) return n.toFixed(4); // 不到一分的小额多留两位，免得全是 0.00
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+/** 美元金额按显示币种格式化 */
+export const usd = (usdAmount: number) => moneySymbol() + digits(toDisplay(usdAmount));
+const cny = (n: number) => `¥${digits(n)}`;
+
+type Priced = { cost_usd?: number; cost_native?: number; currency?: string };
+/** 显示人民币时，人民币账号直接用账单原价，不来回换算 */
+const priced = (c: Priced) => (display === 'CNY' && c.currency === 'CNY' && c.cost_native !== undefined ? cny(c.cost_native) : usd(c.cost_usd ?? 0));
+
+/** 订阅渠道没有钱的概念，显示「订阅」 */
 export function cost(c: Pick<Call, 'lane' | 'cost_usd' | 'cost_native' | 'currency'>): { text: string; muted: boolean } {
   if (isSub(c.lane)) return { text: '订阅', muted: true };
-  if (c.currency === 'CNY' && c.cost_native !== undefined) return { text: cny(c.cost_native), muted: false };
-  return { text: usd(c.cost_usd), muted: false };
+  return { text: priced(c), muted: false };
 }
-export const jobCost = (j: Job) => (j.cost_usd === undefined || (j.cost_usd === 0 && j.lane && isSub(j.lane)) ? '' : j.currency === 'CNY' && j.cost_native !== undefined ? cny(j.cost_native) : usd(j.cost_usd));
+export const jobCost = (j: Job) => (j.cost_usd === undefined || (j.cost_usd === 0 && j.lane && isSub(j.lane)) ? '' : priced(j));
+/** 账号的本月花费 */
+export const accountCost = (a: { month_cost_usd?: number; month_cost_native?: number; currency?: string }) =>
+  a.month_cost_usd === undefined && a.month_cost_native === undefined ? '' : priced({ cost_usd: a.month_cost_usd, cost_native: a.month_cost_native, currency: a.currency });
 
 export const isSub = (lane: Lane | string) => lane.endsWith('_sub');
 export type LaneGroup = 'sub' | 'api' | 'media';
@@ -19,7 +43,7 @@ export const LANE_CHIP: Record<LaneGroup, string> = { sub: 'c-s', api: 'c-a', me
 export const TIER_CHIP: Record<Tier, string> = { low: 'c-lo', mid: 'c-mid', high: 'c-hi', top: 'c-top' };
 export const MEDIA_TIER_LABEL: Record<string, string> = { cheap: '便宜档', default: '默认档', best: '最好档', free: '订阅出图' };
 
-export const HOST_LABEL: Record<string, string> = { claude_code: 'Claude Code', hermes: 'Hermes', workbuddy: 'WorkBuddy', quick: '快速面板', cli: '命令行', redo: '重做', facade: '兼容接口', mcp: '宿主' };
+export const HOST_LABEL: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex', gemini_cli: 'Gemini CLI', pi: 'pi', openclaw: 'OpenClaw', deepseek_harness: 'DeepSeek Harness', doubao_work: '豆包工作', hermes: 'Hermes', workbuddy: 'WorkBuddy', quick: '快速面板', cli: '命令行', redo: '重做', facade: '兼容接口', mcp: '宿主' };
 export const hostLabel = (c: Pick<Call, 'source' | 'host'>) => HOST_LABEL[c.host ?? ''] ?? HOST_LABEL[c.source] ?? c.source;
 
 export const hhmm = (iso: string) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };

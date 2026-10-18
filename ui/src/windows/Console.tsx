@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, subscribeEvents } from '../api/client';
 import type { Call, Job, Onboarding as Ob, Quota, Status } from '../api/types';
 import { ToastHost } from '../components/ui';
+import { setMoney } from '../format';
 import appMark from '../assets/app-mark.svg';
 import { Mascot } from '../components/Pixel';
 import { Accounts } from '../pages/Accounts';
@@ -38,7 +39,7 @@ export function Console() {
   const boot = useCallback(async () => {
     try {
       const s = await api.status();
-      setStatus(s); setThemeId(s.theme); setProjection(s.projection);
+      setStatus(s); setMoney(s.currency, s.usd_per_cny); setThemeId(s.theme); setProjection(s.projection);
       const [ob, ov, media] = await Promise.all([api.onboarding().catch(() => null), api.overview('today').catch(() => null), api.media('all').catch(() => null)]);
       if (ob) setOnboarding(ob);
       if (ov) setTodayCalls(ov.calls);
@@ -66,7 +67,7 @@ export function Console() {
       if (e.type === 'call') { setLiveCall(e.data.call); setTodayCalls((n) => (n === null ? n : n + 1)); }
       if (e.type === 'job') { setLiveJob(e.data.job); void api.media('all').then((m) => setActiveJobs(m.jobs.filter((j) => j.status === 'running' || j.status === 'queued' || j.status === 'submitted').length)).catch(() => {}); }
       if (e.type === 'quota') tray(e.data.quotas);
-      if (e.type === 'status') { setStatus(e.data); setThemeId(e.data.theme); setProjection(e.data.projection); }
+      if (e.type === 'status') { setStatus(e.data); setMoney(e.data.currency, e.data.usd_per_cny); setThemeId(e.data.theme); setProjection(e.data.projection); }
     }, (open) => { if (!open) void desktop.setTrayStatus('off', '后台未运行'); });
     return off;
   }, [status === null || status === 'offline', setThemeId, setProjection, t]); // eslint-disable-line react-hooks/exhaustive-deps

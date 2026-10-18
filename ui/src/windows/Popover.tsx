@@ -5,7 +5,7 @@ import { Bar, Dot, LaneChip, Seg, TierChip } from '../components/ui';
 import { Vendor } from '../components/Vendor';
 import { Mascot } from '../components/Pixel';
 import { quotaWarning } from '../copy';
-import { cost, usd } from '../format';
+import { cost, usd, setMoney } from '../format';
 import { MODE_OPTIONS } from '../pages/Settings';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop } from '../tauri';
@@ -57,15 +57,16 @@ export function Popover() {
   const { t, themes, effectiveId, setThemeId, setProjection, projection } = useTheme();
   const [status, setStatus] = useState<Status | null | 'offline'>(null);
   const [ov, setOv] = useState<Overview | null>(null);
+  const [week, setWeek] = useState<Overview | null>(null);
   const [recent, setRecent] = useState<Call[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const s = await api.status(); setStatus(s); setThemeId(s.theme); setProjection(s.projection);
-      const [o, r, st] = await Promise.all([api.overview('today'), api.calls({ limit: 3 }), api.settings().catch(() => null)]);
-      setOv(o); setRecent(r.slice(0, 3)); if (st) setSettings(st); setError(r.some((c) => !c.ok));
+      const s = await api.status(); setStatus(s); setMoney(s.currency, s.usd_per_cny); setThemeId(s.theme); setProjection(s.projection);
+      const [o, w, r, st] = await Promise.all([api.overview('today'), api.overview('7d').catch(() => null), api.calls({ limit: 3 }), api.settings().catch(() => null)]);
+      setOv(o); setWeek(w); setRecent(r.slice(0, 3)); if (st) setSettings(st); setError(r.some((c) => !c.ok));
     } catch { setStatus('offline'); }
   }, [setThemeId, setProjection]);
 
@@ -73,7 +74,7 @@ export function Popover() {
   useEffect(() => { let un = () => {}; void desktop.onShown(() => void load()).then((u) => { un = u; }); return () => un(); }, [load]);
   useEffect(() => subscribeEvents((e) => {
     if (e.type === 'quota') setOv((o) => (o ? { ...o, quotas: e.data.quotas } : o));
-    if (e.type === 'status') { setStatus(e.data); setThemeId(e.data.theme); setProjection(e.data.projection); }
+    if (e.type === 'status') { setStatus(e.data); setMoney(e.data.currency, e.data.usd_per_cny); setThemeId(e.data.theme); setProjection(e.data.projection); }
     if (e.type === 'call') { setRecent((r) => [e.data.call, ...r].slice(0, 3)); setOv((o) => (o ? { ...o, calls: o.calls + 1 } : o)); }
   }, (open) => { if (!open) setStatus('offline'); }), [setThemeId, setProjection]);
   useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') void desktop.hide('popover'); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, []);
@@ -118,7 +119,7 @@ export function Popover() {
           <div className="stats">
             <div><div className="hint">今天</div><b>{ov.calls} 次</b></div>
             <div><div className="hint">按量花费</div><b>{usd(ov.api_cost_usd)}</b></div>
-            <div><div className="hint">比全用 Opus 省</div><b className="ok-text">{usd(ov.saved_usd)}</b></div>
+            <div title="和全部用 Opus 相比"><div className="hint">近 7 天省下</div><b className="ok-text">{usd((week ?? ov).saved_usd)}</b></div>
           </div>
           {groupQuotas(ov.quotas).map((g) => (
             <div key={g.id}>

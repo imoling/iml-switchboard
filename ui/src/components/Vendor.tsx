@@ -19,7 +19,7 @@ import openclaw from '../assets/vendors/openclaw.svg';
 const MAP: Record<string, string> = {
   anthropic: claude, claude: claude, claude_sub: claude, claude_code: claude,
   openai: openai, chatgpt: openai, codex: openai, codex_sub: openai,
-  google: gemini, gemini: gemini, agy: gemini, agy_sub: gemini,
+  google: gemini, gemini: gemini, gemini_cli: gemini, agy: gemini, agy_sub: gemini,
   zhipu: zhipu, glm: zhipu,
   qwen: qwen, alibaba: qwen, bailian: bailian, dashscope: bailian,
   volcengine: volcengine, ark: volcengine, doubao: doubao, seedream: volcengine, seedance: volcengine,

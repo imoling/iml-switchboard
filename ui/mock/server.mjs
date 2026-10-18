@@ -11,11 +11,12 @@ const now = () => new Date().toISOString();
 const todayAt = (hm) => { const d = new Date(); const [h, m] = hm.split(':').map(Number); d.setHours(h, m, 0, 0); return d.toISOString(); };
 
 // ---------- 状态 ----------
-let status = { version: '1.0.0', uptime_s: 3600, mode: 'balanced', theme: 'dianjiang', paused: false, projection: false, node_available: true, data_dir: `${process.env.HOME}/Library/Application Support/Switchboard` };
+const THEME = process.env.MOCK_THEME || 'dianjiang'; // MOCK_THEME=standard 可换主题（截图用）
+let status = { version: '0.1.0', uptime_s: 3600, mode: 'balanced', theme: THEME, paused: false, projection: false, node_available: true, data_dir: `${process.env.HOME}/Library/Application Support/Switchboard` };
 let onboarding = { done: process.env.MOCK_ONBOARDING !== '1', steps: { cli_detected: false, api_added: false, claude_connected: false, tried: false } };
 
 let settings = {
-  monthly_api_limit_usd: 30, subscription_yield_pct: 70, default_mode: 'balanced', theme: 'dianjiang', hotkey: '⌥Space',
+  monthly_api_limit_usd: 30, subscription_yield_pct: 70, default_mode: 'balanced', theme: THEME, hotkey: '⌥Space',
   proxy: '127.0.0.1:7890', save_prompts: true, launch_at_login: true, data_dir: status.data_dir, facade_key: 'imls-7f3a9c2e',
   auto_evaluate_monthly: false, notifications: { quota: true, budget: true, media: true, suggestions: true },
 };
@@ -36,14 +37,14 @@ let quotas = [
 
 // ---------- 请求记录 ----------
 const calls = [
-  { id: 'c8', ts: todayAt('14:18'), source: 'mcp', host: 'claude_code', kind: 'image', task_type: '封面图', tier: null, media_tier: 'default', lane: 'media', provider: 'openrouter', model: 'Nano Banana 2.1', reason: ['命中「封面图」：要一张图', '默认档候选：Nano Banana 2.1、Seedream 5.0'], candidates: [{ lane: 'media', provider: 'openrouter', model: 'Nano Banana 2.1' }, { lane: 'media', provider: 'volcengine', model: 'Seedream 5.0', skipped: '余额不足' }], units: 1, unit: 'image', cost_usd: 0.04, baseline_cost_usd: 0.04, user_escalated: false, latency_ms: 9000, ok: true, prompt_excerpt: '给公众号文章《模型路由》做一张 2.35:1 的封面，陶土色', result_path: '/Users/imoling/proj/assets/cover.png' },
+  { id: 'c8', ts: todayAt('14:18'), source: 'mcp', host: 'claude_code', kind: 'image', task_type: '封面图', tier: null, media_tier: 'default', lane: 'media', provider: 'openrouter', model: 'Nano Banana 2.1', reason: ['命中「封面图」：要一张图', '默认档候选：Nano Banana 2.1、Seedream 5.0'], candidates: [{ lane: 'media', provider: 'openrouter', model: 'Nano Banana 2.1' }, { lane: 'media', provider: 'volcengine', model: 'Seedream 5.0', skipped: '余额不足' }], units: 1, unit: 'image', cost_usd: 0.04, baseline_cost_usd: 0.04, user_escalated: false, latency_ms: 9000, ok: true, prompt_excerpt: '给公众号文章《模型路由》做一张 2.35:1 的封面，陶土色', result_path: '/Users/me/proj/assets/cover.png' },
   { id: 'c7', ts: todayAt('14:17'), source: 'mcp', host: 'claude_code', kind: 'text', task_type: '小段代码', tier: 'mid', lane: 'api', provider: 'zhipu', model: 'GLM-5.3', reason: ['命中「小段代码」：有代码块，42 行，没有报错栈', '中档候选：GLM-5.3、Claude Sonnet', '请求带工具，跳过订阅渠道'], candidates: [{ lane: 'api', provider: 'zhipu', model: 'GLM-5.3' }, { lane: 'claude_sub', provider: 'anthropic', model: 'Claude Sonnet', skipped: '请求带工具' }], input_tokens: 2100, output_tokens: 640, cost_usd: 0.004, cost_native: 0.03, currency: 'CNY', baseline_cost_usd: 0.02, user_escalated: false, latency_ms: 3200, ok: true, prompt_excerpt: '把这个函数改成支持批量传入，保留原签名…' },
   { id: 'c6', ts: todayAt('14:09'), source: 'mcp', host: 'claude_code', kind: 'text', task_type: '日志归类', tier: 'low', lane: 'api', provider: 'zhipu', model: 'GLM-5.3-Flash', reason: ['命中「摘要与归类」：长日志', '低档候选：GLM-5.3-Flash、Qwen3.8-Flash'], candidates: [{ lane: 'api', provider: 'zhipu', model: 'GLM-5.3-Flash' }], input_tokens: 8800, output_tokens: 300, cost_usd: 0.0014, cost_native: 0.01, currency: 'CNY', baseline_cost_usd: 0.07, user_escalated: false, latency_ms: 2100, ok: true, prompt_excerpt: '把这段日志按错误类型归类…' },
   { id: 'c5', ts: todayAt('13:52'), source: 'mcp', host: 'hermes', kind: 'text', task_type: '疑难调试', tier: 'high', lane: 'claude_sub', provider: 'anthropic', model: 'Opus 5.5', reason: ['命中「疑难调试」：有报错栈', '高档候选：Opus 5.5', '订阅额度 46%，优先订阅'], candidates: [{ lane: 'claude_sub', provider: 'anthropic', model: 'Opus 5.5' }], input_tokens: 12000, output_tokens: 1800, cost_usd: 0, quota_units: 3, baseline_cost_usd: 0.31, user_escalated: false, latency_ms: 24000, ok: true, prompt_excerpt: '排查这个死锁…' },
   { id: 'c4', ts: todayAt('13:47'), source: 'mcp', host: 'claude_code', kind: 'text', task_type: '架构设计', tier: 'top', lane: 'claude_sub', provider: 'anthropic', model: 'Fable 5.1', reason: ['显式指令「仔细想」→ 顶配', '顶配候选：Fable 5.1'], candidates: [{ lane: 'claude_sub', provider: 'anthropic', model: 'Fable 5.1' }], input_tokens: 9000, output_tokens: 2600, cost_usd: 0, quota_units: 6, baseline_cost_usd: 0.42, user_escalated: false, latency_ms: 41000, ok: true, prompt_excerpt: '仔细想：这套调度器的模块边界怎么划…' },
   { id: 'c3', ts: todayAt('13:40'), source: 'facade', host: 'workbuddy', kind: 'text', task_type: '改写', tier: 'low', lane: 'api', provider: 'bailian', model: 'Qwen3.8-Flash', reason: ['命中「改写与翻译」', '低档候选：Qwen3.8-Flash'], candidates: [{ lane: 'api', provider: 'bailian', model: 'Qwen3.8-Flash' }], input_tokens: 600, output_tokens: 500, cost_usd: 0.0002, cost_native: 0.0, currency: 'CNY', baseline_cost_usd: 0.03, user_escalated: false, latency_ms: 1500, ok: true, prompt_excerpt: '把这段话改得正式一点' },
   { id: 'c2', ts: todayAt('13:31'), source: 'mcp', host: 'claude_code', kind: 'text', task_type: '代码评审', tier: 'mid', lane: 'api', provider: 'openai', model: 'GPT-6.1 Sol', fallback_from: 'codex_sub', reason: ['命中「代码评审」：review', '中档候选：ChatGPT 订阅、GPT-6.1 Sol', 'ChatGPT 额度 82%，超过让出线，改走按量付费'], candidates: [{ lane: 'codex_sub', provider: 'openai', model: 'GPT-6.1', skipped: '额度超过让出线' }, { lane: 'api', provider: 'openai', model: 'GPT-6.1 Sol' }], input_tokens: 5000, output_tokens: 900, cost_usd: 0.02, baseline_cost_usd: 0.12, user_escalated: false, latency_ms: 6000, ok: true, prompt_excerpt: '帮我看看这个 PR' },
-  { id: 'c1', ts: todayAt('13:05'), source: 'quick', kind: 'video', task_type: '短视频', tier: null, media_tier: 'cheap', lane: 'media', provider: 'volcengine', model: 'Seedance 2.0 Fast', reason: ['命中「短视频」：5 秒', '便宜档候选：Seedance 2.0 Fast'], candidates: [{ lane: 'media', provider: 'volcengine', model: 'Seedance 2.0 Fast' }], units: 5, unit: 'second', cost_usd: 0.55, cost_native: 4.0, currency: 'CNY', baseline_cost_usd: 0.55, user_escalated: false, latency_ms: 95000, ok: true, prompt_excerpt: '产品演示 5 秒', result_path: '/Users/imoling/proj/assets/demo.mp4', job_id: 'j0' },
+  { id: 'c1', ts: todayAt('13:05'), source: 'quick', kind: 'video', task_type: '短视频', tier: null, media_tier: 'cheap', lane: 'media', provider: 'volcengine', model: 'Seedance 2.0 Fast', reason: ['命中「短视频」：5 秒', '便宜档候选：Seedance 2.0 Fast'], candidates: [{ lane: 'media', provider: 'volcengine', model: 'Seedance 2.0 Fast' }], units: 5, unit: 'second', cost_usd: 0.55, cost_native: 4.0, currency: 'CNY', baseline_cost_usd: 0.55, user_escalated: false, latency_ms: 95000, ok: true, prompt_excerpt: '产品演示 5 秒', result_path: '/Users/me/proj/assets/demo.mp4', job_id: 'j0' },
 ];
 
 // ---------- 规则 ----------
@@ -88,21 +89,27 @@ let accounts = [
 // ---------- 媒体 ----------
 let jobs = [
   { id: 'j1', kind: 'video', status: 'running', progress: 60, eta_seconds: 40, provider: 'volcengine', model: 'Seedance 2.0 Fast', prompt_excerpt: '产品介绍 5 秒', seconds: 5, created_at: now(), updated_at: now(), call_id: 'c9' },
-  { id: 'j2', kind: 'animation', status: 'running', progress: 25, provider: 'anthropic', model: 'Opus 写代码', prompt_excerpt: '标题动效 8 秒', seconds: 8, created_at: now(), updated_at: now(), call_id: 'c10', title: '标题动效', lane: 'claude_sub', render_rounds: 2, render_note: '2 轮，第 1 轮报错已自动修复', size: '1920 × 1080', fps: 30, code_dir: '/Users/imoling/proj/.imls/anim-j2', result_path: 'assets/title-intro.mp4' },
+  { id: 'j2', kind: 'animation', status: 'running', progress: 25, provider: 'anthropic', model: 'Opus 写代码', prompt_excerpt: '标题动效 8 秒', seconds: 8, created_at: now(), updated_at: now(), call_id: 'c10', title: '标题动效', lane: 'claude_sub', render_rounds: 2, render_note: '2 轮，第 1 轮报错已自动修复', size: '1920 × 1080', fps: 30, code_dir: '/Users/me/proj/.imls/anim-j2', result_path: 'assets/title-intro.mp4' },
   { id: 'j3', kind: 'video', status: 'failed', progress: 0, provider: 'openrouter', model: 'Veo 3.1 Lite', prompt_excerpt: '城市夜景', error: '生成失败：内容未通过审核', created_at: now(), updated_at: now(), call_id: 'c11', retry_options: [{ lane: 'media', model: 'Seedance 2.0 Fast', est_cost_usd: 0.55 }, { lane: 'media', model: 'Veo 3.1', est_cost_usd: 1.2 }] },
 ];
 const mediaItems = [
-  { id: 'm1', ts: todayAt('14:18'), source: 'mcp', host: 'claude_code', kind: 'image', task_type: '公众号封面', tier: null, media_tier: 'default', lane: 'media', provider: 'openrouter', model: 'Nano Banana 2.1', reason: [], candidates: [], cost_usd: 0.04, baseline_cost_usd: 0.04, user_escalated: false, latency_ms: 9000, ok: true, result_path: '/Users/imoling/proj/assets/cover.png' },
-  { id: 'm2', ts: todayAt('11:02'), source: 'mcp', host: 'claude_code', kind: 'image', task_type: 'README 头图', tier: null, media_tier: 'cheap', lane: 'media', provider: 'volcengine', model: 'Seedream 5.0', reason: [], candidates: [], cost_usd: 0.017, cost_native: 0.12, currency: 'CNY', baseline_cost_usd: 0.04, user_escalated: false, latency_ms: 7000, ok: true, result_path: '/Users/imoling/proj/assets/readme.png' },
-  { id: 'm3', ts: todayAt('13:05'), source: 'quick', kind: 'video', task_type: '产品演示', tier: null, media_tier: 'cheap', lane: 'media', provider: 'volcengine', model: 'Seedance 2.0', reason: [], candidates: [], units: 5, unit: 'second', cost_usd: 0.55, cost_native: 4, currency: 'CNY', baseline_cost_usd: 0.55, user_escalated: false, latency_ms: 95000, ok: true, result_path: '/Users/imoling/proj/assets/demo.mp4', job_id: 'j0' },
-  { id: 'm4', ts: todayAt('09:40'), source: 'mcp', host: 'hermes', kind: 'image', task_type: '架构插图', tier: null, media_tier: 'free', lane: 'codex_sub', provider: 'openai', model: 'ChatGPT 订阅出图', reason: [], candidates: [], cost_usd: 0, baseline_cost_usd: 0.04, user_escalated: false, latency_ms: 30000, ok: true, result_path: '/Users/imoling/proj/assets/arch.png' },
+  { id: 'm1', ts: todayAt('14:18'), source: 'mcp', host: 'claude_code', kind: 'image', task_type: '公众号封面', tier: null, media_tier: 'default', lane: 'media', provider: 'openrouter', model: 'Nano Banana 2.1', reason: [], candidates: [], cost_usd: 0.04, baseline_cost_usd: 0.04, user_escalated: false, latency_ms: 9000, ok: true, result_path: '/Users/me/proj/assets/cover.png' },
+  { id: 'm2', ts: todayAt('11:02'), source: 'mcp', host: 'claude_code', kind: 'image', task_type: 'README 头图', tier: null, media_tier: 'cheap', lane: 'media', provider: 'volcengine', model: 'Seedream 5.0', reason: [], candidates: [], cost_usd: 0.017, cost_native: 0.12, currency: 'CNY', baseline_cost_usd: 0.04, user_escalated: false, latency_ms: 7000, ok: true, result_path: '/Users/me/proj/assets/readme.png' },
+  { id: 'm3', ts: todayAt('13:05'), source: 'quick', kind: 'video', task_type: '产品演示', tier: null, media_tier: 'cheap', lane: 'media', provider: 'volcengine', model: 'Seedance 2.0', reason: [], candidates: [], units: 5, unit: 'second', cost_usd: 0.55, cost_native: 4, currency: 'CNY', baseline_cost_usd: 0.55, user_escalated: false, latency_ms: 95000, ok: true, result_path: '/Users/me/proj/assets/demo.mp4', job_id: 'j0' },
+  { id: 'm4', ts: todayAt('09:40'), source: 'mcp', host: 'hermes', kind: 'image', task_type: '架构插图', tier: null, media_tier: 'free', lane: 'codex_sub', provider: 'openai', model: 'ChatGPT 订阅出图', reason: [], candidates: [], cost_usd: 0, baseline_cost_usd: 0.04, user_escalated: false, latency_ms: 30000, ok: true, result_path: '/Users/me/proj/assets/arch.png' },
 ];
 
 // ---------- 接入 ----------
 let integrations = [
-  { id: 'claude_code', status: 'connected', options: { write_claude_md: true, opusplan: false } },
-  { id: 'hermes', status: 'disconnected', options: {} },
-  { id: 'workbuddy', status: 'manual', options: {}, snippet: '模型 1：router-auto\n模型 2：router-sub\n地址：http://127.0.0.1:18081/v1\n密钥：imls-7f3a9c2e' },
+  { id: 'claude_code', status: 'connected', options: { write_claude_md: true, opusplan: false }, calls_7d: 186, last_call: '2026-10-18T14:18:00+08:00' },
+  { id: 'codex', status: 'connected', options: {}, calls_7d: 41, last_call: '2026-10-18T11:02:00+08:00' },
+  { id: 'gemini_cli', status: 'disconnected', options: {}, calls_7d: 0 },
+  { id: 'workbuddy', status: 'connected', options: {}, calls_7d: 23, snippet: '模型 1：router-auto\n模型 2：router-sub\n地址：http://127.0.0.1:18081/v1\n密钥：imls-7f3a9c2e' },
+  { id: 'doubao_work', status: 'manual', options: {}, calls_7d: 0, snippet: '命令：imls\n参数：mcp' },
+  { id: 'deepseek_harness', status: 'connected', options: {}, calls_7d: 0, snippet: 'providers.switchboard …' },
+  { id: 'pi', status: 'connected', options: {}, calls_7d: 12, snippet: '{ "providers": { "switchboard": … } }' },
+  { id: 'openclaw', status: 'connected', options: {}, calls_7d: 9, snippet: '{ "models": { "providers": { "switchboard": … } } }' },
+  { id: 'hermes', status: 'disconnected', options: {}, calls_7d: 0 },
 ];
 
 // ---------- 评估 ----------
@@ -179,7 +186,7 @@ setInterval(() => {
     const p = Math.min(100, j.progress + 10);
     changed = true;
     if (p >= 100) {
-      const done = { ...j, status: 'done', progress: 100, updated_at: now(), result_path: j.result_path || `/Users/imoling/proj/assets/${j.id}.mp4`, cost_usd: j.kind === 'video' ? 0.55 : 0, cost_native: j.kind === 'video' ? 4 : undefined, currency: j.kind === 'video' ? 'CNY' : undefined };
+      const done = { ...j, status: 'done', progress: 100, updated_at: now(), result_path: j.result_path || `/Users/me/proj/assets/${j.id}.mp4`, cost_usd: j.kind === 'video' ? 0.55 : 0, cost_native: j.kind === 'video' ? 4 : undefined, currency: j.kind === 'video' ? 'CNY' : undefined };
       setTimeout(() => broadcast('notice', { title: j.kind === 'video' ? '视频已生成' : '动画已生成', body: `${j.prompt_excerpt} · ${j.model}${j.kind === 'video' ? ' · ¥4.00' : ''}`, level: 'info' }), 200);
       return done;
     }
@@ -317,9 +324,9 @@ const server = http.createServer(async (req, res) => {
           const job = { id: `jq${Date.now()}`, kind: 'video', status: 'running', progress: 10, eta_seconds: 60, provider: 'volcengine', model: 'Seedance 2.0 Fast', prompt_excerpt: body.prompt.slice(0, 30), seconds: 5, created_at: now(), updated_at: now(), call_id: 'cq' };
           jobs.unshift(job); send('job', { job }); broadcast('job', { job });
         } else {
-          send('media', { path: '/Users/imoling/proj/assets/cover.png', kind: 'image' });
+          send('media', { path: '/Users/me/proj/assets/cover.png', kind: 'image' });
         }
-        const call = { id: `cq${Date.now()}`, ts: now(), source: 'quick', kind: pv.kind, task_type: pv.task_type, tier: null, media_tier: pv.media_tier, lane: 'media', provider: 'openrouter', model, reason: pv.reason, candidates: pv.candidates, cost_usd: 0.04, baseline_cost_usd: 0.04, user_escalated: false, latency_ms: 9000, ok: true, prompt_excerpt: body.prompt, result_path: '/Users/imoling/proj/assets/cover.png' };
+        const call = { id: `cq${Date.now()}`, ts: now(), source: 'quick', kind: pv.kind, task_type: pv.task_type, tier: null, media_tier: pv.media_tier, lane: 'media', provider: 'openrouter', model, reason: pv.reason, candidates: pv.candidates, cost_usd: 0.04, baseline_cost_usd: 0.04, user_escalated: false, latency_ms: 9000, ok: true, prompt_excerpt: body.prompt, result_path: '/Users/me/proj/assets/cover.png' };
         calls.unshift(call); send('done', { call }); broadcast('call', { call }); onboarding.steps.tried = true; return res.end();
       }
       const parts = ['用 `itertools.groupby` 前先按同一字段排序，', '或者用 `defaultdict(list)` 一次遍历搞定。', '数据量大、只需要分组时，后者更快。'];

@@ -10,3 +10,9 @@ export function quotaWarning(quotas: Quota[], yieldPct: number): string | null {
 }
 
 export const QUOTA_ESTIMATE_NOTE = '带「估算」的行是按本应用记录估的；其余由官方命令回报，以官方显示为准';
+
+/** 跟系统走的说法：macOS 叫菜单栏、Finder，Windows 叫托盘、资源管理器 */
+const platform = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+export const IS_WINDOWS = /Windows/.test(platform);
+export const TRAY_NAME = IS_WINDOWS ? '托盘' : /Mac/.test(platform) ? '菜单栏' : '托盘';
+export const REVEAL_LABEL = IS_WINDOWS ? '在资源管理器中显示' : /Mac/.test(platform) ? '在 Finder 中显示' : '打开所在文件夹';
