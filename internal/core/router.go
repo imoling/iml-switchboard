@@ -446,6 +446,14 @@ func providerLabel(p string) string {
 		return "ChatGPT"
 	case "anthropic":
 		return "Claude"
+	case "deepseek":
+		return "DeepSeek"
+	case "moonshot":
+		return "Moonshot"
+	case "minimax":
+		return "MiniMax"
+	case "google":
+		return "Google AI"
 	}
 	return p
 }
