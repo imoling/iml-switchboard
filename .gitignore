@@ -9,3 +9,16 @@
 .DS_Store
 /.local/
 /ui/src-tauri/binaries/
+
+# 内部材料：只在本机，不进公开仓库
+/docs/research/
+/docs/design/
+/docs/进度.md
+/docs/README.md
+/ui/screenshots/
+/scripts/install-dev.sh
+/scripts/uninstall-dev.sh
+# Tauri 生成的移动端图标，桌面应用用不上
+/ui/src-tauri/icons/android/
+/ui/src-tauri/icons/ios/
+/.playwright-cli/

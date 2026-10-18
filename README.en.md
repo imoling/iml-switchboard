@@ -185,7 +185,7 @@ make ui-check      # interface type check, tests and build
 cd ui && npm run tauri dev
 ```
 
-Project conventions (glossary, interface copy rules, hard limits) are in [CLAUDE.md](CLAUDE.md); research and design notes are in [docs/](docs/) (Chinese).
+Project conventions (glossary, interface copy rules, hard limits) are in [CLAUDE.md](CLAUDE.md); interface development notes are in [ui/README.md](ui/README.md) (Chinese).
 
 ## License
 

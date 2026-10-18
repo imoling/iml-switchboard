@@ -183,7 +183,7 @@ make ui-check      # 界面类型检查、测试、构建
 cd ui && npm run tauri dev
 ```
 
-项目约定（术语表、界面文案、红线）见 [CLAUDE.md](CLAUDE.md)，调研和设计文档在 [docs/](docs/)。
+项目约定（术语表、界面文案、红线）见 [CLAUDE.md](CLAUDE.md)，界面开发见 [ui/README.md](ui/README.md)。
 
 ## 许可
 
