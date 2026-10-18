@@ -2,7 +2,12 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Switchboard windows",
-  "windows": ["main", "popover", "quick", "about"],
+  "windows": [
+    "main",
+    "popover",
+    "quick",
+    "about"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -16,12 +21,47 @@
     "core:window:allow-is-visible",
     "core:webview:allow-create-webview-window",
     "core:event:default",
-    "shell:allow-spawn",
     "shell:allow-open",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "imls",
+          "cmd": "imls",
+          "args": [
+            "serve",
+            "--background"
+          ]
+        },
+        {
+          "name": "binaries/imls",
+          "sidecar": true,
+          "args": [
+            "serve",
+            "--background"
+          ]
+        }
+      ]
+    },
     {
       "identifier": "shell:allow-execute",
       "allow": [
-        { "name": "imls", "cmd": "imls", "args": ["serve"] }
+        {
+          "name": "imls",
+          "cmd": "imls",
+          "args": [
+            "serve",
+            "--background"
+          ]
+        },
+        {
+          "name": "binaries/imls",
+          "sidecar": true,
+          "args": [
+            "serve",
+            "--background"
+          ]
+        }
       ]
     },
     "global-shortcut:allow-register",

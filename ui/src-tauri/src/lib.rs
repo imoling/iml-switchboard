@@ -85,7 +85,7 @@ fn register_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
 fn set_tray_status(app: AppHandle, status: String, tooltip: Option<String>) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let (icon, template) = tray_icon(&status);
-        let _ = tray.set_icon_as_template(template);
+        let _ = tray.set_icon_as_template(template && cfg!(target_os = "macos"));
         let _ = tray.set_icon(Some(icon));
         if let Some(t) = tooltip {
             let _ = tray.set_tooltip(Some(t));
@@ -93,16 +93,26 @@ fn set_tray_status(app: AppHandle, status: String, tooltip: Option<String>) {
     }
 }
 
-/// 后台没起来时由界面点「启动」：等价于在终端里跑 `imls serve`，进程交给系统，不随窗口关闭
+/// 后台没起来时由界面点「启动」：等价于在终端里跑 `imls serve --background`，进程交给系统，不随窗口关闭。
+/// 先用安装包里附带的 imls（Windows 用户不会自己把它放进 PATH），开发时没打包就退回 PATH 里的 imls。
 #[tauri::command]
 async fn start_backend(app: AppHandle) -> Result<(), String> {
-    app.shell()
+    let shell = app.shell();
+    if let Ok(cmd) = shell.sidecar("imls") {
+        if cmd.args(["serve", "--background"]).spawn().is_ok() {
+            return Ok(());
+        }
+    }
+    shell
         .command("imls")
-        .args(["serve"])
+        .args(["serve", "--background"])
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
+
+/// 快速面板的默认快捷键：Windows 上 Alt+Space 是窗口菜单，换成 Ctrl+Alt+Space（与后台配置的默认值一致）
+const DEFAULT_HOTKEY: &str = if cfg!(target_os = "windows") { "Ctrl+Alt+Space" } else { "Alt+Space" };
 
 #[tauri::command]
 fn show_about(app: AppHandle) -> Result<(), String> {
@@ -180,7 +190,7 @@ pub fn run() {
                 .build()?;
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(icon)
-                .icon_as_template(true)
+                .icon_as_template(cfg!(target_os = "macos")) // 单色模板图只有 macOS 菜单栏用得上
                 .tooltip("Switchboard")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -200,8 +210,8 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // 默认快捷键 ⌥Space；设置页改了之后由前端调 set_hotkey
-            if let Err(e) = register_hotkey(&handle, "Alt+Space") {
+            // 先注册默认快捷键；设置页里存的值由前端连上后台后调 set_hotkey 覆盖
+            if let Err(e) = register_hotkey(&handle, DEFAULT_HOTKEY) {
                 eprintln!("register hotkey: {e}");
             }
 

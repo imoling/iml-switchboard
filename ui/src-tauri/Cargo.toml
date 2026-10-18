@@ -3,6 +3,7 @@ name = "iml-switchboard"
 version = "0.1.0"
 description = "Switchboard"
 authors = ["imoling <imoling.cn@gmail.com>"]
+license = "MIT"
 edition = "2021"
 
 [lib]

@@ -1,0 +1,34 @@
+# 每次推送和合并请求：三个平台跑全部 Go 测试（含路由金标集、盲测集、合规测试）和界面检查。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Go 测试
+        run: |
+          go vet ./...
+          go test ./... -timeout 600s
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: 界面检查
+        working-directory: ui
+        run: |
+          npm ci
+          npm run check

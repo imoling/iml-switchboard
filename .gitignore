@@ -8,3 +8,4 @@
 *.db-journal
 .DS_Store
 /.local/
+/ui/src-tauri/binaries/
