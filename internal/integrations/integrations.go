@@ -54,12 +54,13 @@ func (m *Manager) dshHome() string {
 	}
 	return filepath.Join(m.home, ".dsh")
 }
-func (m *Manager) dshPatch() string { return filepath.Join(m.dshHome(), "cordis.patch.yml") }
-func (m *Manager) dshEnv() string   { return filepath.Join(m.dshHome(), ".env") }
+func (m *Manager) dshPatch() string    { return filepath.Join(m.dshHome(), "cordis.patch.yml") }
+func (m *Manager) openclawCfg() string { return filepath.Join(m.home, ".openclaw", "openclaw.json") }
+func (m *Manager) dshEnv() string      { return filepath.Join(m.dshHome(), ".env") }
 
 // List 返回三个宿主的状态。
 func (m *Manager) List() []map[string]any {
-	return []map[string]any{m.view("claude_code"), m.view("doubao_work"), m.view("pi"), m.view("deepseek_harness"), m.view("hermes"), m.view("workbuddy")}
+	return []map[string]any{m.view("claude_code"), m.view("workbuddy"), m.view("doubao_work"), m.view("deepseek_harness"), m.view("pi"), m.view("openclaw"), m.view("hermes")}
 }
 
 func (m *Manager) view(id string) map[string]any {
@@ -123,6 +124,16 @@ func (m *Manager) view(id string) map[string]any {
 			v["status"] = "connected"
 		}
 		v["snippet"] = m.dshSnippet()
+	case "openclaw":
+		_, errBin := exec.LookPath("openclaw")
+		_, errDir := os.Stat(filepath.Dir(m.openclawCfg()))
+		if errBin != nil && errDir != nil {
+			v["available"] = false
+			v["detail"] = "本机没有找到 openclaw 命令"
+		} else if m.openclawHas() {
+			v["status"] = "connected"
+		}
+		v["snippet"] = m.openclawSnippet()
 	}
 	return v
 }
@@ -141,6 +152,8 @@ func (m *Manager) Connect(id string, opts map[string]bool) (map[string]any, erro
 		err = m.connectPi()
 	case "deepseek_harness":
 		err = m.connectDsh()
+	case "openclaw":
+		err = m.connectOpenClaw()
 	case "doubao_work":
 		err = nil // 豆包工作只能在它自己的界面里填，这里只记一笔
 	default:
@@ -178,6 +191,8 @@ func (m *Manager) Disconnect(id string) (map[string]any, error) {
 		err = m.disconnectPi()
 	case "deepseek_harness":
 		err = m.disconnectDsh()
+	case "openclaw":
+		err = m.disconnectOpenClaw()
 	case "doubao_work":
 		err = nil
 	default:
@@ -854,4 +869,82 @@ func (m *Manager) setEnvLine(path, key, val string) error {
 		return nil
 	}
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600)
+}
+
+// ---------- OpenClaw ----------
+
+func (m *Manager) openclawProvider() map[string]any {
+	return map[string]any{
+		"baseUrl": m.facade + "/v1",
+		"apiKey":  m.facadeKey(),
+		"api":     "openai-completions",
+		"models": []map[string]any{
+			{"id": "router-auto", "name": "Switchboard 自动", "reasoning": false, "input": []string{"text", "image"}, "contextWindow": 200000, "maxTokens": 32000},
+			{"id": "router-sub", "name": "Switchboard 订阅优先", "reasoning": false, "input": []string{"text"}, "contextWindow": 200000, "maxTokens": 32000},
+		},
+	}
+}
+
+func (m *Manager) openclawSnippet() string {
+	b, _ := json.MarshalIndent(map[string]any{"models": map[string]any{"providers": map[string]any{"switchboard": m.openclawProvider()}}}, "", "  ")
+	return "// 合并进 ~/.openclaw/openclaw.json；之后用 openclaw models set switchboard/router-auto 或在会话里 /model 选\n" + string(b)
+}
+
+func (m *Manager) openclawHas() bool {
+	b, err := os.ReadFile(m.openclawCfg())
+	return err == nil && bytes.Contains(b, []byte(`"switchboard"`))
+}
+
+// connectOpenClaw 把 switchboard 合并进 models.providers；文件带注释（JSON5）时解析不了，让用户按片段手动贴。
+func (m *Manager) connectOpenClaw() error {
+	path := m.openclawCfg()
+	doc := map[string]json.RawMessage{}
+	if b, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(b, &doc); err != nil {
+			return errors.New("openclaw.json 带注释或格式特殊，这里改不了：复制片段手动合并")
+		}
+		_ = os.WriteFile(path+".bak-imls-"+time.Now().Format("20060102-150405"), b, 0o600)
+	}
+	models := map[string]json.RawMessage{}
+	if raw, ok := doc["models"]; ok {
+		_ = json.Unmarshal(raw, &models)
+	}
+	providers := map[string]json.RawMessage{}
+	if raw, ok := models["providers"]; ok {
+		_ = json.Unmarshal(raw, &providers)
+	}
+	pb, _ := json.Marshal(m.openclawProvider())
+	providers["switchboard"] = pb
+	prb, _ := json.Marshal(providers)
+	models["providers"] = prb
+	mb, _ := json.Marshal(models)
+	doc["models"] = mb
+	out, _ := json.MarshalIndent(doc, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0o600)
+}
+
+func (m *Manager) disconnectOpenClaw() error {
+	path := m.openclawCfg()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	doc := map[string]json.RawMessage{}
+	if json.Unmarshal(b, &doc) != nil {
+		return nil
+	}
+	models := map[string]json.RawMessage{}
+	_ = json.Unmarshal(doc["models"], &models)
+	providers := map[string]json.RawMessage{}
+	_ = json.Unmarshal(models["providers"], &providers)
+	delete(providers, "switchboard")
+	prb, _ := json.Marshal(providers)
+	models["providers"] = prb
+	mb, _ := json.Marshal(models)
+	doc["models"] = mb
+	out, _ := json.MarshalIndent(doc, "", "  ")
+	return os.WriteFile(path, append(out, '\n'), 0o600)
 }

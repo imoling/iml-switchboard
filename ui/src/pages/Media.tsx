@@ -6,7 +6,7 @@ import { Model, Vendor } from '../components/Vendor';
 import { cost, eta, jobCost } from '../format';
 import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
-import { desktop } from '../tauri';
+import { desktop, fileUrl } from '../tauri';
 
 type Kind = 'all' | 'image' | 'video' | 'animation';
 const KIND_LABEL: Record<string, string> = { image: '图片', video: '视频', animation: '动画' };
@@ -34,7 +34,11 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
   }, [liveJob, setData, reload]);
 
   const act = async (fn: () => Promise<unknown>) => { setErr(null); try { await fn(); await reload(); } catch (e) { setErr(e as ApiError); } };
-  const active = data?.jobs.filter((j) => j.status !== 'done' && j.status !== 'canceled') ?? [];
+  const isFailed = (j: Job) => j.status === 'failed' || j.status === 'timeout';
+  const active = data?.jobs.filter((j) => j.status !== 'done' && j.status !== 'canceled' && !isFailed(j)) ?? [];
+  const failed = data?.jobs.filter(isFailed) ?? [];
+  /** 卡片标题：去掉宿主塞进来的提示块，取用户自己那句 */
+  const titleOf = (s?: string) => (s ?? '').replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim().slice(0, 60) || '（没有描述）';
 
   return (
     <>
@@ -47,17 +51,24 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
         <>
           {active.length > 0 && <div className="hint mb6">进行中</div>}
           {active.map((j) => (
-            <div key={j.id} className={`job ${j.status === 'failed' || j.status === 'timeout' ? 'failed' : ''}`}>
+            <div key={j.id} className="job">
               <GroupChip group="media" />
               <span className="name" onClick={() => j.kind === 'animation' && setOpen(j)} style={j.kind === 'animation' ? { cursor: 'pointer' } : undefined}>
-                <span className="muted">{KIND_LABEL[j.kind]}</span> {j.prompt_excerpt}{j.seconds ? ` ${j.seconds} 秒` : ''} · <Model provider={j.provider} name={j.model} />
+                <span className="muted">{KIND_LABEL[j.kind]}</span> {titleOf(j.prompt_excerpt)}{j.seconds ? ` ${j.seconds} 秒` : ''} · <Model provider={j.provider} name={j.model} />
               </span>
-              {j.status === 'failed' || j.status === 'timeout'
-                ? <><span className="grow err-text">{j.error ?? '生成失败：10 分钟内没有完成'}</span>
-                    <button className="btn sm" onClick={() => (j.retry_options && j.retry_options.length > 1 ? setPick(j) : act(() => api.retryJob(j.id, j.retry_options?.[0]?.model)))}>换个模型重做</button></>
-                : <><div className="prog"><span style={{ width: `${pct(j.progress)}%` }} /></div>
-                    <span className="muted">{j.kind === 'animation' && pct(j.progress) < 100 ? '正在渲染…' : eta(j.eta_seconds)}</span>
-                    <button className="btn sm" onClick={() => act(() => api.cancelJob(j.id))}>取消</button></>}
+              <div className="prog"><span style={{ width: `${pct(j.progress)}%` }} /></div>
+              <span className="muted">{j.kind === 'animation' && pct(j.progress) < 100 ? '正在渲染…' : eta(j.eta_seconds)}</span>
+              <button className="btn sm" onClick={() => act(() => api.cancelJob(j.id))}>取消</button>
+            </div>
+          ))}
+          {failed.length > 0 && <div className="hint" style={{ margin: '14px 0 6px' }}>没做成</div>}
+          {failed.map((j) => (
+            <div key={j.id} className="job failed">
+              <GroupChip group="media" />
+              <span className="name"><span className="muted">{KIND_LABEL[j.kind]}</span> {titleOf(j.prompt_excerpt)} · <Model provider={j.provider} name={j.model} /></span>
+              <span className="grow err-text">{j.error ?? '生成失败：10 分钟内没有完成'}</span>
+              <button className="btn sm" onClick={() => (j.retry_options && j.retry_options.length > 1 ? setPick(j) : act(() => api.retryJob(j.id, j.retry_options?.[0]?.model)))}>换个模型重做</button>
+              <button className="btn sm" title="只删这条记录" onClick={() => act(() => api.deleteJob(j.id))}>删除</button>
             </div>
           ))}
           <div className="hint" style={{ margin: '14px 0 6px' }}>已完成</div>
@@ -65,11 +76,11 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
           <div className="gal">
             {data.jobs.filter((j) => j.status === 'done').map((j) => (
               <div key={j.id} className="thumb" onClick={() => j.kind === 'animation' && setOpen(j)}>
-                <div className={`img ${j.kind === 'animation' ? 'anim' : 'video'}`}>{j.kind === 'animation' ? `${j.title ?? j.prompt_excerpt} ▶` : '▶'}</div>
-                <div className="meta"><b>{j.title ?? j.prompt_excerpt}</b><div className="muted"><Vendor provider={j.provider} />{j.model}{j.seconds ? ` · ${j.seconds} 秒` : ''}{jobCost(j) && ` · ${jobCost(j)}`}</div></div>
+                <Preview kind={j.kind} path={j.result_path} />
+                <div className="meta"><b>{j.title ?? titleOf(j.prompt_excerpt)}</b><div className="muted"><Vendor provider={j.provider} />{j.model}{j.seconds ? ` · ${j.seconds} 秒` : ''}{jobCost(j) && ` · ${jobCost(j)}`}</div></div>
               </div>
             ))}
-            {data.items.map((c) => <Thumb key={c.id} c={c} />)}
+            {data.items.map((c) => <Thumb key={c.id} c={c} onDelete={() => act(() => api.deleteCall(c.id))} />)}
           </div>
           <div className="hint" style={{ marginTop: 10 }}>文件存在各项目的 assets 文件夹里；删除记录不会删文件</div>
         </>
@@ -89,13 +100,23 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
   );
 }
 
-function Thumb({ c }: { c: Call }) {
+/** 缩略图：图片直接显示，视频和动画取首帧；拿不到文件时退回色块 */
+function Preview({ kind, path }: { kind: string; path?: string }) {
+  const src = fileUrl(path);
+  if (src && kind === 'image') return <div className="img"><img src={src} alt="" /></div>;
+  if (src) return <div className={`img ${kind === 'animation' ? 'anim' : 'video'}`}><video src={src} muted preload="metadata" playsInline /></div>;
+  return <div className={`img ${kind === 'animation' ? 'anim' : kind === 'video' ? 'video' : ''}`}>{kind === 'image' ? '' : '▶'}</div>;
+}
+
+function Thumb({ c, onDelete }: { c: Call; onDelete: () => void }) {
   const m = cost(c);
   const label = m.muted ? 'ChatGPT 订阅出图' : m.text;
+  const title = (c.prompt_excerpt ?? '').replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim().slice(0, 60) || c.task_name || c.task_type;
   return (
     <div className="thumb" title={c.result_path} onDoubleClick={() => c.result_path && desktop.revealInFinder(c.result_path)}>
-      <div className={`img ${c.kind === 'video' ? 'video' : ''}`}>{c.kind === 'video' ? '▶' : ''}</div>
-      <div className="meta"><b>{c.task_type}</b><div className="muted"><Vendor provider={c.provider} />{m.muted ? label : <>{c.model}{c.units && c.unit === 'second' ? ` · ${c.units} 秒` : ''} · {label}</>}</div></div>
+      <button className="x" title="只删记录，不删文件" onClick={(e) => { e.stopPropagation(); onDelete(); }}>×</button>
+      <Preview kind={c.kind} path={c.result_path} />
+      <div className="meta"><b>{title}</b><div className="muted"><Vendor provider={c.provider} />{m.muted ? label : <>{c.model_display ?? c.model}{c.units && c.unit === 'second' ? ` · ${c.units} 秒` : ''} · {label}</>}</div></div>
     </div>
   );
 }

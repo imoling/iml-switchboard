@@ -1,6 +1,6 @@
 import { normalizeHotkey as toAccelerator } from './hotkey';
 /** Tauri 桥：在浏览器里开发时所有调用都安全降级 */
-import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -89,3 +89,6 @@ export const desktop = {
 };
 
 /** 设置里存的是 ⌥Space 这种写法，插件要 Alt+Space */
+
+/** 本机文件在窗口里能直接显示的地址；浏览器预览里拿不到文件，返回空 */
+export const fileUrl = (path?: string): string => (path && inTauri ? convertFileSrc(path) : '');

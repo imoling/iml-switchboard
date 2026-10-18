@@ -73,6 +73,8 @@ export const api = {
   media: (kind: 'all' | 'image' | 'video' | 'animation') => get<MediaLibrary>(`/api/media?kind=${kind}`),
   job: (id: string) => get<Job>(`/api/jobs/${id}`),
   cancelJob: (id: string) => post<Job>(`/api/jobs/${id}/cancel`),
+  deleteJob: (id: string) => del<{ ok: boolean }>(`/api/jobs/${id}`),
+  deleteCall: (id: string) => del<{ ok: boolean }>(`/api/calls/${id}`),
   retryJob: (id: string, model?: string) => post<Job>(`/api/jobs/${id}/retry`, { model }),
   reviseJob: (id: string, instruction: string) => post<Job>(`/api/jobs/${id}/revise`, { instruction }),
   integrations: () => get<Integration[]>('/api/integrations'),

@@ -139,6 +139,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	h("GET /api/media", s.media)
 	h("GET /api/jobs/{id}", s.job)
 	h("POST /api/jobs/{id}/cancel", s.jobCancel)
+	h("DELETE /api/jobs/{id}", s.jobDelete)
+	h("DELETE /api/calls/{id}", s.callDelete)
 	h("POST /api/jobs/{id}/retry", s.jobRetry)
 	h("POST /api/jobs/{id}/revise", s.jobRevise)
 	h("GET /api/integrations", s.integrations)
@@ -1202,6 +1204,18 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, notFound("任务不存在")
 	}
 	return j, nil
+}
+
+func (s *Server) jobDelete(w http.ResponseWriter, r *http.Request) (any, error) {
+	s.d.Jobs.Delete(r.PathValue("id"))
+	return map[string]any{"ok": true}, nil
+}
+
+func (s *Server) callDelete(w http.ResponseWriter, r *http.Request) (any, error) {
+	if err := s.d.Router.Ledger().DeleteCall(r.PathValue("id")); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ok": true}, nil
 }
 
 func (s *Server) jobCancel(w http.ResponseWriter, r *http.Request) (any, error) {

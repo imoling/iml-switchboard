@@ -12,6 +12,7 @@ const META: Record<IntegrationId, { name: string; desc: string; manual?: boolean
   doubao_work: { name: '豆包工作', desc: '在豆包工作里新建一个自定义连接器，它就能让{app}出图、出视频、问模型', manual: true },
   pi: { name: 'pi', desc: '终端里的 pi 多两个模型可选，自动分档或订阅优先' },
   deepseek_harness: { name: 'DeepSeek Harness', desc: '多一个自定义提供方，模型列表里选 Switchboard' },
+  openclaw: { name: 'OpenClaw', desc: '多一个模型提供方；改动从下次启动网关生效' },
   hermes: { name: 'Hermes Agent', desc: '辅助任务和生图交给{app}；改动从下次启动 Hermes 生效' },
   workbuddy: { name: 'WorkBuddy', desc: '需要在 WorkBuddy 设置里手动添加两个自定义模型', manual: true },
 };

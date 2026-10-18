@@ -529,3 +529,15 @@ func (l *Ledger) Sample(days, n int, tiers []string) ([]*Call, error) {
 func (c *Call) String() string {
 	return fmt.Sprintf("%s %s/%s %s %s $%.4f", c.ID, c.Lane, c.Model, c.TaskType, c.Tier, c.CostUSD)
 }
+
+// DeleteJob 删任务记录；文件不动。
+func (l *Ledger) DeleteJob(id string) error {
+	_, err := l.db.Exec(`DELETE FROM jobs WHERE id=?`, id)
+	return err
+}
+
+// DeleteCall 删一条请求记录；文件不动。
+func (l *Ledger) DeleteCall(id string) error {
+	_, err := l.db.Exec(`DELETE FROM calls WHERE id=?`, id)
+	return err
+}

@@ -94,3 +94,13 @@ func (s *MemJobStore) Update(id string, fn func(*Job)) (*Job, error) {
 	}
 	return &cp, nil
 }
+
+// Delete 删掉一条任务记录（只删记录，不删产物）。
+func (s *MemJobStore) Delete(id string) {
+	s.mu.Lock()
+	delete(s.jobs, id)
+	s.mu.Unlock()
+	if s.ledger != nil {
+		_ = s.ledger.DeleteJob(id)
+	}
+}
