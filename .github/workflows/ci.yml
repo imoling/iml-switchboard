@@ -19,9 +19,18 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Go 测试
+        shell: bash
         run: |
-          go vet ./...
-          go test ./... -timeout 600s
+          set -o pipefail
+          go vet ./... 2>&1 | tee go-test.log
+          go test ./... -timeout 600s 2>&1 | tee -a go-test.log
+      # 日志要管理员权限才能下载；把失败明细写成注释，公开可读
+      - name: 失败明细
+        if: failure()
+        shell: bash
+        run: |
+          detail=$(grep -E -- '--- FAIL|_test\.go:[0-9]+|\.go:[0-9]+:[0-9]+|panic:|^FAIL|^ok |exit status' go-test.log | head -80 | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')
+          echo "::error title=go test 失败::${detail}"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
