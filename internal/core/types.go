@@ -176,10 +176,17 @@ type Health struct {
 
 // QuotaWindow 是一个额度窗口。
 type QuotaWindow struct {
-	Window   string    `json:"window"` // 5h week month
-	Label    string    `json:"label,omitempty"`
-	Pct      float64   `json:"pct"`
-	ResetsAt time.Time `json:"resets_at,omitempty"`
+	Window     string    `json:"window"` // 5h week month week_fable
+	Label      string    `json:"label,omitempty"`
+	Pct        float64   `json:"pct"`
+	ResetsAt   time.Time `json:"resets_at,omitempty"`
+	ObservedAt time.Time `json:"observed_at,omitempty"` // 官方 CLI 自报的时间；零值表示是估算
+	Estimated  bool      `json:"estimated,omitempty"`
+}
+
+// QuotaProber 由能主动探测额度的驱动实现（Claude 的 CLI 每次调用都会回报窗口利用率）。
+type QuotaProber interface {
+	ProbeQuota(ctx context.Context) ([]QuotaWindow, error)
 }
 
 // ErrRateLimited 由驱动返回，表示该渠道被限流或额度用完。

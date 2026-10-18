@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"strings"
 	"sync"
 	"time"
 )
@@ -18,21 +20,60 @@ type QuotaManager struct {
 	fableWeekCap float64
 	// observed 是官方 CLI 自己报告的窗口利用率（Claude 的 rate_limit_event），比估算准，15 分钟内优先用。
 	observed map[LaneID]observedQuota
+	probeMu  sync.Mutex
 }
 
 type observedQuota struct {
-	windows []QuotaWindow
-	at      time.Time
+	Windows []QuotaWindow `json:"windows"`
+	At      time.Time     `json:"at"`
 }
 
-// Observe 记录渠道自报的额度窗口。
+// observedTTL 是自报数据的有效期：过了还没有新的调用，就回退到估算并标注。
+const observedTTL = 6 * time.Hour
+
+// Observe 记录渠道自报的额度窗口，并持久化，重启后还在。
 func (q *QuotaManager) Observe(lane LaneID, windows []QuotaWindow) {
 	if len(windows) == 0 {
 		return
 	}
 	q.mu.Lock()
-	q.observed[lane] = observedQuota{windows: append([]QuotaWindow(nil), windows...), at: time.Now()}
+	q.observed[lane] = observedQuota{Windows: append([]QuotaWindow(nil), windows...), At: time.Now()}
+	cp := map[LaneID]observedQuota{}
+	for k, v := range q.observed {
+		cp[k] = v
+	}
 	q.mu.Unlock()
+	if q.ledger != nil {
+		_ = q.ledger.KVSet("quota_observed", cp)
+	}
+}
+
+// ObservedAt 返回某渠道最近一次自报的时间；没有就是零值。
+func (q *QuotaManager) ObservedAt(lane LaneID) time.Time {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.observed[lane].At
+}
+
+// Refresh 让能探测的渠道各做一次极小的调用来拿真实额度。force 为假时 10 分钟内不重复探测。
+func (q *QuotaManager) Refresh(ctx context.Context, drivers map[LaneID]Driver, force bool) {
+	q.probeMu.Lock()
+	defer q.probeMu.Unlock()
+	for lane, d := range drivers {
+		p, ok := d.(QuotaProber)
+		if !ok {
+			continue
+		}
+		if !force && time.Since(q.ObservedAt(lane)) < 10*time.Minute {
+			continue
+		}
+		if h := d.Health(ctx); h.Status != "ok" && h.Status != "warn" {
+			continue
+		}
+		if ws, err := p.ProbeQuota(ctx); err == nil {
+			q.Observe(lane, ws)
+		}
+	}
 }
 
 type cool struct {
@@ -46,6 +87,12 @@ func NewQuotaManager(l *Ledger, yieldPct func() float64) *QuotaManager {
 		windowCap:    map[LaneID]float64{LaneClaudeSub: 35, LaneCodexSub: 8, LaneAgySub: 10},
 		weekCap:      map[LaneID]float64{LaneClaudeSub: 180, LaneCodexSub: 40, LaneAgySub: 50},
 		fableWeekCap: 90, observed: map[LaneID]observedQuota{}}
+	var obs map[LaneID]observedQuota
+	if l != nil && l.KVGet("quota_observed", &obs) {
+		for k, v := range obs {
+			q.observed[k] = v
+		}
+	}
 	var saved map[LaneID]cool
 	if l != nil && l.KVGet("cooldown", &saved) {
 		for k, v := range saved {
@@ -96,25 +143,33 @@ func (q *QuotaManager) Windows(lane LaneID, models map[string]string) []QuotaWin
 	q.mu.Lock()
 	obs, hasObs := q.observed[lane]
 	q.mu.Unlock()
-	if hasObs && now.Sub(obs.at) < 15*time.Minute {
-		for _, w := range obs.windows {
-			if w.Label == "" {
-				w.Label = map[string]string{"5h": "5 小时窗口", "week": "本周", "7d": "本周"}[w.Window]
-			}
-			if w.Window == "7d" {
-				w.Window = "week"
+	if hasObs && now.Sub(obs.At) < observedTTL {
+		sawFable := false
+		for _, w := range obs.Windows {
+			w.ObservedAt = obs.At
+			key := strings.ToLower(w.Window)
+			switch {
+			case strings.Contains(key, "fable"):
+				w.Window, w.Label = "week_fable", "其中 Fable"
+				sawFable = true
+			case key == "5h" || key == "five_hour":
+				w.Window, w.Label = "5h", "5 小时窗口"
+			case key == "week" || key == "7d" || key == "seven_day":
+				w.Window, w.Label = "week", "本周"
+			case key == "month" || key == "monthly":
+				w.Window, w.Label = "month", "本月"
+			default:
+				if w.Label == "" {
+					w.Label = w.Window
+				}
 			}
 			out = append(out, w)
 		}
-		if lane == LaneClaudeSub {
+		if lane == LaneClaudeSub && !sawFable {
 			if fm, ok := models["top"]; ok && q.ledger != nil {
-				wd := int(now.Weekday())
-				if wd == 0 {
-					wd = 7
-				}
-				start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(wd - 1))
+				start := weekStart(now)
 				fu, _, _ := q.ledger.QuotaWindowUsage(lane, start, fm)
-				out = append(out, QuotaWindow{Window: "week_fable", Label: "其中 Fable", Pct: clamp(fu / q.fableWeekCap * 100), ResetsAt: start.AddDate(0, 0, 7)})
+				out = append(out, QuotaWindow{Window: "week_fable", Label: "其中 Fable", Pct: clamp(fu / q.fableWeekCap * 100), ResetsAt: start.AddDate(0, 0, 7), Estimated: true})
 			}
 		}
 		return out
@@ -122,7 +177,7 @@ func (q *QuotaManager) Windows(lane LaneID, models map[string]string) []QuotaWin
 	if cap := q.windowCap[lane]; cap > 0 {
 		start := now.Truncate(5 * time.Hour)
 		u, _, _ := q.ledger.QuotaWindowUsage(lane, start, "")
-		out = append(out, QuotaWindow{Window: "5h", Label: "5 小时窗口", Pct: clamp(u / cap * 100), ResetsAt: start.Add(5 * time.Hour)})
+		out = append(out, QuotaWindow{Window: "5h", Label: "5 小时窗口", Pct: clamp(u / cap * 100), ResetsAt: start.Add(5 * time.Hour), Estimated: true})
 	}
 	if cap := q.weekCap[lane]; cap > 0 {
 		wd := int(now.Weekday())
@@ -131,15 +186,23 @@ func (q *QuotaManager) Windows(lane LaneID, models map[string]string) []QuotaWin
 		}
 		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(wd - 1))
 		u, _, _ := q.ledger.QuotaWindowUsage(lane, start, "")
-		out = append(out, QuotaWindow{Window: "week", Label: "本周", Pct: clamp(u / cap * 100), ResetsAt: start.AddDate(0, 0, 7)})
+		out = append(out, QuotaWindow{Window: "week", Label: "本周", Pct: clamp(u / cap * 100), ResetsAt: start.AddDate(0, 0, 7), Estimated: true})
 		if lane == LaneClaudeSub {
 			if fm, ok := models["top"]; ok {
 				fu, _, _ := q.ledger.QuotaWindowUsage(lane, start, fm)
-				out = append(out, QuotaWindow{Window: "week_fable", Label: "其中 Fable", Pct: clamp(fu / q.fableWeekCap * 100), ResetsAt: start.AddDate(0, 0, 7)})
+				out = append(out, QuotaWindow{Window: "week_fable", Label: "其中 Fable", Pct: clamp(fu / q.fableWeekCap * 100), ResetsAt: start.AddDate(0, 0, 7), Estimated: true})
 			}
 		}
 	}
 	return out
+}
+
+func weekStart(now time.Time) time.Time {
+	wd := int(now.Weekday())
+	if wd == 0 {
+		wd = 7
+	}
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(wd - 1))
 }
 
 // Healthy 判断订阅渠道现在能不能接某个档位：冷却中不行；过了让出线只接高档和顶配。

@@ -64,6 +64,7 @@ type Server struct {
 	d          Deps
 	mu         sync.Mutex
 	projection bool
+	refreshing bool
 	evals      map[string]*core.Evaluation
 }
 
@@ -116,6 +117,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	h("POST /api/mode", s.mode)
 	h("POST /api/projection", s.projectionToggle)
 	h("GET /api/overview", s.overview)
+	h("POST /api/quota/refresh", s.quotaRefresh)
 	h("GET /api/calls", s.calls)
 	h("GET /api/calls/{id}", s.call)
 	h("POST /api/calls/{id}/escalate", s.escalate)
@@ -255,6 +257,41 @@ func (s *Server) projectionToggle(w http.ResponseWriter, r *http.Request) (any, 
 	return s.statusBody(), nil
 }
 
+// --- 额度探测 ---
+
+// maybeRefreshQuota 在后台让 Claude 做一次极小调用拿真实额度；30 分钟内不重复。
+func (s *Server) maybeRefreshQuota(force bool) {
+	q := s.d.Router.Quota()
+	if !force && time.Since(q.ObservedAt(core.LaneClaudeSub)) < 30*time.Minute {
+		return
+	}
+	s.mu.Lock()
+	if s.refreshing {
+		s.mu.Unlock()
+		return
+	}
+	s.refreshing = true
+	s.mu.Unlock()
+	go func() {
+		defer func() { s.mu.Lock(); s.refreshing = false; s.mu.Unlock() }()
+		drivers := map[core.LaneID]core.Driver{}
+		for _, lane := range []core.LaneID{core.LaneClaudeSub, core.LaneCodexSub, core.LaneAgySub} {
+			if d, ok := s.d.Router.Driver(lane); ok {
+				drivers[lane] = d
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		q.Refresh(ctx, drivers, force)
+		s.d.Bus.Publish("quota", map[string]any{"quotas": s.quotas(s.d.Router.Config().Get())})
+	}()
+}
+
+func (s *Server) quotaRefresh(w http.ResponseWriter, r *http.Request) (any, error) {
+	s.maybeRefreshQuota(true)
+	return map[string]any{"started": true, "quotas": s.quotas(s.d.Router.Config().Get())}, nil
+}
+
 // --- 概览与记录 ---
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -270,7 +307,23 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	cfg := s.d.Router.Config().Get()
+	s.maybeRefreshQuota(false)
 	quotas := s.quotas(cfg)
+	pct := func(m map[string]int, keys ...string) map[string]int {
+		total := 0
+		for _, v := range m {
+			total += v
+		}
+		out := map[string]int{}
+		for _, k := range keys {
+			if total > 0 {
+				out[k] = int(float64(m[k])/float64(total)*100 + 0.5)
+			} else {
+				out[k] = 0
+			}
+		}
+		return out
+	}
 	delta := 0.0
 	if ov.PrevCalls > 0 {
 		delta = float64(ov.Calls-ov.PrevCalls) / float64(ov.PrevCalls) * 100
@@ -279,7 +332,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) (any, error) {
 		"calls": ov.Calls, "prev_calls": ov.PrevCalls, "calls_delta_pct": delta, "api_cost_usd": ov.APICostUSD, "baseline_cost_usd": ov.BaselineCostUSD,
 		"saved_usd": ov.SavedUSD, "saved_pct": ov.SavedPct, "escalation_rate": ov.EscalationRate, "escalation_hot_task": ov.EscalationHot,
 		"escalation_hot_name": s.d.Router.TaskName(ov.EscalationHot),
-		"tier_dist":           ov.TierDist, "lane_dist": ov.LaneDist, "daily": ov.Daily, "quotas": quotas,
+		"tier_dist":           pct(ov.TierDist, "low", "mid", "high", "top", "media"), "lane_dist": pct(ov.LaneDist, "sub", "api", "media"), "tier_counts": ov.TierDist, "lane_counts": ov.LaneDist, "daily": ov.Daily, "quotas": quotas,
 		"budget":    map[string]float64{"month_usd": ov.MonthAPICostUSD, "limit_usd": cfg.Settings.MonthlyAPILimitUSD},
 		"top_tasks": s.namedTasks(ov.TopTasks),
 	}, nil
@@ -298,14 +351,16 @@ func (s *Server) namedTasks(ts []core.TopTask) []map[string]any {
 }
 
 type quotaRow struct {
-	AccountID string    `json:"account_id"`
-	Label     string    `json:"label"`
-	Provider  string    `json:"provider"`
-	Window    string    `json:"window"`
-	WindowKey string    `json:"window_key"`
-	Pct       float64   `json:"pct"`
-	ResetsAt  time.Time `json:"resets_at"`
-	Sub       bool      `json:"sub,omitempty"`
+	Estimated  bool       `json:"estimated,omitempty"`
+	ObservedAt *time.Time `json:"observed_at,omitempty"`
+	AccountID  string     `json:"account_id"`
+	Label      string     `json:"label"`
+	Provider   string     `json:"provider"`
+	Window     string     `json:"window"`
+	WindowKey  string     `json:"window_key"`
+	Pct        float64    `json:"pct"`
+	ResetsAt   time.Time  `json:"resets_at"`
+	Sub        bool       `json:"sub,omitempty"`
 }
 
 func (s *Server) quotas(cfg *config.Config) []quotaRow {
@@ -326,12 +381,23 @@ func (s *Server) quotas(cfg *config.Config) []quotaRow {
 		}
 		label := map[core.LaneID]string{core.LaneClaudeSub: "Claude 订阅", core.LaneCodexSub: "ChatGPT 订阅", core.LaneAgySub: "Google AI 订阅"}[lane]
 		for _, wnd := range s.d.Router.Quota().Windows(lane, sl.Models) {
-			row := quotaRow{AccountID: string(lane), Label: label, Provider: providerOfLane(lane), Window: wnd.Label, WindowKey: wnd.Window, Pct: wnd.Pct, ResetsAt: wnd.ResetsAt, Sub: wnd.Window == "week_fable"}
+			row := quotaRow{AccountID: string(lane), Label: label, Provider: providerOfLane(lane), Window: wnd.Label, WindowKey: wnd.Window, Pct: wnd.Pct, ResetsAt: wnd.ResetsAt, Sub: wnd.Window == "week_fable", Estimated: wnd.Estimated}
+			if !wnd.ObservedAt.IsZero() {
+				t := wnd.ObservedAt
+				row.ObservedAt = &t
+			}
+			// Fable 的用量只有 CLI 自报才准；只凭本应用的记录估不出来，估算行不显示
+			if row.Sub && wnd.Estimated {
+				continue
+			}
 			if row.Window == "" {
 				row.Window = map[string]string{"5h": "5 小时窗口", "week": "本周", "month": "本月"}[wnd.Window]
 			}
 			if row.Sub {
 				row.Label, row.Window = "其中 Fable", "本周"
+			}
+			if row.Estimated {
+				row.Window += "（估算）"
 			}
 			out = append(out, row)
 		}

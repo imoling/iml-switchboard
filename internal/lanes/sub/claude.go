@@ -3,6 +3,7 @@ package sub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -357,6 +358,24 @@ func (d *ClaudeDriver) Run(ctx context.Context, task *core.Task, target core.Tar
 		emit(core.Event{Type: "done"})
 	}
 	return out, nil
+}
+
+// ProbeQuota 用一次最小的 Haiku 调用换取 CLI 自报的额度窗口；不经过账本。
+func (d *ClaudeDriver) ProbeQuota(ctx context.Context) ([]core.QuotaWindow, error) {
+	pctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	if _, err := d.Run(pctx, &core.Task{Prompt: "回复 OK", Kind: core.KindText, Source: "probe"}, core.Target{Lane: d.ID(), Model: "haiku"}, nil); err != nil {
+		var rl *core.ErrRateLimited
+		if !errors.As(err, &rl) {
+			return nil, err
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.lastQuota) == 0 {
+		return nil, errors.New("CLI 没有回报额度")
+	}
+	return append([]core.QuotaWindow(nil), d.lastQuota...), nil
 }
 
 func (d *ClaudeDriver) timeout() time.Duration {
