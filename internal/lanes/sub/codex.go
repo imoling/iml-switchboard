@@ -37,6 +37,7 @@ type CodexDriver struct {
 	Now func() time.Time
 
 	mu       sync.Mutex
+	planType string // 最近一次探测到的套餐类型（free / plus / pro）
 	cooldown time.Time
 }
 
@@ -443,6 +444,9 @@ func (d *CodexDriver) Health(ctx context.Context) core.Health {
 	d.mu.Lock()
 	cd := d.cooldown
 	d.mu.Unlock()
+	if d.planType != "" {
+		ver += " · ChatGPT " + PlanLabel(d.planType)
+	}
 	h := core.Health{Status: "ok", Detail: ver}
 	if cd.After(d.now()) {
 		h.Status = "cooldown"

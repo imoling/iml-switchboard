@@ -51,3 +51,15 @@ func TestAgyArgs(t *testing.T) {
 		t.Fatalf("写文件任务应用 accept-edits：%v", args)
 	}
 }
+
+func TestParseCodexRateLimits(t *testing.T) {
+	raw := []byte(`{"rateLimits":{"limitId":"codex","primary":{"usedPercent":12.5,"windowDurationMins":300,"resetsAt":1794861817},"secondary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":1794861817},"planType":"plus"}}`)
+	ws, plan, err := ParseCodexRateLimits(raw)
+	if err != nil || plan != "plus" || len(ws) != 2 || ws[0].Window != "5h" || ws[0].Pct != 12.5 || ws[1].Window != "week" {
+		t.Fatalf("%+v %q %v", ws, plan, err)
+	}
+	ws, plan, _ = ParseCodexRateLimits([]byte(`{"rateLimits":{"primary":{"usedPercent":0,"windowDurationMins":43200},"planType":"free"}}`))
+	if plan != "free" || ws[0].Window != "month" || PlanLabel(plan) != "免费版" {
+		t.Fatalf("%+v %q", ws, plan)
+	}
+}
