@@ -6,9 +6,19 @@
 
 <p align="center">中文 | <a href="README.en.md">English</a></p>
 
-<p align="center">[![ci](https://github.com/imoling/iml-switchboard/actions/workflows/ci.yml/badge.svg)](https://github.com/imoling/iml-switchboard/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-MIT-C4613A.svg)](LICENSE)</p>
+<p align="center"><a href="https://github.com/imoling/iml-switchboard/actions/workflows/ci.yml"><img src="https://github.com/imoling/iml-switchboard/actions/workflows/ci.yml/badge.svg" alt="ci"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-C4613A.svg" alt="MIT"></a></p>
 
-Switchboard 是一个跑在你电脑上的调度服务。Claude Code、Codex 这些智能体干活时，把翻译、摘要、第二意见、生图、生视频这类子任务交给它，它按难度挑模型：杂活给便宜模型，难事给强模型，能用订阅额度的先用订阅。主力模型还是宿主自己的，不换、不断缓存。
+Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值的按量付费模型、生图生视频模型统一管起来，让 Claude Code、Codex、WorkBuddy、Hermes 这些智能体在哪都能用：
+
+- **按难易自动挑模型，能省就省**：杂活给便宜模型，难事给强模型，订阅额度先用。
+- **要图就生图，不用切换**：直接调 GPT Image、Nano Banana、火山方舟这些生图模型，产物落到项目里。
+- **一个挂了换下一个**：订阅额度用完、限流或报错时，自动换下一个模型，带着同一段对话接着干。
+- **哪个宿主都能用上顶级模型**：配好对应的订阅或密钥，Opus、Fable、GPT 这些强模型哪个宿主都调得到（带工具的智能体回合只走按量付费，不走订阅）。
+
+两种用法：
+
+- **派活**：Claude Code、Codex、Gemini CLI 保留自己的主力模型，把翻译、第二意见、生图这些子任务交给 Switchboard（MCP 工具）。主力的上下文和缓存不受影响。
+- **当主力模型**：WorkBuddy、pi、OpenClaw、DeepSeek Harness 直接把 Switchboard 当成一个模型（OpenAI 兼容接口）。每次请求带着完整对话，Switchboard 按难易挑模型，一个失败就换下一个接着答。
 
 配一个菜单栏（Windows 上是托盘）应用：看额度、看花费、看省了多少、改规则。
 
@@ -29,7 +39,7 @@ Switchboard 是一个跑在你电脑上的调度服务。Claude Code、Codex 这
 | | Switchboard | [magpie](https://github.com/yetone/magpie) | [cc-switch](https://github.com/farion1231/cc-switch) | [claude-code-router](https://github.com/musistudio/claude-code-router) | [OpenRouter](https://openrouter.ai) |
 |---|---|---|---|---|---|
 | 主要做什么 | 宿主把子任务派出来，按难度选模型 | 每个智能体用哪个模型，一处管理 | 一键切换工具背后的供应商 | Claude Code 的本地网关 | 云端模型聚合 |
-| 换不换宿主的主力模型 | 不换 | 换 | 换 | 换 | 换 |
+| 和宿主主力模型的关系 | 两种都行：派子任务（不动主力），或直接当主力模型 | 替换主力 | 替换主力 | 替换主力 | 替换主力 |
 | 按任务选模型 | 规则 + 低档模型判档，有公开的准确率测试 | 小模型判意图 | 无 | 按场景的规则 | 任务分类 + 全平台消费排名 |
 | 订阅额度怎么用 | 只启动未修改的官方命令行（`claude -p`、`codex exec`、`agy -p`），不读登录信息 | 读取 Claude Code、Codex 的登录信息和钥匙串来发现订阅；Claude 部分驱动官方命令行 | 测试版账号功能：登录 Copilot、ChatGPT、Grok 后经本地代理转发 | 不用订阅，用你的 API 密钥 | 不用订阅 |
 | 生图、生视频、动画 | 三类都有，各分三档 | 生图工具 | 无 | 无 | 有模型，需自己调用 |
@@ -54,6 +64,7 @@ Switchboard 是一个跑在你电脑上的调度服务。Claude Code、Codex 这
 **调度**
 - 低档、中档、高档三档，加只在显式要求时才用的顶配；省钱、均衡、质量三种调度模式。
 - 规则拿不准时，先请低档模型判一次档，10 秒内判不出就照规则走。
+- 订阅额度用完、限流或报错时，自动换下一个候选模型，同一段对话照样带过去。
 - 选模型时检查上下文窗口，装不下就换窗口更大的；谁都装不下时返回标准的 `context_length_exceeded`，让宿主自己压缩。
 - 「判低了」一键标记，攒够了会建议调整规则；评估功能抽样重做、盲评，看便宜模型的结果够不够好。
 
@@ -158,6 +169,7 @@ imls golden                                           # 导出「判低了」的
 ## 路线图
 
 - 签名安装包和自动更新；Linux 版验证。
+- Claude Code 订阅额度用完时，可以改连 Switchboard，用按量付费模型接着干（走 API 密钥，不碰订阅）。
 - 订阅渠道限速；兼容入口默认不把整轮对话交给 Claude 订阅。
 - 扩充路由测试数据，盲测集扩到 200 条。
 - Copilot CLI 订阅渠道（走官方命令行）。

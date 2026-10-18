@@ -6,9 +6,19 @@
 
 <p align="center"><a href="README.md">中文</a> | English</p>
 
-<p align="center">[![ci](https://github.com/imoling/iml-switchboard/actions/workflows/ci.yml/badge.svg)](https://github.com/imoling/iml-switchboard/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-MIT-C4613A.svg)](LICENSE)</p>
+<p align="center"><a href="https://github.com/imoling/iml-switchboard/actions/workflows/ci.yml"><img src="https://github.com/imoling/iml-switchboard/actions/workflows/ci.yml/badge.svg" alt="ci"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-C4613A.svg" alt="MIT"></a></p>
 
-Switchboard is a dispatcher that runs on your own machine. When an agent such as Claude Code or Codex is working, it hands sub-tasks to Switchboard: translation, summaries, a second opinion, image or video generation. Switchboard picks a model by difficulty, sending chores to cheap models and hard problems to strong ones, and uses your subscription quota before anything you pay for per token. The agent keeps its own main model, so its conversation and prompt cache are never interrupted.
+Switchboard brings your subscription models (Claude, ChatGPT, Antigravity), your pay-as-you-go models and your image and video models under one roof, and makes them usable from every agent you run: Claude Code, Codex, WorkBuddy, Hermes and more.
+
+- **Picks a model by difficulty and saves where it can**: chores go to cheap models, hard problems to strong ones, and subscription quota is spent first.
+- **Images without switching tools**: calls GPT Image, Nano Banana, Volcengine Ark and others directly, and saves the result into your project.
+- **One model down, the next one carries on**: when a subscription runs out, hits a rate limit or errors, the next model picks up the same conversation.
+- **Top models for every agent**: with the matching subscription or key, Opus, Fable and GPT are reachable from any connected agent (agent turns that carry tools use pay-as-you-go only, never a subscription).
+
+Two ways to use it:
+
+- **Delegate**: Claude Code, Codex and Gemini CLI keep their own main model and hand sub-tasks (translation, a second opinion, images) to Switchboard as MCP tools. The main conversation and its prompt cache are untouched.
+- **Be the main model**: WorkBuddy, pi, OpenClaw and DeepSeek Harness use Switchboard as a model through an OpenAI-compatible endpoint. Every request carries the full conversation; Switchboard picks a model by difficulty and falls over to the next one if it fails.
 
 It comes with a menu bar app (system tray on Windows) for quotas, spend, savings, and routing rules.
 
@@ -31,7 +41,7 @@ These tools solve different problems and can be used together. Compiled from eac
 | | Switchboard | [magpie](https://github.com/yetone/magpie) | [cc-switch](https://github.com/farion1231/cc-switch) | [claude-code-router](https://github.com/musistudio/claude-code-router) | [OpenRouter](https://openrouter.ai) |
 |---|---|---|---|---|---|
 | Main job | Agents hand off sub-tasks; a model is picked by difficulty | One place to choose the model behind every agent | One-click switching of the provider behind a tool | Local gateway for Claude Code | Hosted model aggregator |
-| Replaces the agent's main model | No | Yes | Yes | Yes | Yes |
+| Relationship to the agent's main model | Either: take delegated sub-tasks without touching it, or act as the main model | Replaces it | Replaces it | Replaces it | Replaces it |
 | Picks a model per task | Rules plus a low-tier judge, with published accuracy tests | A small model classifies intent | No | Rules by scenario | Task classifier plus platform-wide spend ranking |
 | How subscriptions are used | Only by launching the unmodified official CLIs (`claude -p`, `codex exec`, `agy -p`); never reads sign-in data | Reads Claude Code and Codex sign-in files and the Keychain to discover subscriptions; drives the official `claude` CLI for Claude | Beta accounts feature: signs in to Copilot, ChatGPT and Grok, then forwards through a local proxy | Doesn't use subscriptions; uses your API keys | Doesn't use subscriptions |
 | Images, video, motion graphics | All three, each in three tiers | Image tool | No | No | Models available; you call them yourself |
@@ -56,6 +66,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 **Routing**
 - Low, mid and high tiers, plus a top tier used only on explicit request; three modes: save, balanced and quality.
 - When the rules are unsure, a low-tier model judges the task first; if it can't answer within 10 seconds, the rules decide.
+- When a subscription runs out, hits a rate limit or errors, the next candidate takes over with the same conversation.
 - Each candidate is checked against its context window and larger windows are tried when a request doesn't fit. When nothing fits, Switchboard returns the standard `context_length_exceeded` error so the agent can compact its own conversation.
 - Mark a call as under-routed with one click; enough marks produce a rule suggestion. The evaluation feature re-runs samples on a high-tier model and has it judge blind whether the cheaper answer was good enough.
 
@@ -160,6 +171,7 @@ Most rule misses are hard problems that contain no telltale keywords, which is w
 ## Roadmap
 
 - Signed installers and auto-update; verify Linux.
+- When Claude Code's subscription runs out, let it switch to Switchboard and continue on pay-as-you-go models (API keys only, never the subscription).
 - Rate limits on subscription lanes; stop sending whole conversations from the OpenAI-compatible endpoint to the Claude subscription by default.
 - More routing test data, growing the blind set to 200 cases.
 - A Copilot CLI subscription lane (through the official CLI).
