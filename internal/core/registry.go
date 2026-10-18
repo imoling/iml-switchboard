@@ -22,6 +22,9 @@ type ModelInfo struct {
 	Vision        bool    `json:"vision"`
 	Tools         bool    `json:"tools"`
 	NeedsProxy    bool    `json:"needs_proxy"`
+	// Free 表示平台当前标价为 0（刊例价另算）；MediaKind 标媒体型号的种类，免费媒体型号靠它识别
+	Free      bool   `json:"free,omitempty"`
+	MediaKind string `json:"media_kind,omitempty"`
 }
 
 // Registry 是模型注册表。
@@ -78,14 +81,15 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "anthropic/claude-sonnet-5.5", Provider: "openrouter", Display: "Sonnet 5.5", InputPerM: 2, OutputPerM: 10, CacheReadPerM: 0.2, Currency: "USD", Context: 1000000, Vision: true, Tools: true, NeedsProxy: true})
 	add(ModelInfo{ID: "anthropic/claude-opus-5.5", Provider: "openrouter", Display: "Opus 5.5", InputPerM: 4, OutputPerM: 20, CacheReadPerM: 0.4, Currency: "USD", Context: 1000000, Vision: true, Tools: true, NeedsProxy: true})
 	// Agnes AI（国内直连，人民币；2026-10 官方价目，促销期多数为 0 元，这里记原价）
-	add(ModelInfo{ID: "agnes-3.0-flash", Provider: "agnes", Display: "Agnes 3.0 Flash", InputPerM: cny(0.35), OutputPerM: cny(1.0), CacheReadPerM: cny(0.035), Currency: "CNY", Context: 512000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "agnes-2.5-flash", Provider: "agnes", Display: "Agnes 2.5 Flash", InputPerM: cny(0.35), OutputPerM: cny(1.0), CacheReadPerM: cny(0.035), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
+	// Agnes 的 flash 系列按官网定价页当前为 ¥0（刊例 ¥0.35 / ¥1.0）；pro 系列按量收费
+	add(ModelInfo{ID: "agnes-3.0-flash", Provider: "agnes", Display: "Agnes 3.0 Flash", Currency: "CNY", Context: 512000, Vision: true, Tools: true, Free: true})
+	add(ModelInfo{ID: "agnes-2.5-flash", Provider: "agnes", Display: "Agnes 2.5 Flash", Currency: "CNY", Context: 256000, Vision: true, Tools: true, Free: true})
 	add(ModelInfo{ID: "agnes-2.5-pro-beta", Provider: "agnes", Display: "Agnes 2.5 Pro Beta", InputPerM: cny(0.7), OutputPerM: cny(2.1), CacheReadPerM: cny(0.07), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "agnes-2.5-pro", Provider: "agnes", Display: "Agnes 2.5 Pro", InputPerM: cny(3), OutputPerM: cny(6), CacheReadPerM: cny(0.3), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "agnes-3.0-pro", Provider: "agnes", Display: "Agnes 3.0 Pro", InputPerM: cny(3), OutputPerM: cny(6), CacheReadPerM: cny(0.3), Currency: "CNY", Context: 512000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "agnes-image-2.5-flash", Provider: "agnes", Display: "Agnes Image 2.5 Flash", PerImage: cny(0.07), Currency: "CNY"})
-	add(ModelInfo{ID: "agnes-video-2.5-flash", Provider: "agnes", Display: "Agnes Video 2.5 Flash", PerSecond: cny(0.15), Currency: "CNY"})
-	add(ModelInfo{ID: "agnes-video-2.5", Provider: "agnes", Display: "Agnes Video 2.5", PerSecond: cny(0.25), Currency: "CNY"})
+	add(ModelInfo{ID: "agnes-image-2.5-flash", Provider: "agnes", Display: "Agnes Image 2.5 Flash", Currency: "CNY", Free: true, MediaKind: "image"})
+	add(ModelInfo{ID: "agnes-video-2.5-flash", Provider: "agnes", Display: "Agnes Video 2.5 Flash", Currency: "CNY", Free: true, MediaKind: "video"})
+	add(ModelInfo{ID: "agnes-video-2.5", Provider: "agnes", Display: "Agnes Video 2.5", PerSecond: cny(0.25), Currency: "CNY", MediaKind: "video"})
 	// 媒体
 	add(ModelInfo{ID: "google/gemini-nano-banana-2.1", Provider: "openrouter", Display: "Nano Banana 2.1", PerImage: 0.045, Currency: "USD", NeedsProxy: true})
 	add(ModelInfo{ID: "gpt-image-2.5-sunburst", Provider: "openai", Display: "GPT Image 2.5", PerImage: 0.17, Currency: "USD", NeedsProxy: true})
@@ -110,13 +114,13 @@ func (r *Registry) MediaByProvider(provider string) []ModelInfo {
 	defer r.mu.RUnlock()
 	var out []ModelInfo
 	for _, m := range r.models {
-		if m.Provider == provider && (m.PerImage > 0 || m.PerSecond > 0 || m.ID == "codex-imagegen") {
+		if m.Provider == provider && (m.MediaKind != "" || m.PerImage > 0 || m.PerSecond > 0 || m.ID == "codex-imagegen") {
 			out = append(out, m)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if (out[i].PerSecond > 0) != (out[j].PerSecond > 0) {
-			return out[i].PerSecond == 0
+		if out[i].IsVideo() != out[j].IsVideo() {
+			return !out[i].IsVideo()
 		}
 		return out[i].ID < out[j].ID
 	})
@@ -196,4 +200,29 @@ func (r *Registry) MediaCost(model string, units float64) (usd float64, native f
 		native = usd / r.usdPerCNY
 	}
 	return usd, native, m.Currency
+}
+
+// IsVideo 判断媒体型号是不是视频。
+func (m ModelInfo) IsVideo() bool {
+	return m.MediaKind == "video" || (m.MediaKind == "" && m.PerSecond > 0)
+}
+
+// IsFree 判断型号当前是否免费。
+func (r *Registry) IsFree(id string) bool {
+	m, ok := r.Lookup(id)
+	return ok && m.Free
+}
+
+// FreeModels 返回某供应商当前免费的文本型号。
+func (r *Registry) FreeModels(provider string) []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []string
+	for _, m := range r.models {
+		if m.Provider == provider && m.Free {
+			out = append(out, m.ID)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

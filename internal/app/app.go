@@ -108,6 +108,26 @@ func New(version string) (*App, error) {
 		}
 	})
 
+	// 有免费型号的供应商（Agnes）默认只用免费型号；把早先配置里的收费型号摘掉
+	_ = cfg.Update(func(c *config.Config) error {
+		for i := range c.API {
+			if free := a.Router.Registry().FreeModels(c.API[i].Provider); len(free) > 0 {
+				config.ApplyFreeOnly(&c.API[i], a.Router.Registry().IsFree)
+				if !c.API[i].AllowPaid && len(c.API[i].Models["mid"]) == 0 {
+					best, bestCtx := "", 0
+					for _, m := range free {
+						if info, ok := a.Router.Registry().Lookup(m); ok && info.MediaKind == "" && info.Context > bestCtx {
+							best, bestCtx = m, info.Context
+						}
+					}
+					if best != "" {
+						c.API[i].Models["mid"] = []string{best}
+					}
+				}
+			}
+		}
+		return nil
+	})
 	a.Integr = integrations.New(cfg, a.exe, BaseURL, func() string { return cfg.Get().Settings.FacadeKey })
 	a.Admin = admin.New(admin.Deps{Router: a.Router, Jobs: a.Jobs, Bus: a.Bus, Accounts: &accountOps{a: a}, Media: &mediaOps{a: a}, Integr: a.Integr, Secrets: a.Secrets, StartedAt: time.Now(),
 		NodeAvailable: func() bool { _, err := exec.LookPath("node"); return err == nil }})
@@ -318,7 +338,7 @@ var defaultTiers = map[string]map[string][]string{
 	"minimax":    {"low": {"minimax-m3"}, "mid": {}, "high": {}},
 	"openrouter": {"low": {}, "mid": {"anthropic/claude-sonnet-5.5"}, "high": {"anthropic/claude-opus-5.5"}},
 	"anthropic":  {"low": {"claude-haiku-5-5"}, "mid": {"claude-sonnet-5-5"}, "high": {"claude-opus-5-5"}},
-	"agnes":      {"low": {"agnes-3.0-flash", "agnes-2.5-flash"}, "mid": {"agnes-2.5-pro-beta"}, "high": {"agnes-2.5-pro"}},
+	"agnes":      {"low": {"agnes-3.0-flash", "agnes-2.5-flash"}, "mid": {"agnes-3.0-flash", "agnes-2.5-pro-beta"}, "high": {"agnes-2.5-pro"}},
 	"ark":        {"low": {}, "mid": {}, "high": {}},
 	"302ai":      {"low": {}, "mid": {}, "high": {}},
 }

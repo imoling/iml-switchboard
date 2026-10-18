@@ -46,16 +46,17 @@ export function Accounts() {
   const monthCost = (a: Account) => (a.month_cost_native !== undefined && a.currency === 'CNY' ? cny(a.month_cost_native) : a.month_cost_usd !== undefined ? usd(a.month_cost_usd) : '');
   const ORDER = ['top', 'high', 'mid', 'low'];
   const name = (a: Account, m: string) => (m ? a.labels?.[m] ?? m : '不用');
+  const isFree = (a: Account, m: string) => !!m && (a.free_models ?? []).includes(m);
   const sortedTiers = (a: Account) => Object.entries(a.tiers ?? {}).sort(([x], [y]) => ORDER.indexOf(x) - ORDER.indexOf(y));
   const isTier = (k: string): k is Tier => ['low', 'mid', 'high', 'top'].includes(k);
   /** 档位一行瓦片，不做成按钮；点任意一块进编辑 */
   const tierTiles = (a: Account) => (
     <div className="tiles" role="button" tabIndex={0} title="点一下改各档位用谁" onClick={() => setTierEdit(a)} onKeyDown={(e) => { if (e.key === 'Enter') setTierEdit(a); }}>
       {sortedTiers(a).map(([k, v]) => (
-        <span key={k} className={`tile ${v ? '' : 'off'}`}>{isTier(k) && <TierSprite tier={k} scale={2} />}<span className="tn">{isTier(k) ? t(`tier.${k}`) : k}</span><span className="tm">{name(a, v)}</span></span>
+        <span key={k} className={`tile ${v ? '' : 'off'}`}>{isTier(k) && <TierSprite tier={k} scale={2} />}<span className="tn">{isTier(k) ? t(`tier.${k}`) : k}</span><span className="tm">{name(a, v)}</span>{isFree(a, v) && <span className="free">免费</span>}</span>
       ))}
       {(a.media ?? []).map((m) => (
-        <span key={m.model} className="tile media" title={m.model}><MediaSprite kind={m.kind} scale={2} /><span className="chip c-m">{t(m.kind === 'video' ? 'media.video' : 'media.image')}</span><span className="tm">{m.display}</span></span>
+        <span key={m.model} className="tile media" title={m.model}><MediaSprite kind={m.kind} scale={2} /><span className="chip c-m">{t(m.kind === 'video' ? 'media.video' : 'media.image')}</span><span className="tm">{m.display}</span>{m.free && <span className="free">免费</span>}</span>
       ))}
       <span className="chev">▾</span>
     </div>
@@ -116,10 +117,19 @@ export function Accounts() {
               <div className="tt">{isTier(k) ? <><TierSprite tier={k} scale={2} /> {t(`tier.${k}`)}</> : k}</div>
               <select className="sel" value={v} onChange={async (e) => { const tiers = { ...tierEdit.tiers, [k]: e.target.value }; setTierEdit({ ...tierEdit, tiers }); await act(tierEdit.id, () => api.updateAccount(tierEdit.id, { tiers })); }}>
                 {tierEdit.kind === 'api' && <option value="">不用</option>}
-                {[...(v ? [v] : []), ...tierEdit.models.filter((m) => m !== v)].map((m) => <option key={m} value={m}>{name(tierEdit, m)}</option>)}
+                {[...(v ? [v] : []), ...tierEdit.models.filter((m) => m !== v)].filter((m) => tierEdit.allow_paid !== false || isFree(tierEdit, m)).map((m) => <option key={m} value={m}>{name(tierEdit, m)}{isFree(tierEdit, m) ? '（免费）' : ''}</option>)}
               </select>
             </div>
           ))}
+          {tierEdit.free_models && tierEdit.free_models.length > 0 && (
+            <div className="setrow">
+              <div className="tt">计费<div className="hint">只用免费时，收费型号从档位里摘掉；改回来要重新选</div></div>
+              <select className="sel" value={tierEdit.allow_paid ? 'paid' : 'free'} onChange={async (e) => { const allow_paid = e.target.value === 'paid'; setTierEdit({ ...tierEdit, allow_paid }); await act(tierEdit.id, () => api.updateAccount(tierEdit.id, { allow_paid })); const fresh = (await api.accounts()).find((x) => x.id === tierEdit.id); if (fresh) setTierEdit(fresh); }}>
+                <option value="free">只用免费型号</option>
+                <option value="paid">免费和按量都用</option>
+              </select>
+            </div>
+          )}
           {tierEdit.plan_manual && tierEdit.plan_options && (
             <div className="setrow">
               <div className="tt">套餐<div className="hint">命令行查不到，自己选一个挂在账号名旁</div></div>

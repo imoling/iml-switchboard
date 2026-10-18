@@ -808,6 +808,8 @@ type accountView struct {
 	TierOptions     map[string][]string `json:"tier_options,omitempty"`
 	Labels          map[string]string   `json:"labels,omitempty"`
 	Media           []mediaItem         `json:"media,omitempty"`
+	FreeModels      []string            `json:"free_models,omitempty"` // 平台当前免费的型号；有它才显示计费开关
+	AllowPaid       *bool               `json:"allow_paid,omitempty"`
 	Models          []string            `json:"models"`
 	NeedsProxy      bool                `json:"needs_proxy,omitempty"`
 	Enabled         bool                `json:"enabled"`
@@ -924,6 +926,11 @@ func (s *Server) accountViews() []accountView {
 		}
 		v.Tiers = tiers
 		v.Media = s.mediaItems(a.Provider)
+		if fm := s.d.Router.Registry().FreeModels(a.Provider); len(fm) > 0 {
+			v.FreeModels = fm
+			ap := a.AllowPaid
+			v.AllowPaid = &ap
+		}
 		if c, ok := costs[a.Provider]; ok {
 			v.MonthCostUSD, v.MonthCostNative = c[0], c[1]
 		}
@@ -961,6 +968,7 @@ func presetModels(ops AccountOps, provider string) ([]string, bool) {
 }
 
 type mediaItem struct {
+	Free    bool   `json:"free,omitempty"`
 	Kind    string `json:"kind"` // image video
 	Model   string `json:"model"`
 	Display string `json:"display"`
@@ -970,10 +978,10 @@ func (s *Server) mediaItems(provider string) []mediaItem {
 	var out []mediaItem
 	for _, m := range s.d.Router.Registry().MediaByProvider(provider) {
 		kind := "image"
-		if m.PerSecond > 0 {
+		if m.IsVideo() {
 			kind = "video"
 		}
-		out = append(out, mediaItem{Kind: kind, Model: m.ID, Display: m.Display})
+		out = append(out, mediaItem{Kind: kind, Model: m.ID, Display: m.Display, Free: m.Free})
 	}
 	return out
 }
@@ -1044,9 +1052,10 @@ func (s *Server) addAccount(w http.ResponseWriter, r *http.Request) (any, error)
 func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, error) {
 	id := r.PathValue("id")
 	var in struct {
-		Enabled *bool          `json:"enabled"`
-		Tiers   map[string]any `json:"tiers"` // 订阅：tier → 型号；按量付费：tier → 首选型号（字符串）或完整列表
-		Plan    *string        `json:"plan"`  // 订阅：手填套餐名
+		Enabled   *bool          `json:"enabled"`
+		Tiers     map[string]any `json:"tiers"`      // 订阅：tier → 型号；按量付费：tier → 首选型号（字符串）或完整列表
+		Plan      *string        `json:"plan"`       // 订阅：手填套餐名
+		AllowPaid *bool          `json:"allow_paid"` // 按量付费：是否允许用收费型号
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
@@ -1077,6 +1086,10 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 			if c.API[i].ID == id {
 				if in.Enabled != nil {
 					c.API[i].Enabled = *in.Enabled
+				}
+				if in.AllowPaid != nil {
+					c.API[i].AllowPaid = *in.AllowPaid
+					config.ApplyFreeOnly(&c.API[i], s.d.Router.Registry().IsFree)
 				}
 				if in.Tiers != nil {
 					if c.API[i].Models == nil {

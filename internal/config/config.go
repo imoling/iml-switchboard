@@ -62,6 +62,8 @@ type APIAccount struct {
 	Enabled    bool                `yaml:"enabled" json:"enabled"`
 	Models     map[string][]string `yaml:"models" json:"models"` // tier -> 候选模型，按优先级
 	NeedsProxy bool                `yaml:"needs_proxy,omitempty" json:"needs_proxy,omitempty"`
+	// AllowPaid 为假时只用平台当前免费的型号（目前只有 Agnes 有免费型号）
+	AllowPaid bool `yaml:"allow_paid,omitempty" json:"allow_paid,omitempty"`
 }
 
 // MediaTarget 是媒体某一档位的目标。
@@ -341,5 +343,21 @@ func fillMissing(c *Config) {
 		if e.Builtin && !have[e.ID] {
 			c.Routing.Explicit = append(c.Routing.Explicit, e)
 		}
+	}
+}
+
+// ApplyFreeOnly 在只用免费型号时把收费型号从各档位里摘掉；允许收费时不动已有选择。
+func ApplyFreeOnly(a *APIAccount, isFree func(string) bool) {
+	if a.AllowPaid {
+		return
+	}
+	for tier, list := range a.Models {
+		keep := list[:0]
+		for _, m := range list {
+			if isFree(m) {
+				keep = append(keep, m)
+			}
+		}
+		a.Models[tier] = keep
 	}
 }

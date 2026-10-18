@@ -41,7 +41,7 @@ var Presets = []Preset{
 	{ID: "anthropic", Name: "Anthropic", BaseURL: "https://api.anthropic.com/v1", Currency: "USD", NeedsProxy: true, ProbeModel: "claude-haiku-5-5",
 		Models: map[string]ModelPrice{"claude-haiku-5-5": {InputPerM: 0.10, OutputPerM: 0.50}, "claude-sonnet-5-5": {InputPerM: 2, OutputPerM: 10}, "claude-opus-5-5": {InputPerM: 4, OutputPerM: 20}}},
 	{ID: "agnes", Name: "Agnes AI", BaseURL: "https://api.agnes-ai.cn/v1", Currency: "CNY", ProbeModel: "agnes-2.5-flash",
-		Models: map[string]ModelPrice{"agnes-3.0-flash": {InputPerM: 0.35, OutputPerM: 1.0, CachedPerM: 0.035}, "agnes-2.5-flash": {InputPerM: 0.35, OutputPerM: 1.0, CachedPerM: 0.035},
+		Models: map[string]ModelPrice{"agnes-3.0-flash": {}, "agnes-2.5-flash": {},
 			"agnes-2.5-pro-beta": {InputPerM: 0.7, OutputPerM: 2.1, CachedPerM: 0.07}, "agnes-2.5-pro": {InputPerM: 3, OutputPerM: 6, CachedPerM: 0.3}, "agnes-3.0-pro": {InputPerM: 3, OutputPerM: 6, CachedPerM: 0.3}}},
 	{ID: "ark", Name: "火山方舟", BaseURL: "https://ark.cn-beijing.volces.com/api/v3", Currency: "CNY", Models: map[string]ModelPrice{}}, // 只用于 Seedream / Seedance 出图出视频
 	{ID: "302ai", Name: "302.AI", BaseURL: "https://api.302.ai/v1", Currency: "USD", ProbeModel: "gpt-5.4-mini", Models: map[string]ModelPrice{}},

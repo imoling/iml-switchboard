@@ -355,6 +355,8 @@ func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer [
 			}
 			out = append(out, tgt)
 		case "api":
+			// 免费型号排在收费型号前面：同档位里先用不花钱的
+			apiStart := len(out)
 			for _, acc := range cfg.API {
 				if !acc.Enabled {
 					continue
@@ -365,12 +367,20 @@ func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer [
 					if needVision && !info.Vision {
 						tgt.Skipped = "不能看图"
 					}
+					if !acc.AllowPaid && len(r.reg.FreeModels(acc.Provider)) > 0 && !info.Free {
+						tgt.Skipped = "只用免费型号"
+					}
 					if cooling, _, why := r.quota.Cooling(LaneID("acct:" + acc.ID)); cooling {
 						tgt.Skipped = why
 					}
 					out = append(out, tgt)
 				}
 			}
+			sort.SliceStable(out[apiStart:], func(i, j int) bool {
+				fi := r.reg.IsFree(out[apiStart+i].Model)
+				fj := r.reg.IsFree(out[apiStart+j].Model)
+				return fi && !fj
+			})
 		}
 	}
 	if tier == TierTop && len(live(out)) == 0 {
@@ -438,6 +448,8 @@ func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) 
 		}
 		if !r.mediaProviderReady(cfg, mt.Provider) {
 			tgt.Skipped = "未添加 " + providerLabel(mt.Provider) + " 账号"
+		} else if acc := r.accountFor(cfg, mt.Provider, mt.AccountID); acc != nil && !acc.AllowPaid && len(r.reg.FreeModels(acc.Provider)) > 0 && !r.reg.IsFree(mt.Model) {
+			tgt.Skipped = "只用免费型号"
 		}
 		out = append(out, tgt)
 	}
@@ -811,4 +823,18 @@ func (r *Router) ApplySuggestion(taskType, action string) error {
 		}
 		return errors.New("任务类型不存在")
 	})
+}
+
+// accountFor 找供应商对应的按量付费账号；给了 id 就按 id 找。
+func (r *Router) accountFor(cfg *config.Config, provider, id string) *config.APIAccount {
+	for i := range cfg.API {
+		a := &cfg.API[i]
+		if id != "" && a.ID == id {
+			return a
+		}
+		if id == "" && a.Provider == provider && a.Enabled {
+			return a
+		}
+	}
+	return nil
 }
