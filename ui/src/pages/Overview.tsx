@@ -108,14 +108,14 @@ function Spark({ daily }: { daily: { date: string; cost_usd: number; baseline_co
   const max = Math.max(0.01, ...daily.map((d) => d.baseline_cost_usd));
   return (
     <>
-      <div className="spark">
+      <div className={`spark ${daily.length > 10 ? 'dense' : ''}`}>
         {daily.map((d) => (
           <div key={d.date} style={{ height: `${(d.baseline_cost_usd / max) * 100}%` }} title={`${d.date}：${usd(d.cost_usd)}，全用 Opus ${usd(d.baseline_cost_usd)}`}>
             <b style={{ height: `${d.baseline_cost_usd ? (d.cost_usd / d.baseline_cost_usd) * 100 : 0}%` }} />
           </div>
         ))}
       </div>
-      <div className="days">{daily.map((d, i) => <span key={d.date}>{dayLabel(d.date, i === daily.length - 1)}</span>)}</div>
+      <div className={`days ${daily.length > 10 ? 'dense' : ''}`}>{daily.map((d, i) => <span key={d.date}>{dayLabel(d.date, i === daily.length - 1, daily.length)}</span>)}</div>
     </>
   );
 }

@@ -28,9 +28,12 @@ export const secs = (ms: number) => (ms >= 60000 ? `${Math.round(ms / 60000)} �
 export const eta = (s?: number) => (s === undefined ? '' : s >= 60 ? `约 ${Math.round(s / 60)} 分钟` : `约 ${s} 秒`);
 
 const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-export function dayLabel(date: string, isLast: boolean) {
+/** 横轴标签：7 天以内标周几；更长只在每周一和首尾标日期，其余留空 */
+export function dayLabel(date: string, isLast: boolean, total = 7) {
   if (isLast) return '今天';
   const d = new Date(date + 'T00:00:00');
-  return WEEK[d.getDay()];
+  if (total <= 10) return WEEK[d.getDay()];
+  const md = `${d.getMonth() + 1}/${d.getDate()}`;
+  return d.getDay() === 1 ? md : '';
 }
 export const pct = (n: number) => `${n % 1 === 0 ? n : n.toFixed(1)}%`;
