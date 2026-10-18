@@ -219,11 +219,11 @@ func TestImageArkURLAndOpenRouter(t *testing.T) {
 	if res.Usage.CostUSD != 0.045 || !strings.HasSuffix(res.Path, ".png") {
 		t.Errorf("openrouter 结果不对：%+v", res)
 	}
-	// 401 → 验证失败，不可重试
+	// 401 → 验证失败：这是账号自己的问题，标记账号、换下一个候选
 	accts.list[1].APIKeyGetter = func() (string, error) { return "bad", nil }
 	_, err = d.Run(context.Background(), &core.Task{Kind: core.KindImage, Prompt: "cat", OutDir: out}, core.Target{Provider: "openrouter", Model: "x"}, nil)
 	var pe *core.ErrProvider
-	if !errors.As(err, &pe) || pe.Summary != "openrouter 验证失败：密钥无效或已过期" || pe.Retryable {
+	if !errors.As(err, &pe) || pe.Summary != "openrouter 验证失败：密钥无效或已过期" || !pe.Account {
 		t.Errorf("401 映射不对：%v", err)
 	}
 }

@@ -130,8 +130,9 @@ func TestErrorMapping(t *testing.T) {
 		wantRetry bool
 		wantIn    string
 	}{
-		{401, `{"error":{"message":"invalid api key"}}`, false, false, "验证失败"},
-		{403, ``, false, false, "验证失败"},
+		{401, `{"error":{"message":"invalid api key"}}`, false, true, "验证失败"},
+		{403, ``, false, true, "验证失败"},
+		{403, `{"error":{"message":"预扣费失败，用户剩余额度: ￥0.007"}}`, false, true, "余额不足"},
 		{402, ``, false, true, "余额不足"},
 		{400, `{"error":{"message":"insufficient balance"}}`, false, true, "余额不足"},
 		{429, ``, true, false, ""},

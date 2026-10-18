@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/imoling/iml-switchboard/internal/core"
 )
@@ -27,10 +28,11 @@ func ClassifyHTTPError(provider string, status int, body []byte) error {
 	raw := fmt.Sprintf("HTTP %d: %s", status, strings.TrimSpace(string(body)))
 	lower := strings.ToLower(string(body))
 	switch {
+	// 余额判断放在 401/403 前面：有的平台（Agnes）余额不足也回 403
+	case status == 402 || strings.Contains(lower, "insufficient") || strings.Contains(lower, "balance") || strings.Contains(lower, "余额") || strings.Contains(lower, "预扣费"):
+		return &core.ErrProvider{Summary: provider + " 余额不足：请充值后重试", Raw: raw, Retryable: true, Account: true, Cooldown: time.Hour}
 	case status == 401 || status == 403:
-		return &core.ErrProvider{Summary: provider + " 验证失败：密钥无效或已过期", Raw: raw, Retryable: false}
-	case status == 402 || strings.Contains(lower, "insufficient") || strings.Contains(lower, "balance") || strings.Contains(lower, "余额"):
-		return &core.ErrProvider{Summary: provider + " 余额不足：请充值后重试", Raw: raw, Retryable: true}
+		return &core.ErrProvider{Summary: provider + " 验证失败：密钥无效或已过期", Raw: raw, Retryable: true, Account: true, Cooldown: 24 * time.Hour}
 	case status == 429:
 		return &core.ErrRateLimited{Lane: core.LaneAPI, RetryAfter: 0, Detail: provider + " 请求过于频繁"}
 	case isModerationText(lower):

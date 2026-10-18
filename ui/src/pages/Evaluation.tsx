@@ -52,6 +52,7 @@ export function Evaluation() {
             <div className="card"><div className="k">评估花费</div><div className="v">{usd(latest.cost_usd)}</div><div className="d plain">由{t('tier.high')}{t('model')}盲评</div></div>
             <div className="card"><div className="k">建议调整</div><div className="v">{suggCount} 项</div><div className={`d ${suggCount ? 'bad' : 'plain'}`}>{suggCount ? '见下表' : '暂不需要'}</div></div>
           </div>
+          {latest.note && <div className="hint mb12">{latest.note}</div>}
           {latest.status === 'failed' && <ErrorLine message={`这轮评估没做完：${latest.error ?? "原因未知"}`} />}
           {latest.by_task.length > 0 && (
             <table className="t">

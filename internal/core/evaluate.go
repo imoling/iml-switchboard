@@ -61,6 +61,8 @@ func (r *Router) RunEvaluation(ctx context.Context, ev *Evaluation, onUpdate fun
 	}
 	ev.Sample = len(samples)
 	byTask := map[string]*EvalTaskRow{}
+	failed, judged := 0, 0
+	var lastErr error
 	for i, s := range samples {
 		if ctx.Err() != nil {
 			break
@@ -75,6 +77,8 @@ func (r *Router) RunEvaluation(ctx context.Context, ev *Evaluation, onUpdate fun
 		hi := &Task{Prompt: s.PromptExcerpt, Tier: TierHigh, Source: "evaluation", Kind: KindText}
 		hiCall, hiRes, err := r.Run(ctx, hi, nil)
 		if err != nil {
+			failed++
+			lastErr = err
 			continue
 		}
 		ev.CostUSD += hiCall.CostUSD
@@ -88,8 +92,11 @@ func (r *Router) RunEvaluation(ctx context.Context, ev *Evaluation, onUpdate fun
 		judge := &Task{Prompt: judgePrompt, Tier: TierHigh, Source: "evaluation", Kind: KindText}
 		jCall, jRes, err := r.Run(ctx, judge, nil)
 		if err != nil {
+			failed++
+			lastErr = err
 			continue
 		}
+		judged++
 		ev.CostUSD += jCall.CostUSD
 		verdict := strings.TrimSpace(jRes.Text)
 		lowWins := strings.HasPrefix(verdict, "A") != swapped
@@ -125,7 +132,16 @@ func (r *Router) RunEvaluation(ctx context.Context, ev *Evaluation, onUpdate fun
 	}
 	now := time.Now()
 	ev.FinishedAt = &now
-	ev.Status = "done"
+	switch {
+	case judged == 0 && lastErr != nil:
+		ev.Status = "failed"
+		ev.Error = fmt.Sprintf("%d 条样本都没评成：%s", failed, oneLine(lastErr))
+	case failed > 0:
+		ev.Status = "done"
+		ev.Note = fmt.Sprintf("%d 条没评成，最后一个错误：%s", failed, oneLine(lastErr))
+	default:
+		ev.Status = "done"
+	}
 	onUpdate(ev)
 }
 

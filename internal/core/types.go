@@ -210,6 +210,9 @@ type ErrProvider struct {
 	Summary   string // 界面上显示的一行
 	Raw       string // 详情
 	Retryable bool   // 换一个候选是否有意义
+	// Account 为真表示问题出在这个账号（密钥无效、余额不足），该账号先歇着，请求换下一个候选
+	Account  bool
+	Cooldown time.Duration
 }
 
 func (e *ErrProvider) Error() string { return e.Summary }

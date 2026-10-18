@@ -227,6 +227,16 @@ func (r *Router) Decide(t *Task) *Decision {
 			prefer = []string{"api", "codex_sub", "agy_sub", "claude_sub"}
 		}
 	}
+	if tier == TierHigh || tier == TierTop {
+		// 高档和顶配先用 Claude 订阅的 Opus / Fable，任务表里的「按量优先」只对低中档有意义
+		rest := []string{}
+		for _, p := range prefer {
+			if p != "claude_sub" {
+				rest = append(rest, p)
+			}
+		}
+		prefer = append([]string{"claude_sub"}, rest...)
+	}
 	if hit.SubOnly {
 		prefer = []string{"claude_sub", "codex_sub", "agy_sub"}
 		d.Reason = append(d.Reason, "显式要求只用订阅")
@@ -582,6 +592,9 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 			if c.Lane != LaneAPI && c.Lane != LaneMedia {
 				r.notify("额度用完", providerLabel(c.Provider)+" 订阅额度暂时用完，同档任务改走按量付费", "warn")
 			}
+			fallbackFrom = c.Model
+		case errors.As(err, &pe) && pe.Account && c.Lane == LaneAPI:
+			r.quota.MarkCooldown(LaneID("acct:"+c.AccountID), pe.Cooldown, pe.Summary)
 			fallbackFrom = c.Model
 		case errors.As(err, &pe) && !pe.Retryable:
 			r.fail(call, t, *c, err, start)
