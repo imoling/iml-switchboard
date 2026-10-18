@@ -313,7 +313,7 @@ func (o *accountOps) Verify(ctx context.Context, provider, baseURL, apiKey strin
 var defaultTiers = map[string]map[string][]string{
 	"zhipu":      {"low": {"glm-5.3-flash"}, "mid": {"glm-5.3"}, "high": {}},
 	"dashscope":  {"low": {"qwen3.8-flash"}, "mid": {"qwen3.7-plus"}, "high": {"qwen3.8-max"}},
-	"deepseek":   {"low": {"deepseek-v4.1-flash"}, "mid": {"deepseek-v4-pro"}, "high": {}},
+	"deepseek":   {"low": {"deepseek-flash"}, "mid": {"deepseek-v4-pro"}, "high": {}},
 	"moonshot":   {"low": {}, "mid": {"kimi-k3"}, "high": {}},
 	"minimax":    {"low": {"minimax-m3"}, "mid": {}, "high": {}},
 	"openrouter": {"low": {}, "mid": {"anthropic/claude-sonnet-5.5"}, "high": {"anthropic/claude-opus-5.5"}},

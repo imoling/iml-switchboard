@@ -72,7 +72,7 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "qwen3.7-plus", Provider: "dashscope", Display: "Qwen3.7-Plus", InputPerM: cny(2), OutputPerM: cny(8), CacheReadPerM: cny(0.4), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "qwen3.8-flash", Provider: "dashscope", Display: "Qwen3.8-Flash", InputPerM: cny(0.8), OutputPerM: cny(2.7), CacheReadPerM: cny(0.16), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "deepseek-v4-pro", Provider: "deepseek", Display: "DeepSeek V4 Pro", InputPerM: 1.32, OutputPerM: 3.96, CacheReadPerM: 0.026, Currency: "USD", Context: 256000, Tools: true})
-	add(ModelInfo{ID: "deepseek-v4.1-flash", Provider: "deepseek", Display: "DeepSeek V4.1 Flash", InputPerM: 0.30, OutputPerM: 1.20, CacheReadPerM: 0.006, Currency: "USD", Context: 256000, Tools: true})
+	add(ModelInfo{ID: "deepseek-flash", Provider: "deepseek", Display: "DeepSeek Flash", InputPerM: 0.30, OutputPerM: 1.20, CacheReadPerM: 0.006, Currency: "USD", Context: 256000, Tools: true})
 	add(ModelInfo{ID: "kimi-k3", Provider: "moonshot", Display: "Kimi K3", InputPerM: cny(20), OutputPerM: cny(100), CacheReadPerM: cny(4), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "minimax-m3", Provider: "minimax", Display: "MiniMax M3", InputPerM: cny(2.1), OutputPerM: cny(8.4), Currency: "CNY", Context: 200000, Tools: true})
 	add(ModelInfo{ID: "anthropic/claude-sonnet-5.5", Provider: "openrouter", Display: "Sonnet 5.5", InputPerM: 2, OutputPerM: 10, CacheReadPerM: 0.2, Currency: "USD", Context: 1000000, Vision: true, Tools: true, NeedsProxy: true})

@@ -322,6 +322,16 @@ func fillMissing(c *Config) {
 			c.Sub["agy_sub"] = d.Sub["agy_sub"]
 		}
 	}
+	// DeepSeek 官方型号名改过：deepseek-v4.1-flash 已不被接受，统一换成 deepseek-flash
+	for i := range c.API {
+		for tier, list := range c.API[i].Models {
+			for j, m := range list {
+				if m == "deepseek-v4.1-flash" {
+					c.API[i].Models[tier][j] = "deepseek-flash"
+				}
+			}
+		}
+	}
 	// 内置显式指令不能删，被删了就补回来
 	have := map[string]bool{}
 	for _, e := range c.Routing.Explicit {
