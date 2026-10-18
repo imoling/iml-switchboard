@@ -1,4 +1,4 @@
-// Package config 读写 ~/Library/Application Support/Switchboard/config.yaml，
+// Package config 读写数据目录（macOS 的 ~/Library/Application Support/Switchboard，Windows 的 %AppData%\Switchboard）下的 config.yaml，
 // 并提供带默认值的配置结构。界面改的每一项都落到这里。
 package config
 
@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -34,6 +35,39 @@ type Settings struct {
 	Notifications        Notifications `yaml:"notifications" json:"notifications"`
 	OnboardingDone       bool          `yaml:"onboarding_done" json:"onboarding_done"`
 	USDPerCNY            float64       `yaml:"usd_per_cny" json:"usd_per_cny"`
+	RulesOnly            bool          `yaml:"rules_only,omitempty" json:"rules_only"` // 只按规则判档，拿不准时也不问低档模型
+	Currency             string        `yaml:"currency,omitempty" json:"currency"`     // 费用显示用的币种：CNY 或 USD；账本始终按美元记
+}
+
+// CNY 表示显示人民币。
+func (s Settings) CNY() bool { return s.Currency == "CNY" }
+
+// Money 把美元金额按显示币种格式化：不到一分的小额多留两位，免得全显示成 0.00。
+func (s Settings) Money(usd float64) string {
+	sym, v := "$", usd
+	if s.CNY() && s.USDPerCNY > 0 {
+		sym, v = "¥", usd/s.USDPerCNY
+	}
+	return sym + moneyDigits(v)
+}
+
+// MoneyNative 用于有原币金额的记录：显示人民币时人民币账号直接用账单原价，不来回换算。
+func (s Settings) MoneyNative(usd, native float64, currency string) string {
+	if s.CNY() && currency == "CNY" && native > 0 {
+		return "¥" + moneyDigits(native)
+	}
+	return s.Money(usd)
+}
+
+func moneyDigits(v float64) string {
+	switch {
+	case v == 0:
+		return "0"
+	case v < 0.01 && v > -0.01:
+		return strconv.FormatFloat(v, 'f', 4, 64)
+	default:
+		return strconv.FormatFloat(v, 'f', 2, 64)
+	}
 }
 
 // Notifications 是四类系统通知的开关。
@@ -127,6 +161,7 @@ type Match struct {
 	HasImage     *bool    `yaml:"has_image,omitempty" json:"has_image,omitempty"`
 	MaxCodeLines int      `yaml:"max_code_lines,omitempty" json:"max_code_lines,omitempty"`
 	LongInput    bool     `yaml:"long_input,omitempty" json:"long_input,omitempty"` // 输入像日志 / 长文
+	Exclude      []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`       // 任一命中就不算这一类，挡掉「CSS 动画闪烁」这种借词
 }
 
 // TaskType 是任务类型表的一行。
@@ -148,6 +183,7 @@ type Routing struct {
 	Explicit     []Explicit    `yaml:"explicit" json:"explicit"`
 	ContextRules []ContextRule `yaml:"context_rules" json:"context_rules"`
 	TaskTable    []TaskType    `yaml:"task_table" json:"task_table"`
+	RulesVersion int           `yaml:"rules_version,omitempty" json:"rules_version,omitempty"` // 内置任务表的版本，升级时据此合并新规则
 	Ignored      []string      `yaml:"ignored_suggestions,omitempty" json:"ignored_suggestions,omitempty"`
 }
 
@@ -180,9 +216,14 @@ func DataDir() string {
 	if d := os.Getenv("IMLS_DATA_DIR"); d != "" {
 		return d
 	}
-	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, "Library", "Application Support", AppName)
-	legacy := filepath.Join(home, "Library", "Application Support", legacyAppName)
+	// macOS 是 ~/Library/Application Support，Windows 是 %AppData%，Linux 是 ~/.config
+	base, err := os.UserConfigDir()
+	if err != nil {
+		home, _ := os.UserHomeDir()
+		base = filepath.Join(home, ".config")
+	}
+	dir := filepath.Join(base, AppName)
+	legacy := filepath.Join(base, legacyAppName)
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		if _, err := os.Stat(legacy); err == nil {
 			_ = os.Rename(legacy, dir)
@@ -209,11 +250,19 @@ func Open() (*Store, error) {
 		return nil, err
 	default:
 		cfg := Default()
+		cfg.Routing.RulesVersion = 0 // 老文件里没有这个字段，不能沿用默认值，否则升级合并不会跑
 		if err := yaml.Unmarshal(b, cfg); err != nil {
 			return nil, fmt.Errorf("配置文件无法解析：%w", err)
 		}
+		was := cfg.Routing.RulesVersion
 		fillMissing(cfg)
 		s.cfg = cfg
+		if was != cfg.Routing.RulesVersion {
+			// 规则合并要落盘，否则每次启动都会再合一遍，用户删掉的新行又冒出来
+			if err := s.save(); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := Validate(s.cfg); err != nil {
 		return nil, err
@@ -298,6 +347,44 @@ func Validate(c *Config) error {
 	return nil
 }
 
+// rulesAddedIn 记录每一版新增的内置任务类型：只在升级那一次补进去，用户之后删掉的不再补。
+var rulesAddedIn = map[int][]string{2: {"hard_problem", "code_write", "tech_issue", "explain"}}
+
+// mergeRules 把新版内置任务表合进老配置。识别说明没改过的内置行整行换成新规则（保留用户选的档位和渠道）；
+// 改过的只补排除词；新增的类型按默认顺序插进去。
+func mergeRules(c, d *Config) {
+	if c.Routing.RulesVersion >= RulesVersion {
+		return
+	}
+	defs := map[string]TaskType{}
+	for _, t := range d.Routing.TaskTable {
+		defs[t.Type] = t
+	}
+	have := map[string]bool{}
+	for i, t := range c.Routing.TaskTable {
+		have[t.Type] = true
+		dt, ok := defs[t.Type]
+		if !ok {
+			continue
+		}
+		if t.Hint == dt.Hint {
+			c.Routing.TaskTable[i].Match = dt.Match
+			c.Routing.TaskTable[i].Order = dt.Order
+		} else if len(t.Match.Exclude) == 0 {
+			c.Routing.TaskTable[i].Match.Exclude = dt.Match.Exclude
+		}
+	}
+	for v := c.Routing.RulesVersion + 1; v <= RulesVersion; v++ {
+		for _, typ := range rulesAddedIn[v] {
+			if !have[typ] {
+				c.Routing.TaskTable = append(c.Routing.TaskTable, defs[typ])
+				have[typ] = true
+			}
+		}
+	}
+	c.Routing.RulesVersion = RulesVersion
+}
+
 // fillMissing 给旧配置补上后来新增的字段。
 func fillMissing(c *Config) {
 	d := Default()
@@ -358,6 +445,7 @@ func fillMissing(c *Config) {
 			}
 		}
 	}
+	mergeRules(c, d)
 	// 内置显式指令不能删，被删了就补回来
 	have := map[string]bool{}
 	for _, e := range c.Routing.Explicit {
@@ -384,4 +472,25 @@ func ApplyFreeOnly(a *APIAccount, isFree func(string) bool) {
 		}
 		a.Models[tier] = keep
 	}
+}
+
+// CheckHostKey 校验门面密钥。允许在密钥后加「.宿主名」做标记（imls-xxx.pi），返回标出的宿主；
+// 宿主名只认小写字母、数字和下划线，最长 32 个字符。
+func CheckHostKey(got, key string) (host string, ok bool) {
+	if key == "" || got == "" {
+		return "", false
+	}
+	if got == key {
+		return "", true
+	}
+	base, tag, found := strings.Cut(got, key+".")
+	if !found || base != "" || tag == "" || len(tag) > 32 {
+		return "", false
+	}
+	for _, r := range tag {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_') {
+			return "", false
+		}
+	}
+	return tag, true
 }

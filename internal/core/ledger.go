@@ -45,6 +45,9 @@ type Call struct {
 	ResultPath      string    `json:"result_path,omitempty"`
 	JobID           string    `json:"job_id,omitempty"`
 	ResultText      string    `json:"result_text,omitempty"`
+	// 完整的提问和回答，只给评估用：重做和盲评要看到原话，摘录会截断。不进接口输出
+	PromptFull string `json:"-"`
+	ResultFull string `json:"-"`
 	// 下面两个只在接口输出时填，不入库
 	TaskName     string `json:"task_name,omitempty"`
 	ModelDisplay string `json:"model_display,omitempty"`
@@ -79,6 +82,12 @@ CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
 	}
+	// 后加的列：老账本补上，已有就跳过
+	for _, col := range []string{"prompt_full", "result_full"} {
+		if _, err := db.Exec(`ALTER TABLE calls ADD COLUMN ` + col + ` TEXT`); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			return nil, err
+		}
+	}
 	return &Ledger{db: db}, nil
 }
 
@@ -89,11 +98,11 @@ func js(v any) string { b, _ := json.Marshal(v); return string(b) }
 
 // Insert 写入一行。
 func (l *Ledger) Insert(c *Call) error {
-	_, err := l.db.Exec(`INSERT INTO calls VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := l.db.Exec(`INSERT INTO calls (`+callCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		c.ID, c.TS.UTC().Format(time.RFC3339Nano), c.Source, c.Host, c.SessionID, string(c.Kind), c.TaskType, string(c.Tier), c.MediaTier,
 		string(c.Lane), c.Provider, c.Model, js(c.Reason), js(c.Candidates), c.FallbackFrom,
 		c.InputTokens, c.OutputTokens, c.CacheReadTokens, c.Units, c.Unit, c.CostUSD, c.CostNative, c.Currency,
-		c.QuotaUnits, c.BaselineCostUSD, boolInt(c.UserEscalated), c.LatencyMS, boolInt(c.OK), c.Error, c.PromptExcerpt, c.ResultPath, c.JobID, c.ResultText)
+		c.QuotaUnits, c.BaselineCostUSD, boolInt(c.UserEscalated), c.LatencyMS, boolInt(c.OK), c.Error, c.PromptExcerpt, c.ResultPath, c.JobID, c.ResultText, c.PromptFull, c.ResultFull)
 	return err
 }
 
@@ -110,21 +119,22 @@ func boolInt(b bool) int {
 	return 0
 }
 
-const callCols = `id,ts,source,host,session_id,kind,task_type,tier,media_tier,lane,provider,model,reason,candidates,fallback_from,input_tokens,output_tokens,cache_read_tokens,units,unit,cost_usd,cost_native,currency,quota_units,baseline_cost_usd,user_escalated,latency_ms,ok,error,prompt_excerpt,result_path,job_id,result_text`
+const callCols = `id,ts,source,host,session_id,kind,task_type,tier,media_tier,lane,provider,model,reason,candidates,fallback_from,input_tokens,output_tokens,cache_read_tokens,units,unit,cost_usd,cost_native,currency,quota_units,baseline_cost_usd,user_escalated,latency_ms,ok,error,prompt_excerpt,result_path,job_id,result_text,prompt_full,result_full`
 
 func scanCall(r interface{ Scan(...any) error }) (*Call, error) {
 	var c Call
 	var ts, reason, cands string
 	var esc, ok int
-	var host, sess, tier, mtier, fb, unit, cur, errs, pe, rp, jid, rt sql.NullString
+	var host, sess, tier, mtier, fb, unit, cur, errs, pe, rp, jid, rt, pf, rf sql.NullString
 	err := r.Scan(&c.ID, &ts, &c.Source, &host, &sess, (*string)(&c.Kind), &c.TaskType, &tier, &mtier, (*string)(&c.Lane), &c.Provider, &c.Model, &reason, &cands, &fb,
-		&c.InputTokens, &c.OutputTokens, &c.CacheReadTokens, &c.Units, &unit, &c.CostUSD, &c.CostNative, &cur, &c.QuotaUnits, &c.BaselineCostUSD, &esc, &c.LatencyMS, &ok, &errs, &pe, &rp, &jid, &rt)
+		&c.InputTokens, &c.OutputTokens, &c.CacheReadTokens, &c.Units, &unit, &c.CostUSD, &c.CostNative, &cur, &c.QuotaUnits, &c.BaselineCostUSD, &esc, &c.LatencyMS, &ok, &errs, &pe, &rp, &jid, &rt, &pf, &rf)
 	if err != nil {
 		return nil, err
 	}
 	c.TS, _ = time.Parse(time.RFC3339Nano, ts)
 	c.Host, c.SessionID, c.Tier, c.MediaTier, c.FallbackFrom, c.Unit, c.Currency = host.String, sess.String, Tier(tier.String), mtier.String, fb.String, unit.String, cur.String
 	c.Error, c.PromptExcerpt, c.ResultPath, c.JobID, c.ResultText = errs.String, pe.String, rp.String, jid.String, rt.String
+	c.PromptFull, c.ResultFull = pf.String, rf.String
 	c.UserEscalated, c.OK = esc == 1, ok == 1
 	_ = json.Unmarshal([]byte(reason), &c.Reason)
 	_ = json.Unmarshal([]byte(cands), &c.Candidates)
@@ -509,7 +519,12 @@ func (l *Ledger) Sample(days, n int, tiers []string) ([]*Call, error) {
 		args = append(args, t)
 	}
 	args = append(args, n)
-	rows, err := l.db.Query(`SELECT `+callCols+` FROM calls WHERE ts>=? AND kind='text' AND ok=1 AND prompt_excerpt<>'' AND tier IN (`+ph+`) ORDER BY RANDOM() LIMIT ?`, args...)
+	// 只抽能完整重现的：新记录要有完整的提问和回答；老记录只有摘录，摘录没被截断、也不是多轮对话才算
+	rows, err := l.db.Query(`SELECT `+callCols+` FROM calls WHERE ts>=? AND kind='text' AND ok=1 AND tier IN (`+ph+`)
+  AND source NOT IN ('evaluation','classifier')
+  AND ((COALESCE(prompt_full,'')<>'' AND COALESCE(result_full,'')<>'')
+    OR (prompt_full IS NULL AND prompt_excerpt<>'' AND prompt_excerpt NOT LIKE '%…' AND COALESCE(result_text,'')<>'' AND result_text NOT LIKE '%…' AND source<>'facade'))
+  ORDER BY RANDOM() LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -540,4 +555,48 @@ func (l *Ledger) DeleteJob(id string) error {
 func (l *Ledger) DeleteCall(id string) error {
 	_, err := l.db.Exec(`DELETE FROM calls WHERE id=?`, id)
 	return err
+}
+
+// HostActivity 是一个宿主近期派活的情况。
+type HostActivity struct {
+	Calls int       `json:"calls"`
+	Last  time.Time `json:"last"`
+}
+
+// HostActivity 按宿主统计 since 以来的请求数和最近一次时间；评估、判档、界面里的试一句不算。
+func (l *Ledger) HostActivity(since time.Time) (map[string]HostActivity, error) {
+	rows, err := l.db.Query(`SELECT host, COUNT(*), MAX(ts) FROM calls WHERE ts>=? AND host<>'' AND source NOT IN ('evaluation','try','quick','cli') GROUP BY host`, since.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]HostActivity{}
+	for rows.Next() {
+		var h, last string
+		var n int
+		if err := rows.Scan(&h, &n, &last); err != nil {
+			return nil, err
+		}
+		t, _ := time.Parse(time.RFC3339Nano, last)
+		out[h] = HostActivity{Calls: n, Last: t}
+	}
+	return out, rows.Err()
+}
+
+// MonthCost 是本月按量付费已花的美元。每次执行前查预算用它：一条求和，不把当天的记录全读出来。
+func (l *Ledger) MonthCost(loc *time.Location) (float64, error) {
+	now := time.Now().In(loc)
+	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
+	var v float64
+	err := l.db.QueryRow(`SELECT COALESCE(SUM(cost_usd),0) FROM calls WHERE ts>=?`, start.UTC().Format(time.RFC3339Nano)).Scan(&v)
+	return v, err
+}
+
+// PruneFull 清掉 before 之前为评估存的完整原话，摘录和费用照留。置成空串而不是 NULL：NULL 会被当成老记录参与抽样。
+func (l *Ledger) PruneFull(before time.Time) (int64, error) {
+	res, err := l.db.Exec(`UPDATE calls SET prompt_full='', result_full='' WHERE ts<? AND (COALESCE(prompt_full,'')<>'' OR COALESCE(result_full,'')<>'')`, before.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

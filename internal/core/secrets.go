@@ -1,65 +1,69 @@
 package core
 
 import (
-	"bytes"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 )
 
-// KeychainSecrets 用 macOS 的 security 命令存按量付费密钥。服务名固定，账户名是账号 id。
-// 这里只存我们自己创建的条目，从不碰别的应用（包括 Claude、Codex）的钥匙串项。
+// KeychainSecrets 把按量付费密钥存进系统自带的凭据库：macOS 钥匙串、Windows 凭据管理器、Linux Secret Service。
+// 只存我们自己创建的条目（服务名固定，账户名是账号 id），从不碰别的应用（包括 Claude、Codex）的条目。
+// 系统凭据库不可用时退回数据目录下的文件（权限 0600），Plain() 为真，doctor 会提醒。
 type KeychainSecrets struct {
 	service  string
-	fallback string // 非 macOS 或 security 不可用时的文件回退（仅测试）
+	store    secretStore // nil 表示用文件
+	fallback string
 	mu       sync.Mutex
 }
 
-// NewSecrets 创建密钥存取。
+// secretStore 是各平台的系统凭据库。
+type secretStore interface {
+	get(service, name string) (string, error)
+	set(service, name, value string) error
+	del(service, name string) error
+}
+
+var errNoSecret = errors.New("没有找到密钥")
+
+// NewSecrets 创建密钥存取。设了 IMLS_SECRETS_FILE（测试用）时一律走文件。
 func NewSecrets(dataDir string) *KeychainSecrets {
 	s := &KeychainSecrets{service: "iML Switchboard"}
-	if _, err := exec.LookPath("security"); err != nil || os.Getenv("IMLS_SECRETS_FILE") != "" {
+	if os.Getenv("IMLS_SECRETS_FILE") == "" {
+		s.store = platformSecretStore()
+	}
+	if s.store == nil {
 		s.fallback = filepath.Join(dataDir, "secrets.local")
 	}
 	return s
 }
 
+// Plain 表示密钥是以文件形式存的（系统凭据库不可用）。
+func (s *KeychainSecrets) Plain() bool { return s.store == nil }
+
 // Get 读取密钥。
 func (s *KeychainSecrets) Get(name string) (string, error) {
-	if s.fallback != "" {
+	if s.store == nil {
 		return s.fileGet(name)
 	}
-	out, err := exec.Command("security", "find-generic-password", "-s", s.service, "-a", name, "-w").Output()
-	if err != nil {
-		return "", errors.New("没有找到密钥")
-	}
-	return strings.TrimSpace(string(out)), nil
+	return s.store.get(s.service, name)
 }
 
 // Set 写入密钥（覆盖）。
 func (s *KeychainSecrets) Set(name, value string) error {
-	if s.fallback != "" {
+	if s.store == nil {
 		return s.fileSet(name, value)
 	}
-	cmd := exec.Command("security", "add-generic-password", "-U", "-s", s.service, "-a", name, "-w", value, "-T", "")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return errors.New("写入钥匙串失败：" + strings.TrimSpace(stderr.String()))
-	}
-	return nil
+	return s.store.set(s.service, name, value)
 }
 
 // Delete 删除密钥。
 func (s *KeychainSecrets) Delete(name string) error {
-	if s.fallback != "" {
+	if s.store == nil {
 		return s.fileSet(name, "")
 	}
-	_ = exec.Command("security", "delete-generic-password", "-s", s.service, "-a", name).Run()
-	return nil
+	return s.store.del(s.service, name)
 }
 
 func (s *KeychainSecrets) fileGet(name string) (string, error) {
@@ -71,7 +75,7 @@ func (s *KeychainSecrets) fileGet(name string) (string, error) {
 			return v, nil
 		}
 	}
-	return "", errors.New("没有找到密钥")
+	return "", errNoSecret
 }
 
 func (s *KeychainSecrets) fileSet(name, value string) error {

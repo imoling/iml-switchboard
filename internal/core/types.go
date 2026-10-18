@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -54,24 +55,30 @@ type Message struct {
 	Content string `json:"content"`
 	// Images 是本地文件路径或 data URL，按量付费渠道会转成供应商格式。
 	Images []string `json:"images,omitempty"`
+	// 智能体回合的工具调用：助手消息带 ToolCalls（OpenAI 格式原样保留），工具消息带 ToolCallID。
+	// 兼容入口必须原样转发，否则宿主的工具调用对不上号，智能体跑不起来。
+	ToolCalls  json.RawMessage `json:"tool_calls,omitempty"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
+	Name       string          `json:"name,omitempty"`
 }
 
 // Task 是三个接入面统一后的请求。
 type Task struct {
-	ID        string          `json:"id"`
-	Kind      Kind            `json:"kind"`
-	Prompt    string          `json:"prompt"`
-	Messages  []Message       `json:"messages,omitempty"` // 多轮时存在；Prompt 是最后一条用户消息
-	System    string          `json:"system,omitempty"`
-	Tools     json.RawMessage `json:"tools,omitempty"`      // OpenAI 格式的 tools，非空表示 has_tools
-	Tier      Tier            `json:"tier,omitempty"`       // 调用方显式指定的档位
-	MediaTier string          `json:"media_tier,omitempty"` // cheap default best free
-	Model     string          `json:"model,omitempty"`      // 调用方点名的模型
-	Lane      LaneID          `json:"lane,omitempty"`       // 调用方点名的渠道
-	SessionID string          `json:"session_id,omitempty"`
-	Source    string          `json:"source"` // mcp facade cli quick redo
-	Host      string          `json:"host,omitempty"`
-	EstTokens int             `json:"est_tokens"`
+	ID         string          `json:"id"`
+	Kind       Kind            `json:"kind"`
+	Prompt     string          `json:"prompt"`
+	Messages   []Message       `json:"messages,omitempty"` // 多轮时存在；Prompt 是最后一条用户消息
+	System     string          `json:"system,omitempty"`
+	Tools      json.RawMessage `json:"tools,omitempty"`       // OpenAI 格式的 tools，非空表示 has_tools
+	ToolChoice json.RawMessage `json:"tool_choice,omitempty"` // 原样转发给按量付费渠道
+	Tier       Tier            `json:"tier,omitempty"`        // 调用方显式指定的档位
+	MediaTier  string          `json:"media_tier,omitempty"`  // cheap default best free
+	Model      string          `json:"model,omitempty"`       // 调用方点名的模型
+	Lane       LaneID          `json:"lane,omitempty"`        // 调用方点名的渠道
+	SessionID  string          `json:"session_id,omitempty"`
+	Source     string          `json:"source"` // mcp facade cli quick redo
+	Host       string          `json:"host,omitempty"`
+	EstTokens  int             `json:"est_tokens"`
 	// 媒体参数
 	ImagePath  string    `json:"image_path,omitempty"`
 	Seconds    int       `json:"seconds,omitempty"`
@@ -82,6 +89,9 @@ type Task struct {
 	Stream     bool      `json:"stream,omitempty"`
 	MaxTokens  int       `json:"max_tokens,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
+	// Judged 是低档模型给的档位（low mid high image video animation），只在规则拿不准时由 Run 填
+	Judged       string  `json:"-"`
+	JudgeCostUSD float64 `json:"-"` // 判档花的钱，记到这次请求上
 }
 
 // HasTools 表示调用方传了工具定义；这类请求不能走订阅渠道。
@@ -108,6 +118,8 @@ type Decision struct {
 	Candidates []Target `json:"candidates"`
 	Reason     []string `json:"reason"`
 	Sticky     bool     `json:"sticky,omitempty"`
+	// Unsure 表示规则拿不准：落到短问答或启发式兜底，且没有显式指令、没指定档位
+	Unsure bool `json:"unsure,omitempty"`
 }
 
 // Usage 是一次执行的用量与费用。
@@ -140,6 +152,9 @@ type Result struct {
 	Model string          `json:"model"`
 	Usage Usage           `json:"usage"`
 	Raw   json.RawMessage `json:"-"`
+	// ToolCalls 是模型要宿主去调的工具（OpenAI 格式数组），FinishReason 是供应商给的结束原因（stop、tool_calls、length）。
+	ToolCalls    json.RawMessage `json:"tool_calls,omitempty"`
+	FinishReason string          `json:"finish_reason,omitempty"`
 }
 
 // Job 是异步媒体任务（视频、动画）。
@@ -204,6 +219,21 @@ type ErrRateLimited struct {
 }
 
 func (e *ErrRateLimited) Error() string { return string(e.Lane) + " 额度暂时用完：" + e.Detail }
+
+// ErrContextTooLong 表示内容太长，所有可用模型都装不下。兼容入口把它转成 context_length_exceeded，
+// 宿主据此自己压缩对话再重试：只有宿主知道哪些内容重要，Switchboard 不替它删。
+type ErrContextTooLong struct {
+	Tokens    int // 估算的输入 token
+	MaxWindow int // 可用模型里最大的上下文窗口
+}
+
+// Usable 是实际能用的上下文：窗口的九成。
+func (e *ErrContextTooLong) Usable() int { return int(float64(e.MaxWindow) * contextHeadroom) }
+
+func (e *ErrContextTooLong) Error() string {
+	// 只用窗口的九成（留估算误差和回答的地方），所以按九成说，免得「95 万装不进 100 万」看着自相矛盾
+	return fmt.Sprintf("内容太长：约 %d 万 token，可用模型最多放得下约 %d 万；精简或压缩对话后再试", (e.Tokens+5000)/10000, e.Usable()/10000)
+}
 
 // ErrProvider 是供应商侧的失败，带一行人话和原始回包。
 type ErrProvider struct {

@@ -1,0 +1,121 @@
+# 路由金标集：每条是宿主可能派给 Switchboard 的一句话，want 是「该用哪一档」。
+# 标注按任务本身的难度来定，不迁就现有规则；规则判不对就改规则，别改标注。
+# want：low / mid / high（文本三档），image / video / animation（媒体）。
+# 新增来源：imls golden 导出的「判低了」记录，人工复核后贴进来。
+
+# —— 低档：翻译、改写、摘要、归类、抽取、短问答 ——
+- {p: "把这段话翻译成英文：今天天气不错，我们下午去公园", want: low}
+- {p: "translate to Chinese: The build failed because the cache was stale.", want: low}
+- {p: "把下面这段改得口语一点：本产品致力于为用户提供卓越的体验", want: low}
+- {p: "润色一下这段自我介绍，别太夸张", want: low}
+- {p: "总结这篇文章的三个要点", want: low}
+- {p: "把这 30 条用户反馈归类，分成功能、性能、界面三类", want: low}
+- {p: "从这段文字里提取所有的人名和日期", want: low}
+- {p: "把这个列表转成 Markdown 表格：张三 25 北京；李四 30 上海", want: low}
+- {p: "给这个函数起个更好的名字：getDataAndProcessIt", want: low}
+- {p: "Python 里怎么把 list 按某个字段分组", want: low}
+- {p: "git 怎么撤销最后一次提交但保留改动", want: low}
+- {p: "JSON 和 YAML 有什么区别，一句话说", want: low}
+- {p: "帮我写一条 commit message：修复登录页在 Safari 上按钮错位", want: low}
+- {p: "把这段英文邮件写得礼貌一点：Send me the report now.", want: low}
+- {p: "列出 macOS 上查看端口占用的命令", want: low}
+- {p: "这句话有没有错别字：我们在在会议室等你", want: low}
+- {p: "生成 10 个测试用的中文姓名", want: low}
+- {p: "给这篇博客想 5 个标题", want: low}
+- {p: "精简一下这段说明，控制在 50 字以内", want: low}
+- {p: "把这些日志按错误级别统计一下数量", want: low}
+- {p: "正则怎么匹配中国大陆手机号", want: low}
+- {p: "HTTP 418 是什么意思", want: low}
+- {p: "把这段 SQL 的关键字改成大写：select id from users where age > 3", want: low}
+- {p: "这段话的情绪是正面还是负面：等了两周还没发货", want: low}
+- {p: "summarize this changelog in 3 bullets", want: low}
+- {p: "帮我把会议纪要整理成待办清单", want: low}
+- {p: "扩写这句话成一段：AI 正在改变软件开发", want: low}
+- {p: "换个说法：这个功能暂不支持", want: low}
+- {p: "npm 和 pnpm 装包的命令分别是什么", want: low}
+- {p: "把下面的 CSV 转成 JSON：name,age\nTom,3\nAmy,5", want: low}
+
+# —— 中档：小段代码、评审、写测试、一般解释 ——
+- {p: "review 一下这个函数\n```go\nfunc add(a, b int) int { return a + b }\n```", want: mid}
+- {p: "把这个函数改成支持批量传入\n```python\ndef f(x):\n    return x * 2\n```", want: mid}
+- {p: "给这个函数写单元测试\n```ts\nexport function slug(s: string) { return s.toLowerCase().replace(/\\s+/g, '-') }\n```", want: mid}
+- {p: "帮我看看这段代码有没有问题\n```js\nfor (var i = 0; i < 5; i++) setTimeout(() => console.log(i))\n```", want: mid}
+- {p: "写一个 Go 函数，读取目录下所有 .md 文件并按修改时间排序", want: mid}
+- {p: "用 React 写一个带搜索框的下拉选择组件", want: mid}
+- {p: "写个 bash 脚本，把当前目录下的 png 都压缩成 webp", want: mid}
+- {p: "解释一下这段正则在干什么：^(?=.*[A-Z])(?=.*\\d).{8,}$", want: mid}
+- {p: "这个 SQL 怎么加索引能快一点\n```sql\nSELECT * FROM orders WHERE user_id = ? AND created_at > ? ORDER BY created_at DESC\n```", want: mid}
+- {p: "给这个 API 写一份接口文档，参数有 id、name、tags", want: mid}
+- {p: "第二意见：这个缓存失效策略合理吗？写入时删缓存，读取时回填", want: mid}
+- {p: "写一个 Python 装饰器，记录函数耗时", want: mid}
+- {p: "把这个回调风格的函数改成 async/await\n```js\nfs.readFile(p, (err, d) => { if (err) return cb(err); cb(null, JSON.parse(d)) })\n```", want: mid}
+- {p: "Dockerfile 怎么写能让 Go 程序镜像小一点", want: mid}
+- {p: "解释 React 的 useEffect 依赖数组为什么会导致无限循环", want: mid}
+- {p: "写个 GitHub Actions，push 到 main 时跑 go test", want: mid}
+- {p: "这段 CSS 为什么在移动端横向溢出\n```css\n.row { display:flex; width:100vw; padding: 0 16px }\n```", want: mid}
+- {p: "帮我把这段 Python 改成用 pathlib\n```python\nimport os\np = os.path.join(os.getcwd(), 'a', 'b.txt')\nif os.path.exists(p): print(open(p).read())\n```", want: mid}
+- {p: "评审这个 PR 的思路：把配置从 JSON 改成 YAML，并保留旧格式兼容", want: mid}
+- {p: "写一个 TypeScript 类型，把对象所有字段变成可选且只读", want: mid}
+- {p: "用 Go 实现一个带过期时间的内存缓存", want: mid}
+- {p: "对比一下 SQLite 和 Postgres 用在桌面应用里的利弊", want: mid}
+- {p: "这个函数有没有并发问题\n```go\nvar n int\nfunc inc() { n++ }\n```", want: mid}
+- {p: "写一个 Tauri 命令，返回系统的空闲内存", want: mid}
+- {p: "把这个 for 循环改成 map/filter\n```js\nconst out = []\nfor (const x of xs) { if (x.ok) out.push(x.id) }\n```", want: mid}
+- {p: "write a python script that downloads a URL with retries", want: mid}
+- {p: "这两种错误处理写法哪种更好：返回 error 还是 panic 后 recover", want: mid}
+- {p: "帮我设计这个表的字段：用户、订单、商品，订单可以有多个商品", want: mid}
+- {p: "解释一下 Rust 的生命周期标注 'a 在这个函数签名里的意思\n```rust\nfn longest<'a>(x: &'a str, y: &'a str) -> &'a str\n```", want: mid}
+- {p: "为什么 git rebase 之后要 force push，有什么风险", want: mid}
+
+# —— 高档：疑难调试、架构、复杂推理、大改动 ——
+- {p: "为什么这个组件每次输入都重新渲染\nTraceback (most recent call last):\n  File \"a.py\", line 3\nTypeError: x", want: high}
+- {p: "这个服务跑一阵就 OOM\npanic: runtime error: out of memory\ngoroutine 1 [running]:\nmain.main()", want: high}
+- {p: "试了很多次还是不行，这个登录接口一直 500", want: high}
+- {p: "这个项目的后端架构怎么设计比较好", want: high}
+- {p: "给这个桌面应用做技术选型：Electron 还是 Tauri，要考虑包体、内存和插件生态", want: high}
+- {p: "重构这个模块，把同步调用改成事件驱动，保证现有接口不变", want: high}
+- {p: "线上偶发死锁，只在高并发时出现，日志里看到两个 goroutine 互相等锁，怎么定位", want: high}
+- {p: "设计一个多租户的权限系统，支持角色继承和资源级授权", want: high}
+- {p: "证明这个算法的时间复杂度是 O(n log n)，并说明最坏情况", want: high}
+- {p: "这个分布式锁的实现在网络分区时会不会出问题？为什么", want: high}
+- {p: "TypeError: Cannot read properties of undefined (reading 'map')\n    at List (List.tsx:12:20)\n    at renderWithHooks (react-dom.js:1)", want: high}
+- {p: "怎么都不行，Tauri 打包后窗口白屏，开发模式正常", want: high}
+- {p: "设计一套离线优先的同步方案，处理多设备冲突合并", want: high}
+- {p: "迁移方案：把单体应用拆成三个服务，数据库怎么拆、怎么灰度", want: high}
+- {p: "这个内存泄漏查了两天，heap profile 显示 map 一直涨，但代码里每次都 delete 了，为什么", want: high}
+- {p: "权衡一下：路由决策放在本机规则还是调小模型判断，延迟、成本、准确率各怎么取舍", want: high}
+- {p: "Exception in thread \"main\" java.lang.NullPointerException\n\tat com.a.B.run(B.java:42)", want: high}
+- {p: "系统设计：一个每天千万次请求的短链接服务", want: high}
+- {p: "还是报错，换了三个版本的依赖都一样：segmentation fault (core dumped)", want: high}
+- {p: "why does this race condition only show up under -race on arm64 but not amd64", want: high}
+- {p: "帮我想清楚：订阅额度用完后自动转按量付费，怎么设计才不会让用户被意外扣钱", want: high}
+- {p: "这个递归在大输入下栈溢出，改成迭代同时保持遍历顺序不变，原代码很长我贴了 200 行", want: high}
+- {p: "给这个支付回调设计幂等方案，必须保证不重复入账，不能依赖外部锁，要求能处理乱序", want: high}
+- {p: "分析一下这个协议的安全性：客户端生成 nonce，服务端只校验时间戳", want: high}
+- {p: "架构评审：现在所有渠道共用一个 HTTP 客户端和重试策略，要不要拆", want: high}
+
+# —— 媒体 ——
+- {p: "给 README 配一张封面图", want: image}
+- {p: "画一张猫在键盘上睡觉的插画", want: image}
+- {p: "生成一张产品海报，主色是陶土红", want: image}
+- {p: "做一张图，展示订阅、按量付费、媒体三条渠道", want: image}
+- {p: "来张公众号头图，主题是本机 AI 调度", want: image}
+- {p: "做一个 5 秒的产品介绍视频", want: video}
+- {p: "生成一段 8 秒的视频：海边日落，镜头缓慢推进", want: video}
+- {p: "把这张图做成视频，让人物眨眼", want: video}
+- {p: "做个短片，展示咖啡倒进杯子", want: video}
+- {p: "做一个 8 秒的标题动画", want: animation}
+- {p: "做一段片头动效，Logo 从中间放大淡入", want: animation}
+- {p: "用 Remotion 做一个数字滚动的转场", want: animation}
+
+# —— 易混：带媒体词但不是媒体任务 ——
+- {p: "这个视频播放器组件切换清晰度时会卡住，帮我看看", want: mid}
+- {p: "CSS 动画在 Safari 上闪烁怎么解决", want: mid}
+- {p: "把这张图片的上传接口改成支持断点续传", want: mid}
+- {p: "总结一下这个视频教程讲了哪几步：先装依赖，再配环境变量，最后启动", want: low}
+- {p: "海报生成接口返回 413，图太大了，前端怎么压缩", want: mid}
+
+# —— 易混：短但难 / 长但简单 ——
+- {p: "为什么 TCP 需要三次握手而不是两次", want: mid}
+- {p: "证明根号 2 是无理数", want: mid}
+- {p: "这个锁为什么会死锁", want: high}

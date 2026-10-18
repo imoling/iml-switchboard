@@ -28,6 +28,7 @@ type Router struct {
 	onCall   func(*Call)
 	onNotice func(title, body, level string)
 	loc      *time.Location
+	clsCache classifyCache
 }
 
 // NewRouter 创建调度器。
@@ -108,6 +109,20 @@ func (r *Router) Decide(t *Task) *Decision {
 			d.Reason = append(d.Reason, "长文本里出现媒体词，不当媒体任务")
 			tt, matched = config.TaskType{}, false
 		}
+		if !matched || tt.Type == "qa_short" {
+			switch t.Judged {
+			case "image", "video", "animation":
+				if IsMediaAsk(ask) && !t.HasTools() {
+					tt, matched = config.TaskType{Type: t.Judged, Kind: t.Judged}, true
+					for _, row := range cfg.Routing.TaskTable {
+						if row.Type == t.Judged {
+							tt = row
+						}
+					}
+					d.Reason = append(d.Reason, "规则拿不准，低档模型判为"+kindLabel(Kind(t.Judged)))
+				}
+			}
+		}
 		if matched && tt.Kind != "" {
 			t.Kind = Kind(tt.Kind)
 			d.Kind = t.Kind
@@ -178,6 +193,14 @@ func (r *Router) Decide(t *Task) *Decision {
 		}
 		d.Reason = append(d.Reason, why)
 	}
+	if hit.Word == "" && explicitTier == "" && (d.TaskType == "qa_short" || d.TaskType == "heuristic") {
+		d.Unsure = true
+		if jt := Tier(t.Judged); tierRank(jt) > 0 {
+			d.Reason = append(d.Reason, "规则拿不准，低档模型判为"+TierLabel(jt))
+			tier = jt
+			d.TaskType = "judged"
+		}
+	}
 	// 质量模式：高档升顶配；省钱模式：高档降中档（除非显式指定）
 	if explicitTier == "" {
 		switch r.Mode() {
@@ -209,6 +232,10 @@ func (r *Router) Decide(t *Task) *Decision {
 		if tgt, prevTier, ok := r.sticky.Get(t.SessionID); ok {
 			subLane := tgt.Lane != LaneAPI && tgt.Lane != LaneMedia
 			usable := !(t.HasTools() && subLane) // 带工具的请求不能粘到订阅渠道上
+			if fit, _ := r.fits(tgt.Model, t.EstTokens); !fit {
+				usable = false // 对话越来越长，原来的模型装不下了：重新选
+				d.Reason = append(d.Reason, "对话变长，原模型装不下，重新选")
+			}
 			if usable && (tierRank(prevTier) >= tierRank(tier) || keepCurrent) {
 				d.Sticky = true
 				d.Tier = prevTier
@@ -383,12 +410,78 @@ func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer [
 			})
 		}
 	}
+	tooLong := 0
+	for i := range out {
+		if out[i].Skipped != "" {
+			continue
+		}
+		if ok, window := r.fits(out[i].Model, t.EstTokens); !ok {
+			out[i].Skipped = fmt.Sprintf("装不下（上限 %d 万 token）", window/10000)
+			tooLong++
+		}
+	}
 	if tier == TierTop && len(live(out)) == 0 {
 		// 顶配只有 Claude 订阅有；都不可用时退到高档的候选
 		*reason = append(*reason, "顶配不可用，退到高档")
 		return r.textCandidates(cfg, t, TierHigh, prefer, needVision, reason)
 	}
+	if tooLong > 0 && len(live(out)) == 0 && tierRank(tier) < tierRank(TierHigh) {
+		// 这一档的模型都装不下：往上找窗口更大的
+		up := map[Tier]Tier{TierLow: TierMid, TierMid: TierHigh}[tier]
+		*reason = append(*reason, fmt.Sprintf("内容约 %d 万 token，%s装不下，改用%s", (t.EstTokens+5000)/10000, TierLabel(tier), TierLabel(up)))
+		return r.textCandidates(cfg, t, up, prefer, needVision, reason)
+	}
 	return out
+}
+
+// contextHeadroom 是只用上下文窗口的多少：估算有误差，还要给回答留地方。
+const contextHeadroom = 0.9
+
+// fits 判断估算的输入放不放得进这个模型；注册表里没有窗口数据的模型一律放行。
+func (r *Router) fits(model string, est int) (bool, int) {
+	info, ok := r.reg.Lookup(model)
+	if !ok || info.Context <= 0 {
+		return true, 0
+	}
+	return float64(est) <= float64(info.Context)*contextHeadroom, info.Context
+}
+
+// MaxContext 是当前启用的文本模型里最大的上下文窗口；兼容入口用它在流式输出前判断「谁都装不下」。0 表示不知道。
+func (r *Router) MaxContext() int {
+	cfg := r.cfg.Get()
+	best := 0
+	see := func(m string) {
+		if info, ok := r.reg.Lookup(m); ok && info.MediaKind == "" && info.Context > best {
+			best = info.Context
+		}
+	}
+	for lane, sl := range cfg.Sub {
+		if _, ok := r.drivers[LaneID(lane)]; !ok || !sl.Enabled {
+			continue
+		}
+		for _, m := range sl.Models {
+			see(m)
+		}
+	}
+	for _, acc := range cfg.API {
+		if !acc.Enabled {
+			continue
+		}
+		for _, ms := range acc.Models {
+			for _, m := range ms {
+				see(m)
+			}
+		}
+	}
+	return best
+}
+
+// FitsAny 判断估算的输入能不能放进任何一个启用的模型；不能时返回 ErrContextTooLong。
+func (r *Router) FitsAny(est int) error {
+	if max := r.MaxContext(); max > 0 && float64(est) > float64(max)*contextHeadroom {
+		return &ErrContextTooLong{Tokens: est, MaxWindow: max}
+	}
+	return nil
 }
 
 func live(ts []Target) []Target {
@@ -553,7 +646,21 @@ func (r *Router) Run(ctx context.Context, t *Task, emit func(Event)) (*Call, *Re
 	if r.Paused() {
 		return nil, nil, errors.New("调度已暂停")
 	}
+	kind, prompt := t.Kind, t.Prompt
 	d := r.Decide(t)
+	if d.Unsure && !d.Sticky && !r.cfg.Get().Settings.RulesOnly && t.Source != "classifier" {
+		label, c, model := r.classify(ctx, prompt)
+		if label != "" {
+			t.JudgeCostUSD = c
+			t.Kind, t.Prompt, t.Judged = kind, prompt, label
+			d = r.Decide(t)
+			if model != "" {
+				d.Reason = append(d.Reason, "判档用 "+r.reg.Display(model))
+			}
+		} else {
+			d.Reason = append(d.Reason, "低档模型没判出来，按规则走")
+		}
+	}
 	return r.Execute(ctx, t, d, emit)
 }
 
@@ -571,7 +678,7 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 	tried := 0
 	// 按量付费月上限
 	overBudget := false
-	if ov, err := r.ledger.Aggregate(1, r.loc); err == nil && cfg.Settings.MonthlyAPILimitUSD > 0 && ov.MonthAPICostUSD >= cfg.Settings.MonthlyAPILimitUSD {
+	if spent, err := r.ledger.MonthCost(r.loc); err == nil && cfg.Settings.MonthlyAPILimitUSD > 0 && spent >= cfg.Settings.MonthlyAPILimitUSD {
 		overBudget = true
 	}
 	for i := range d.Candidates {
@@ -632,6 +739,11 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 	}
 	if tried == 0 && len(d.Candidates) > 0 {
 		lastErr = errors.New("没有可用的模型：" + skippedSummary(d.Candidates))
+		if d.Kind == KindText {
+			if err := r.FitsAny(t.EstTokens); err != nil {
+				lastErr = err
+			}
+		}
 	}
 	r.fail(call, t, Target{}, lastErr, start)
 	return call, nil, lastErr
@@ -680,7 +792,12 @@ func (r *Router) finish(call *Call, t *Task, tgt Target, res *Result, start time
 	call.JobID = res.JobID
 	if r.cfg.Get().Settings.SavePrompts {
 		call.ResultText = excerpt(res.Text, 2000)
+		// 评估要用原话重做：只存单轮文本请求，超过上限的不存（截断后重做就不公平了）
+		if t.Kind == KindText && len(t.Messages) <= 1 && runeLen(t.Prompt) <= evalFullLimit && runeLen(res.Text) <= evalFullLimit {
+			call.PromptFull, call.ResultFull = t.Prompt, res.Text
+		}
 	}
+	call.CostUSD += t.JudgeCostUSD // 判档的花费算在这次请求上，基线不变
 	_ = r.ledger.Insert(call)
 	if r.onCall != nil {
 		r.onCall(call)
@@ -692,6 +809,7 @@ func (r *Router) fail(call *Call, t *Task, tgt Target, err error, start time.Tim
 	call.LatencyMS = int(time.Since(start).Milliseconds())
 	call.OK = false
 	call.Error = oneLine(err)
+	call.CostUSD += t.JudgeCostUSD
 	_ = r.ledger.Insert(call)
 	if r.onCall != nil {
 		r.onCall(call)
@@ -717,6 +835,11 @@ func oneLine(err error) string {
 	}
 	return s
 }
+
+// evalFullLimit 是为评估保存完整提问和回答的字数上限。
+const evalFullLimit = 20000
+
+func runeLen(s string) int { return len([]rune(s)) }
 
 func excerpt(s string, n int) string {
 	s = strings.TrimSpace(s)
@@ -755,6 +878,9 @@ func (r *Router) TaskName(tt string) string {
 	}
 	if tt == "heuristic" {
 		return "未归类"
+	}
+	if tt == "judged" {
+		return "模型判档"
 	}
 	return tt
 }

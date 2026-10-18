@@ -1,0 +1,62 @@
+# 盲测集：由另一个模型（Sonnet 5.5）独立写出并标注，2026-10-18；改规则时不看这份，只用它量准确率。
+# 规则调好后在这里量出的数字才可信；golden.yaml 是调规则用的，会过拟合。
+- {p: "把这句翻译成英文:「这个功能下个版本再上,先别急」", want: low}
+- {p: "git 怎么撤销上一次 commit 但保留改动", want: low}
+- {p: "写个 Python 脚本,批量把目录下的 png 转成 webp,质量 80", want: mid}
+- {p: "两个事务互相等,但我明明按同样顺序加锁的,为啥还死锁?", want: high}
+- {p: "给我画一张赛博朋克风格的上海外滩夜景,竖版,适合做手机壁纸", want: image}
+- {p: "帮我把这段视频脚本文案润色一下,口语一点,别太书面", want: low}
+- {p: "图片上传接口返回 413,nginx 要怎么改", want: mid}
+- {p: "Translate to Chinese: \"Please make sure the migration is idempotent before merging.\"", want: low}
+- {p: "做一个 5 秒的海浪视频,镜头缓慢推进", want: video}
+- {p: "线上订单服务每隔几天会有一两笔重复扣款,日志里看不出规律,重试逻辑和 MQ 消费都查过了,还是想不通怎么来的", want: high}
+- {p: "帮我给这个函数补单元测试:\n```python\ndef clamp(x, lo, hi):\n    return max(lo, min(x, hi))\n```", want: mid}
+- {p: "我这边有一份会议纪要,大概两千字,里面讲了排期、人员、预算三块,你帮我只把里面提到的所有日期抽出来,按时间顺序列成清单就行,别的不用管", want: low}
+- {p: "做个片头动效,白底,文字「iML Studio」逐字弹出,然后 logo 缩放进来,6 秒", want: animation}
+- {p: "Redis 分布式锁在主从切换时怎么保证不会两个客户端同时持有?Redlock 够用吗", want: high}
+- {p: "视频播放器拖进度条的时候有点卡,帮我看看这段 requestAnimationFrame 的写法是不是有问题", want: mid}
+- {p: "这个报错啥意思?ENOENT: no such file or directory, open './config.json'", want: low}
+- {p: "来个海报,主题是「周末骑行活动」,要有手绘感", want: image}
+- {p: "Write a TypeScript function that debounces an async function and returns the latest result.", want: mid}
+- {p: "把这个 JSON 转成 YAML:{\"name\":\"a\",\"port\":8080}", want: low}
+- {p: "帮我设计一个多租户 SaaS 的权限系统,要支持角色继承、资源级授权,还得能审计谁改了什么", want: high}
+- {p: "tar 解压到指定目录的命令是啥", want: low}
+- {p: "React 里 useEffect 和 useLayoutEffect 到底啥区别,什么时候该用后者", want: mid}
+- {p: "怎么让两个手机端离线编辑同一份文档,联网后合并还不丢数据?", want: high}
+- {p: "帮我把这封邮件语气改得客气一点:「你们的接口又挂了,赶紧修」", want: low}
+- {p: "做一段数据可视化动画,柱状图从 0 长到各自高度,配色赭红和墨色,8 秒", want: animation}
+- {p: "比较一下 SQLite 和 PostgreSQL,我这个是个人记账小工具,数据量不大", want: mid}
+- {p: "CI 里这条测试十次挂一次,本地永远过,试过加 sleep 了没用", want: high}
+- {p: "Generate a flat-style illustration of a cat sleeping on a laptop, transparent background if possible.", want: image}
+- {p: "这个 goroutine 泄漏我找了三天了:pprof 显示 runtime.gopark 堆了几万个,但 channel 我都 close 了", want: high}
+- {p: "What's the command to list all listening ports on macOS?", want: low}
+- {p: "动画一直掉帧,这个 CSS transition 是不是该改成用 transform?\n```css\n.box { transition: left 0.3s; }\n```", want: mid}
+- {p: "HTTP 状态码 418 是什么意思", want: low}
+- {p: "写个 React 组件,带搜索框的下拉选择,支持键盘上下选和回车确认", want: mid}
+- {p: "Make a short video of a paper airplane flying through a city at sunrise.", want: video}
+- {p: "升级到新版本后 p99 从 80ms 变成 400ms,CPU 没变,GC 也正常,火焰图看着基本一样", want: high}
+- {p: "把「已保存」「保存失败」「正在保存」翻成日文", want: low}
+- {p: "写个正则匹配中国大陆手机号,要能带 +86 和空格", want: mid}
+- {p: "帮我审计这段登录逻辑的安全问题,特别是 session 固定、时序攻击和重放:\n```js\nif (user.token === req.body.token) { req.session.uid = user.id }\n```", want: high}
+- {p: "帮我出个应用图标,一个简洁的黄色小闪电,圆角方形底", want: image}
+- {p: "Summarize this in one sentence: the PR renames three config fields and updates the docs accordingly.", want: low}
+- {p: "Can you review this SQL for obvious issues? SELECT * FROM orders WHERE date = '2024-01-01' OR user_id = 5;", want: mid}
+- {p: "帮我做个转场动效,从左往右的圆形擦除,1 秒左右", want: animation}
+- {p: "内存只涨不降,重启后三小时涨到 8G,heap dump 里大头是 byte[] 但看不出是谁在持有", want: high}
+- {p: "从这段 package.json 里把所有 devDependencies 的名字抽出来,一行一个", want: low}
+- {p: "Go 里 context.WithTimeout 为啥一定要 defer cancel", want: mid}
+- {p: "生成一段 8 秒的产品展示视频,一杯咖啡热气升起,镜头缓慢环绕", want: video}
+- {p: "Explain how JWT refresh token rotation works and what happens if a token is stolen.", want: mid}
+- {p: "数据量上亿的表要加一个唯一索引,不能停服,怎么做才稳", want: high}
+- {p: "Python 里 list 和 tuple 的区别,一句话说下", want: low}
+- {p: "我们要把单体拆成微服务,40 个模块、一个共享库、一个 Postgres,怎么拆、先拆哪个、数据怎么迁,给个方案并说清风险", want: high}
+- {p: "我 CSS 里 flex 子元素撑不开,overflow 还是溢出来了,怎么回事", want: mid}
+- {p: "把 CSV 这几行转成 Markdown 表格:\n```\n名称,价格,库存\n苹果,3,20\n梨,4,0\n```", want: low}
+- {p: "写个 GitHub Actions,push 到 main 时跑 go test 并缓存依赖", want: mid}
+- {p: "Design a rate limiter that works across 20 regions with eventual consistency, and discuss the tradeoffs.", want: high}
+- {p: "这个 Docker 镜像 1.2G 太大了,有什么常规办法瘦身", want: mid}
+- {p: "这条评论分到哪一类:bug / 需求 / 咨询?「导出的 Excel 打开是乱码」", want: low}
+- {p: "Our Kafka consumer occasionally processes the same message twice after a rebalance even with idempotent producers enabled. Walk me through how to find the root cause.", want: high}
+- {p: "帮我把这个 bash 脚本改成在 macOS 和 Linux 上都能跑,现在 sed -i 在 mac 上报错", want: mid}
+- {p: "review 一下这段代码有没有问题:\n```js\nfor (var i = 0; i < 5; i++) { setTimeout(() => console.log(i), 0) }\n```", want: mid}
+- {p: "把下面几个英文术语翻成中文,保持技术文档风格:idempotent, backpressure, eventual consistency", want: low}

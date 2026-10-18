@@ -108,6 +108,11 @@ func compiled(p string) *regexp.Regexp {
 }
 
 func matches(m config.Match, lower string, sig Signals) bool {
+	for _, k := range m.Exclude {
+		if strings.Contains(lower, strings.ToLower(k)) {
+			return false
+		}
+	}
 	if len(m.Keywords) > 0 || len(m.Patterns) > 0 {
 		hit := false
 		for _, k := range m.Keywords {
