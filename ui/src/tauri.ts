@@ -23,6 +23,12 @@ export const desktop = {
   startBackend: () => call('start_backend'),
   showAbout: () => call('show_about'),
   version: async () => (await call<string>('app_version')) ?? '1.0.0',
+  /** 让当前窗口的高度跟着内容走（菜单栏弹窗用）；浏览器里不做事 */
+  resizeSelf: async (width: number, height: number) => {
+    if (!inTauri) return;
+    const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().setSize(new LogicalSize(width, height));
+  },
   async setTitle(title: string) {
     if (!inTauri) { document.title = title; return; }
     const { getCurrentWindow } = await import('@tauri-apps/api/window');

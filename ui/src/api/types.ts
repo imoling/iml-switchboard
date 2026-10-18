@@ -53,7 +53,7 @@ export interface Status {
   node_available: boolean; data_dir: string;
 }
 
-export interface Quota { account_id: string; label: string; provider?: string; window: string; pct: number; resets_at?: string; sub?: boolean; sub_label?: string }
+export interface Quota { account_id: string; label: string; provider?: string; window: string; pct: number; resets_at?: string; sub?: boolean; sub_label?: string; estimated?: boolean; observed_at?: string }
 
 export interface Overview {
   calls: number; calls_delta_pct?: number; api_cost_usd: number; baseline_cost_usd: number; saved_usd: number; saved_pct: number;

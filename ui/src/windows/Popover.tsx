@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, subscribeEvents } from '../api/client';
 import type { Quota, Call, Mode, Overview, Settings, Status } from '../api/types';
 import { Bar, Dot, LaneChip, Seg, TierChip } from '../components/ui';
@@ -11,13 +11,32 @@ import { desktop } from '../tauri';
 import { Offline } from './Offline';
 
 
+
+/** 「4 小时后重置」「6 天后重置」 */
+function resetIn(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return '即将重置';
+  const h = Math.round(ms / 3600000);
+  if (h < 1) return `${Math.max(1, Math.round(ms / 60000))} 分钟后重置`;
+  if (h < 48) return `${h} 小时后重置`;
+  return `${Math.round(h / 24)} 天后重置`;
+}
+
+function observedAgo(iso?: string): string {
+  if (!iso) return '刚刚';
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return '刚刚';
+  if (m < 60) return `${m} 分钟前`;
+  return `${Math.round(m / 60)} 小时前`;
+}
+
 /** 菜单栏空间小：每个订阅压成一行，右侧列出各窗口，进度条取最紧张的那个 */
 function groupQuotas(quotas: Quota[]) {
   const short = (w: string) => w.replace('5 小时窗口', '5 小时').replace('Claude / GPT ', 'Claude/GPT ').replace('（估算）', '');
-  const out: { id: string; label: string; provider?: string; parts: string[]; max: number }[] = [];
+  const out: { id: string; label: string; provider?: string; parts: string[]; max: number; estimated: boolean }[] = [];
   for (const q of quotas) {
     let g = out.find((x) => x.id === q.account_id);
-    if (!g) { g = { id: q.account_id, label: q.label.replace(' 订阅', ''), provider: q.provider, parts: [], max: 0 }; out.push(g); }
+    if (!g) { g = { id: q.account_id, label: q.label.replace(' 订阅', ''), provider: q.provider, parts: [], max: 0, estimated: !!q.estimated }; out.push(g); }
     if (q.window.startsWith('Claude / GPT')) {
       // Antigravity 里 Claude 与 GPT 共用一组额度，两个窗口合成一项，取更紧的那个
       const i = g.parts.findIndex((x) => x.startsWith('Claude/GPT'));
@@ -58,6 +77,21 @@ export function Popover() {
   }, (open) => { if (!open) setStatus('offline'); }), [setThemeId, setProjection]);
   useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') void desktop.hide('popover'); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, []);
 
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // 窗口高度跟着内容走：展开明细、记录变多时长高，收起时缩回
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const apply = () => { const h = Math.min(760, Math.max(300, Math.ceil(el.scrollHeight))); void desktop.resizeSelf(340, h); };
+    const ro = new ResizeObserver(apply);
+    ro.observe(el.firstElementChild ?? el);
+    apply();
+    return () => ro.disconnect();
+  }, [status, ov, recent, expanded]);
+  useEffect(() => subscribeEvents((e) => { if (e.type === 'quota') setRefreshing(false); }), []);
+  const refreshQuota = async () => { setRefreshing(true); try { await api.refreshQuota(); } catch { setRefreshing(false); } setTimeout(() => setRefreshing(false), 120000); };
   const yieldPct = settings?.subscription_yield_pct ?? 80;
   const hot = ov?.quotas.some((q) => !q.sub && q.pct >= yieldPct);
   const dot = status === 'offline' ? 'no' : error ? 'err' : hot ? 'warn' : 'ok';
@@ -69,7 +103,7 @@ export function Popover() {
   const toggleProjection = async () => { try { const s = await api.projection(!projection); setStatus(s); setProjection(s.projection); } catch { /* 同上 */ } };
 
   return (
-    <div className="pop" style={{ margin: 0, width: '100%', height: '100vh', overflow: 'auto', borderRadius: 12 }}>
+    <div ref={rootRef} className="pop" style={{ margin: 0, width: '100%', minHeight: '100vh', overflow: 'auto', borderRadius: 12 }}><div>
       <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 14 }}>{t('app.title')}</b><span><Dot s={dot} />{dotText}</span></div>
       {status === 'offline' && <Offline compact onStarted={load} />}
       {status && status !== 'offline' && ov && (
@@ -81,8 +115,22 @@ export function Popover() {
           </div>
           {groupQuotas(ov.quotas).map((g) => (
             <div key={g.id}>
-              <div className="qline"><span style={{ whiteSpace: 'nowrap' }}><Vendor provider={g.provider} />{g.label}</span><em style={{ textAlign: 'right' }}>{g.parts.join(' · ')}</em></div>
+              <div className="qline qtoggle" role="button" tabIndex={0} onClick={() => setExpanded(expanded === g.id ? null : g.id)} onKeyDown={(e) => { if (e.key === 'Enter') setExpanded(expanded === g.id ? null : g.id); }}>
+                <span style={{ whiteSpace: 'nowrap' }}><Vendor provider={g.provider} />{g.label}</span>
+                <em style={{ textAlign: 'right' }}>{expanded === g.id ? '收起' : g.parts.join(' · ')} <span className="chev">{expanded === g.id ? '▴' : '▾'}</span></em>
+              </div>
               <Bar pct={g.max} tone={g.max >= yieldPct ? 'amber' : undefined} />
+              {expanded === g.id && (
+                <div className="qdetail">
+                  {ov.quotas.filter((q) => q.account_id === g.id).map((q, i) => (
+                    <div key={i} className="qrow">
+                      <div className="qline"><span>{q.sub ? '其中 Fable' : q.window}</span><em>{Math.round(q.pct)}%{q.resets_at ? ` · ${resetIn(q.resets_at)}` : ''}</em></div>
+                      <Bar pct={q.pct} tone={q.sub ? 'gold' : q.pct >= yieldPct ? 'amber' : undefined} />
+                    </div>
+                  ))}
+                  <div className="qline"><span className="hint">{g.estimated ? '按本应用记录估算' : `官方命令回报 · ${observedAgo(ov.quotas.find((q) => q.account_id === g.id)?.observed_at)}`}</span><button className="btn sm" disabled={refreshing} onClick={(e) => { e.stopPropagation(); void refreshQuota(); }}>{refreshing ? '正在刷新…' : '刷新'}</button></div>
+                </div>
+              )}
             </div>
           ))}
           <div className="qline"><span>按量付费</span><em>本月 {usd(ov.budget.month_usd)} / {usd(ov.budget.limit_usd)}</em></div>
@@ -107,6 +155,6 @@ export function Popover() {
         <span>主题：{themes.find((x) => x.id === effectiveId)?.name ?? '点将台'}</span>
         <button className="btn link" style={{ fontSize: 12, color: projection ? '#6F6A61' : '#C4613A' }} onClick={toggleProjection}>{projection ? '退出投屏' : '投屏模式'}</button>
       </div>
-    </div>
+    </div></div>
   );
 }
