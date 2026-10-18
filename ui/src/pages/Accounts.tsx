@@ -42,7 +42,11 @@ export function Accounts() {
     try { await fn(); await reload(); } catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
   };
   const monthCost = (a: Account) => (a.month_cost_native !== undefined && a.currency === 'CNY' ? cny(a.month_cost_native) : a.month_cost_usd !== undefined ? usd(a.month_cost_usd) : '');
-  const tierSummary = (a: Account) => Object.entries(a.tiers ?? {}).map(([k, v]) => (['low', 'mid', 'high', 'top'].includes(k) ? `${t(`tier.${k}`)} ${v}` : v)).join(' · ');
+  const ORDER = ['top', 'high', 'mid', 'low'];
+  const name = (a: Account, m: string) => (m ? a.labels?.[m] ?? m : '不用');
+  const tierSummary = (a: Account) => Object.entries(a.tiers ?? {})
+    .sort(([x], [y]) => ORDER.indexOf(x) - ORDER.indexOf(y))
+    .map(([k, v]) => (['low', 'mid', 'high', 'top'].includes(k) ? `${t(`tier.${k}`)} ${name(a, v)}` : v)).join(' · ');
 
   return (
     <>
@@ -80,8 +84,9 @@ export function Accounts() {
                 : a.status === 'error'
                   ? <button className="btn sm" disabled={busy === a.id} onClick={() => act(a.id, () => api.verifyAccount(a.id))}>重新验证</button>
                   : <span className="muted">{monthCost(a) && `本月 ${monthCost(a)}`}</span>}
+              {a.tiers && Object.keys(a.tiers).length > 0 && <button className="btn sm" onClick={() => setTierEdit(a)}>{tierSummary(a)} ▾</button>}
               <select className="sel" value="" onChange={(e) => { const v = e.target.value; if (v === 'toggle') void act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled })); if (v === 'verify') void act(a.id, () => api.verifyAccount(a.id)); if (v === 'delete') void act(a.id, () => api.deleteAccount(a.id)); }}>
-                <option value="">…</option><option value="verify">重新验证</option><option value="toggle">{a.enabled ? '停用' : '启用'}</option><option value="delete">删除</option>
+                <option value="">操作 ▾</option><option value="verify">重新验证</option><option value="toggle">{a.enabled ? '停用' : '启用'}</option><option value="delete">删除</option>
               </select>
             </div>
           ))}
@@ -91,11 +96,12 @@ export function Accounts() {
       {adding && <AddAccount onClose={() => setAdding(false)} onAdded={(a) => { setData([...(data ?? []), a]); setAdding(false); }} />}
       {tierEdit && (
         <Modal title={`${tierEdit.label} · 各档位用谁`} onClose={() => setTierEdit(null)}>
-          {Object.entries(tierEdit.tiers ?? {}).map(([k, v]) => (
+          {Object.entries(tierEdit.tiers ?? {}).sort(([x], [y]) => ORDER.indexOf(x) - ORDER.indexOf(y)).map(([k, v]) => (
             <div key={k} className="setrow">
               <div className="tt">{['low', 'mid', 'high', 'top'].includes(k) ? t(`tier.${k}`) : k}</div>
               <select className="sel" value={v} onChange={async (e) => { const tiers = { ...tierEdit.tiers, [k]: e.target.value }; setTierEdit({ ...tierEdit, tiers }); await act(tierEdit.id, () => api.updateAccount(tierEdit.id, { tiers })); }}>
-                {[v, ...tierEdit.models.filter((m) => m !== v)].map((m) => <option key={m} value={m}>{m}</option>)}
+                {tierEdit.kind === 'api' && <option value="">不用</option>}
+                {[...(v ? [v] : []), ...tierEdit.models.filter((m) => m !== v)].map((m) => <option key={m} value={m}>{name(tierEdit, m)}</option>)}
               </select>
             </div>
           ))}

@@ -719,21 +719,23 @@ func (s *Server) importRules(w http.ResponseWriter, r *http.Request) (any, error
 // --- 账号 ---
 
 type accountView struct {
-	ID              string             `json:"id"`
-	Kind            string             `json:"kind"`
-	Provider        string             `json:"provider"`
-	Label           string             `json:"label"`
-	Status          string             `json:"status"`
-	Detail          string             `json:"detail"`
-	MonthCostUSD    float64            `json:"month_cost_usd"`
-	MonthCostNative float64            `json:"month_cost_native"`
-	Currency        string             `json:"currency"`
-	Quota           []core.QuotaWindow `json:"quota,omitempty"`
-	Tiers           map[string]any     `json:"tiers,omitempty"`
-	Models          []string           `json:"models"`
-	NeedsProxy      bool               `json:"needs_proxy,omitempty"`
-	Enabled         bool               `json:"enabled"`
-	InstallHint     string             `json:"install_hint,omitempty"`
+	ID              string              `json:"id"`
+	Kind            string              `json:"kind"`
+	Provider        string              `json:"provider"`
+	Label           string              `json:"label"`
+	Status          string              `json:"status"`
+	Detail          string              `json:"detail"`
+	MonthCostUSD    float64             `json:"month_cost_usd"`
+	MonthCostNative float64             `json:"month_cost_native"`
+	Currency        string              `json:"currency"`
+	Quota           []core.QuotaWindow  `json:"quota,omitempty"`
+	Tiers           map[string]any      `json:"tiers,omitempty"`
+	TierOptions     map[string][]string `json:"tier_options,omitempty"`
+	Labels          map[string]string   `json:"labels,omitempty"`
+	Models          []string            `json:"models"`
+	NeedsProxy      bool                `json:"needs_proxy,omitempty"`
+	Enabled         bool                `json:"enabled"`
+	InstallHint     string              `json:"install_hint,omitempty"`
 }
 
 func (s *Server) accountViews() []accountView {
@@ -755,9 +757,11 @@ func (s *Server) accountViews() []accountView {
 		sl := cfg.Sub[string(sb.lane)]
 		v := accountView{ID: string(sb.lane), Kind: "subscription", Provider: sb.prov, Label: sb.label, Detail: sb.detail, Enabled: sl.Enabled, Status: "missing", Currency: "USD", InstallHint: sb.hint}
 		tiers := map[string]any{}
+		v.Labels = map[string]string{}
 		for k, m := range sl.Models {
 			tiers[k] = m
 			v.Models = append(v.Models, m)
+			v.Labels[m] = s.d.Router.Registry().Display(m)
 		}
 		v.Tiers = tiers
 		if d, ok := s.d.Router.Driver(sb.lane); ok {
@@ -789,13 +793,34 @@ func (s *Server) accountViews() []accountView {
 	for _, a := range cfg.API {
 		v := accountView{ID: a.ID, Kind: "api", Provider: a.Provider, Label: labelOr(a.Label, core.ProviderLabel(a.Provider)), Enabled: a.Enabled, Currency: a.Currency, NeedsProxy: a.NeedsProxy, Status: "ok", Detail: ""}
 		tiers := map[string]any{}
+		v.TierOptions = map[string][]string{}
+		v.Labels = map[string]string{}
 		seen := map[string]bool{}
-		for k, ms := range a.Models {
-			tiers[k] = ms
+		var displays []string
+		for _, k := range []string{"low", "mid", "high"} {
+			ms := a.Models[k]
+			first := ""
+			if len(ms) > 0 {
+				first = ms[0]
+			}
+			tiers[k] = first
+			v.TierOptions[k] = append([]string{}, ms...)
 			for _, m := range ms {
 				if !seen[m] {
 					seen[m] = true
-					v.Models = append(v.Models, s.d.Router.Registry().Display(m))
+					v.Models = append(v.Models, m)
+					v.Labels[m] = s.d.Router.Registry().Display(m)
+					displays = append(displays, v.Labels[m])
+				}
+			}
+		}
+		// 预设里有但还没分到任何档位的型号也列出来，方便在档位里选
+		if p, ok := presetModels(s.d.Accounts, a.Provider); ok {
+			for _, m := range p {
+				if !seen[m] {
+					seen[m] = true
+					v.Models = append(v.Models, m)
+					v.Labels[m] = s.d.Router.Registry().Display(m)
 				}
 			}
 		}
@@ -813,7 +838,7 @@ func (s *Server) accountViews() []accountView {
 			v.Detail = "没有找到密钥，重新填写"
 		}
 		if v.Detail == "" {
-			v.Detail = strings.Join(v.Models, "、")
+			v.Detail = strings.Join(displays, "、")
 			if a.NeedsProxy {
 				v.Detail += "；需要代理"
 			}
@@ -821,6 +846,19 @@ func (s *Server) accountViews() []accountView {
 		out = append(out, v)
 	}
 	return out
+}
+
+// presetModels 返回预设里该供应商的全部型号 id。
+func presetModels(ops AccountOps, provider string) ([]string, bool) {
+	_, _, tiers, _, ok := ops.Preset(provider)
+	if !ok {
+		return nil, false
+	}
+	var out []string
+	for _, k := range []string{"low", "mid", "high"} {
+		out = append(out, tiers[k]...)
+	}
+	return out, true
 }
 
 func labelOr(a, b string) string {
@@ -889,9 +927,8 @@ func (s *Server) addAccount(w http.ResponseWriter, r *http.Request) (any, error)
 func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, error) {
 	id := r.PathValue("id")
 	var in struct {
-		Enabled  *bool               `json:"enabled"`
-		Tiers    map[string][]string `json:"tiers"`
-		SubTiers map[string]string   `json:"sub_tiers"`
+		Enabled *bool          `json:"enabled"`
+		Tiers   map[string]any `json:"tiers"` // 订阅：tier → 型号；按量付费：tier → 首选型号（字符串）或完整列表
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
@@ -901,8 +938,16 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 			if in.Enabled != nil {
 				sl.Enabled = *in.Enabled
 			}
-			if in.SubTiers != nil {
-				sl.Models = in.SubTiers
+			if in.Tiers != nil {
+				models := map[string]string{}
+				for k, v := range in.Tiers {
+					if str, ok := v.(string); ok && str != "" {
+						models[k] = str
+					}
+				}
+				if len(models) > 0 {
+					sl.Models = models
+				}
 			}
 			c.Sub[id] = sl
 			return nil
@@ -913,7 +958,34 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 					c.API[i].Enabled = *in.Enabled
 				}
 				if in.Tiers != nil {
-					c.API[i].Models = in.Tiers
+					if c.API[i].Models == nil {
+						c.API[i].Models = map[string][]string{}
+					}
+					for k, v := range in.Tiers {
+						switch val := v.(type) {
+						case string:
+							cur := c.API[i].Models[k]
+							if val == "" {
+								c.API[i].Models[k] = nil
+								continue
+							}
+							next := []string{val}
+							for _, m := range cur {
+								if m != val {
+									next = append(next, m)
+								}
+							}
+							c.API[i].Models[k] = next
+						case []any:
+							var list []string
+							for _, x := range val {
+								if m, ok := x.(string); ok {
+									list = append(list, m)
+								}
+							}
+							c.API[i].Models[k] = list
+						}
+					}
 				}
 				return nil
 			}
