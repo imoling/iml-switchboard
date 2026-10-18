@@ -49,6 +49,7 @@ type SubLane struct {
 	Enabled  bool              `yaml:"enabled" json:"enabled"`
 	Models   map[string]string `yaml:"models" json:"models"` // tier -> model
 	ImageGen bool              `yaml:"image_gen,omitempty" json:"image_gen,omitempty"`
+	Plan     string            `yaml:"plan,omitempty" json:"plan,omitempty"` // 手填的套餐名，命令行读不到时用
 }
 
 // APIAccount 是一个按量付费账号。密钥不在这里，在钥匙串里，键名为 account id。

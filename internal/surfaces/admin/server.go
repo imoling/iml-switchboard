@@ -796,6 +796,8 @@ type accountView struct {
 	Status          string              `json:"status"`
 	Detail          string              `json:"detail"`
 	Plan            string              `json:"plan,omitempty"`
+	PlanOptions     []string            `json:"plan_options,omitempty"`
+	PlanManual      bool                `json:"plan_manual,omitempty"`
 	MonthCostUSD    float64             `json:"month_cost_usd"`
 	MonthCostNative float64             `json:"month_cost_native"`
 	Currency        string              `json:"currency"`
@@ -808,6 +810,13 @@ type accountView struct {
 	NeedsProxy      bool                `json:"needs_proxy,omitempty"`
 	Enabled         bool                `json:"enabled"`
 	InstallHint     string              `json:"install_hint,omitempty"`
+}
+
+// planOptions 是命令行读不到套餐时给用户自己选的名单。
+var planOptions = map[core.LaneID][]string{
+	core.LaneAgySub:    {"免费版", "Google AI Pro", "Google AI Ultra"},
+	core.LaneClaudeSub: {"免费版", "Pro", "Max 5x", "Max 20x", "Team", "企业版"},
+	core.LaneCodexSub:  {"免费版", "Plus", "Pro", "Team", "企业版"},
 }
 
 func (s *Server) accountViews() []accountView {
@@ -846,6 +855,11 @@ func (s *Server) accountViews() []accountView {
 			v.Plan = h.Plan
 			if v.Plan == "" {
 				v.Plan = s.d.Router.Quota().Plan(sb.lane)
+			}
+			if v.Plan == "" {
+				v.Plan = sl.Plan
+				v.PlanManual = true
+				v.PlanOptions = planOptions[sb.lane]
 			}
 			if h.Detail != "" {
 				v.Detail = h.Detail
@@ -1030,6 +1044,7 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 	var in struct {
 		Enabled *bool          `json:"enabled"`
 		Tiers   map[string]any `json:"tiers"` // 订阅：tier → 型号；按量付费：tier → 首选型号（字符串）或完整列表
+		Plan    *string        `json:"plan"`  // 订阅：手填套餐名
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
@@ -1038,6 +1053,9 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 		if sl, ok := c.Sub[id]; ok {
 			if in.Enabled != nil {
 				sl.Enabled = *in.Enabled
+			}
+			if in.Plan != nil {
+				sl.Plan = *in.Plan
 			}
 			if in.Tiers != nil {
 				models := map[string]string{}

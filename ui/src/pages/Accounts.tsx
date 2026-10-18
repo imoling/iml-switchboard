@@ -120,6 +120,15 @@ export function Accounts() {
               </select>
             </div>
           ))}
+          {tierEdit.plan_manual && tierEdit.plan_options && (
+            <div className="setrow">
+              <div className="tt">套餐<div className="hint">命令行查不到，自己选一个挂在账号名旁</div></div>
+              <select className="sel" value={tierEdit.plan ?? ''} onChange={async (e) => { const plan = e.target.value; setTierEdit({ ...tierEdit, plan }); await act(tierEdit.id, () => api.updateAccount(tierEdit.id, { plan })); }}>
+                <option value="">不显示</option>
+                {tierEdit.plan_options.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          )}
         </Modal>
       )}
     </>
