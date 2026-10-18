@@ -88,7 +88,7 @@ export function Settings() {
           <SetRow title="保存请求内容" desc="关闭后记录里只留费用和模型">
             <Toggle on={data.save_prompts} onChange={(v) => save({ save_prompts: v })} />
           </SetRow>
-          <SetRow title="数据位置" desc="账本和规则存在这里；媒体文件存在各项目里">
+          <SetRow title="数据位置" desc={<><span className="path">{data.data_dir.replace(/^\/Users\/[^/]+/, '~')}</span>记录、规则、账号都在这里，换电脑时带走它；图片视频存在各自项目里</>}>
             <RevealButton path={data.data_dir} />
           </SetRow>
           <SetRow title="通知" desc="只发四类：额度、预算、媒体完成或失败、规则建议">

@@ -31,7 +31,7 @@ export const Bar = ({ pct, tone }: { pct: number; tone?: 'blue' | 'amber' | 'gol
 
 export const Dot = ({ s }: { s: 'ok' | 'warn' | 'no' | 'err' }) => <span className={`dot ${s}`} />;
 
-export function SetRow({ title, desc, children, last }: { title: string; desc?: string; children?: ReactNode; last?: boolean }) {
+export function SetRow({ title, desc, children, last }: { title: string; desc?: ReactNode; children?: ReactNode; last?: boolean }) {
   return (
     <div className={`setrow ${last ? 'last' : ''}`}>
       <div><div className="tt">{title}</div>{desc && <div className="ds">{desc}</div>}</div>
