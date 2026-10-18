@@ -45,6 +45,9 @@ type Call struct {
 	ResultPath      string    `json:"result_path,omitempty"`
 	JobID           string    `json:"job_id,omitempty"`
 	ResultText      string    `json:"result_text,omitempty"`
+	// 下面两个只在接口输出时填，不入库
+	TaskName     string `json:"task_name,omitempty"`
+	ModelDisplay string `json:"model_display,omitempty"`
 }
 
 // Ledger 是 SQLite 账本。

@@ -422,7 +422,11 @@ func (s *Server) calls(w http.ResponseWriter, r *http.Request) (any, error) {
 	if b := q.Get("before"); b != "" {
 		f.Before, _ = time.Parse(time.RFC3339Nano, b)
 	}
-	return s.d.Router.Ledger().List(f)
+	calls, err := s.d.Router.Ledger().List(f)
+	for _, c := range calls {
+		s.d.Router.Decorate(c)
+	}
+	return calls, err
 }
 
 func (s *Server) call(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -430,7 +434,7 @@ func (s *Server) call(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err != nil {
 		return nil, notFound("记录不存在")
 	}
-	return c, nil
+	return s.d.Router.Decorate(c), nil
 }
 
 func (s *Server) escalate(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -482,7 +486,7 @@ func (s *Server) redo(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]any{"call": call}
+	out := map[string]any{"call": s.d.Router.Decorate(call)}
 	if res != nil {
 		out["text"] = res.Text
 		out["path"] = res.Path
@@ -1429,7 +1433,7 @@ func (s *Server) quickRun(w http.ResponseWriter, r *http.Request) {
 		send("error", map[string]string{"message": err.Error()})
 		return
 	}
-	out := map[string]any{"call": call}
+	out := map[string]any{"call": s.d.Router.Decorate(call)}
 	if res != nil {
 		out["text"], out["path"], out["job_id"] = res.Text, res.Path, res.JobID
 		out["display"] = s.d.Router.Registry().Display(call.Model)

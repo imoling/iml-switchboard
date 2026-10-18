@@ -665,6 +665,16 @@ func (r *Router) Escalate(callID string) (string, int, error) {
 	return tt, n, err
 }
 
+// Decorate 给一条记录补上任务名和模型显示名（只用于输出）。
+func (r *Router) Decorate(c *Call) *Call {
+	if c == nil {
+		return c
+	}
+	c.TaskName = r.TaskName(c.TaskType)
+	c.ModelDisplay = r.reg.Display(c.Model)
+	return c
+}
+
 // TaskName 任务类型的中文名。
 func (r *Router) TaskName(tt string) string {
 	for _, t := range r.cfg.Get().Routing.TaskTable {

@@ -100,7 +100,7 @@ func New(version string) (*App, error) {
 	a.Router.Register(sub.NewAntigravityDriver())
 	a.Router.Register(a.API)
 	a.Router.Register(a.Media)
-	a.Router.OnCall(func(c *core.Call) { a.Bus.Publish("call", c); a.checkBudget(c) })
+	a.Router.OnCall(func(c *core.Call) { a.Bus.Publish("call", a.Router.Decorate(c)); a.checkBudget(c) })
 	a.Router.OnNotice(func(title, body, level string) {
 		if cfg.Get().Settings.Notifications.Quota {
 			a.Bus.Publish("notice", core.Notice{Title: title, Body: body, Level: level})

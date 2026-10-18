@@ -21,6 +21,7 @@ export interface Call {
   quota_units?: number; baseline_cost_usd: number;
   user_escalated: boolean; latency_ms: number; ok: boolean; error?: string;
   prompt_excerpt?: string; result_path?: string; job_id?: string;
+  task_name?: string; model_display?: string;
 }
 
 export interface Decision {

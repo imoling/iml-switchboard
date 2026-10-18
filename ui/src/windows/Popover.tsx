@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, subscribeEvents } from '../api/client';
-import type { Call, Mode, Overview, Settings, Status } from '../api/types';
+import type { Quota, Call, Mode, Overview, Settings, Status } from '../api/types';
 import { Bar, Dot, LaneChip, Seg, TierChip } from '../components/ui';
 import { Vendor } from '../components/Vendor';
 import { quotaWarning } from '../copy';
@@ -9,6 +9,29 @@ import { MODE_OPTIONS } from '../pages/Settings';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop } from '../tauri';
 import { Offline } from './Offline';
+
+
+/** 菜单栏空间小：每个订阅压成一行，右侧列出各窗口，进度条取最紧张的那个 */
+function groupQuotas(quotas: Quota[]) {
+  const short = (w: string) => w.replace('5 小时窗口', '5 小时').replace('Claude / GPT ', 'Claude/GPT ').replace('（估算）', '');
+  const out: { id: string; label: string; provider?: string; parts: string[]; max: number }[] = [];
+  for (const q of quotas) {
+    let g = out.find((x) => x.id === q.account_id);
+    if (!g) { g = { id: q.account_id, label: q.label.replace(' 订阅', ''), provider: q.provider, parts: [], max: 0 }; out.push(g); }
+    if (q.window.startsWith('Claude / GPT')) {
+      // Antigravity 里 Claude 与 GPT 共用一组额度，两个窗口合成一项，取更紧的那个
+      const i = g.parts.findIndex((x) => x.startsWith('Claude/GPT'));
+      const cur = i >= 0 ? Number(g.parts[i].replace(/\D/g, '')) : -1;
+      if (q.pct > cur) { const txt = `Claude/GPT ${Math.round(q.pct)}%`; if (i >= 0) g.parts[i] = txt; else g.parts.push(txt); }
+      g.max = Math.max(g.max, q.pct);
+      continue;
+    }
+    const name = q.sub ? 'Fable' : short(q.window);
+    g.parts.push(`${name} ${Math.round(q.pct)}%`);
+    if (!q.sub) g.max = Math.max(g.max, q.pct);
+  }
+  return out;
+}
 
 export function Popover() {
   const { t, themes, effectiveId, setThemeId, setProjection, projection } = useTheme();
@@ -56,10 +79,10 @@ export function Popover() {
             <div><div className="hint">按量花费</div><b>{usd(ov.api_cost_usd)}</b></div>
             <div><div className="hint">比全用 Opus 省</div><b className="ok-text">{usd(ov.saved_usd)}</b></div>
           </div>
-          {ov.quotas.map((q, i) => (
-            <div key={i}>
-              <div className="qline"><span style={q.sub ? { paddingLeft: 18 } : undefined}>{!q.sub && <Vendor provider={q.provider} />}{q.label}</span><em>{q.window} · {Math.round(q.pct)}%</em></div>
-              <Bar pct={q.pct} tone={q.sub ? 'gold' : q.pct >= yieldPct ? 'amber' : undefined} />
+          {groupQuotas(ov.quotas).map((g) => (
+            <div key={g.id}>
+              <div className="qline"><span style={{ whiteSpace: 'nowrap' }}><Vendor provider={g.provider} />{g.label}</span><em style={{ textAlign: 'right' }}>{g.parts.join(' · ')}</em></div>
+              <Bar pct={g.max} tone={g.max >= yieldPct ? 'amber' : undefined} />
             </div>
           ))}
           <div className="qline"><span>按量付费</span><em>本月 {usd(ov.budget.month_usd)} / {usd(ov.budget.limit_usd)}</em></div>
@@ -69,7 +92,7 @@ export function Popover() {
           <div className="hint" style={{ margin: '12px 0 4px' }}>{t('dispatch.recent')}</div>
           <div className="recent">
             {recent.map((c) => { const m = cost(c); return (
-              <div key={c.id}>{c.kind === 'text' && c.tier ? <TierChip tier={c.tier} /> : <LaneChip lane={c.lane} />} {c.task_type} · <Vendor provider={c.provider} />{c.model}{!m.muted && <> · {m.text}</>}</div>
+              <div key={c.id}>{c.kind === 'text' && c.tier ? <TierChip tier={c.tier} /> : <LaneChip lane={c.lane} />} {c.task_name ?? c.task_type} · <Vendor provider={c.provider} />{c.model_display ?? c.model}{!m.muted && <> · {m.text}</>}</div>
             ); })}
             {recent.length === 0 && <div className="hint">还没有请求</div>}
           </div>
