@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api, subscribeEvents } from '../api/client';
 import type { Quota } from '../api/types';
-import { Bar, ErrorLine, GroupChip, Seg } from '../components/ui';
+import { Bar, ErrorLine, GroupChip, Seg, TierChip } from '../components/ui';
 import { Vendor } from '../components/Vendor';
 import { QUOTA_ESTIMATE_NOTE } from '../copy';
-import { dayLabel, pct, usd } from '../format';
+import { cost, dayLabel, hhmm, pct, usd } from '../format';
 import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -47,6 +47,17 @@ export function Overview() {
                 <span><i style={{ background: '#4A6785' }} />按量 {data.lane_dist.api}%</span>
                 <span><i style={{ background: '#5F7A4A' }} />媒体 {data.lane_dist.media}%</span>
               </div>
+              <h5 style={{ marginTop: 14 }}>花得最多的任务类型</h5>
+              {data.top_tasks.length === 0 && <div className="hint">这段时间还没有记录</div>}
+              <table className="t">
+                <tbody>
+                  {data.top_tasks.map((x) => (
+                    <tr key={x.task_type}><td>{x.name ?? x.task_type}</td><td className="muted"><GroupChip group={x.lane} /></td><td className="right">{x.metric}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+              <h5 style={{ marginTop: 14 }}>{t('dispatch.recent')}</h5>
+              <Recent />
             </div>
             <div className="panel">
               <h5 style={{ display: 'flex', alignItems: 'center' }}>订阅额度<button className="btn sm" style={{ marginLeft: 'auto' }} disabled={refreshing} onClick={refreshQuota}>{refreshing ? '正在刷新…' : '刷新'}</button></h5>
@@ -59,20 +70,37 @@ export function Overview() {
                   <Bar pct={q.pct} tone={q.sub ? 'gold' : q.pct >= 80 ? 'amber' : undefined} />
                 </div>
               ))}
-              <div className="hint mb12">{QUOTA_ESTIMATE_NOTE}</div>
-              <h5>花得最多的任务类型</h5>
-              <table className="t">
-                <tbody>
-                  {data.top_tasks.map((x) => (
-                    <tr key={x.task_type}><td>{x.task_type}</td><td className="muted"><GroupChip group={x.lane} /></td><td className="right">{x.metric}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="hint">{QUOTA_ESTIMATE_NOTE}</div>
             </div>
           </div>
         </>
       )}
     </>
+  );
+}
+
+/** 最近几条调度：任务、档位、用了谁、花费 */
+function Recent() {
+  const { data } = useLoad(() => api.calls({ limit: 6 }), []);
+  if (!data) return null;
+  if (data.length === 0) return <div className="hint">还没有记录；在 Claude Code 里让它出一张图或问一句试试</div>;
+  return (
+    <table className="t">
+      <tbody>
+        {data.map((c) => {
+          const k = cost(c);
+          return (
+            <tr key={c.id}>
+              <td className="muted" style={{ whiteSpace: 'nowrap' }}>{hhmm(c.ts)}</td>
+              <td>{c.task_name ?? c.task_type}</td>
+              <td><TierChip tier={c.tier} /></td>
+              <td className="muted">{c.model_display ?? c.model}</td>
+              <td className={`right ${k.muted ? 'muted' : ''}`}>{c.ok ? k.text : '失败'}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 

@@ -63,7 +63,7 @@ export interface Overview {
   lane_dist: { sub: number; api: number; media: number };
   daily: { date: string; cost_usd: number; baseline_cost_usd: number }[];
   quotas: Quota[]; budget: { month_usd: number; limit_usd: number };
-  top_tasks: { task_type: string; lane: 'sub' | 'api' | 'media'; metric: string }[];
+  top_tasks: { task_type: string; name?: string; lane: 'sub' | 'api' | 'media'; metric: string }[];
 }
 
 export interface TaskRule { task_type: string; name?: string; kind?: string; how: string; tier: Tier; lanes: ('sub' | 'api')[]; count_7d: number; suggest?: Tier; builtin?: boolean }

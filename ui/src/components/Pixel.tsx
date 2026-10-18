@@ -104,8 +104,8 @@ const MASCOTS: Record<Exclude<ThemeId, 'standard'>, SpriteDef> = {
   harem: person('....KKKK....', '...KKKKKK...', '..J.J.J.J...', '#4A6785', '#2E4458', { 9: '.GGGGGGGGGG.' }),
   seaking: {
     map: [
-      '.G.G.G...G.G',
-      '.GGGGG...GGG',
+      '.G.GG.G..G.G',
+      '.GGGGGG..GGG',
       '.HSSSSH...G.',
       '.HKSSKH...G.',
       '..SSSS....G.',
