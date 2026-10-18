@@ -264,11 +264,21 @@ func (l *Ledger) Aggregate(days int, loc *time.Location) (*Overview, error) {
 	}
 	o := &Overview{TierDist: map[string]int{}, LaneDist: map[string]int{}, Daily: []DailyPoint{}}
 	daily := map[string]*DailyPoint{}
-	for d := 0; d < days; d++ {
-		day := start.AddDate(0, 0, d).Format("2006-01-02")
-		p := &DailyPoint{Date: day}
-		daily[day] = p
-		o.Daily = append(o.Daily, *p)
+	// 只看今天时按小时分桶，键形如 2006-01-02T15；多天按天
+	bucketFmt := "2006-01-02"
+	if days == 1 {
+		bucketFmt = "2006-01-02T15"
+		for h := 0; h < 24; h++ {
+			key := start.Add(time.Duration(h) * time.Hour).Format(bucketFmt)
+			daily[key] = &DailyPoint{Date: key}
+			o.Daily = append(o.Daily, DailyPoint{Date: key})
+		}
+	} else {
+		for d := 0; d < days; d++ {
+			day := start.AddDate(0, 0, d).Format(bucketFmt)
+			daily[day] = &DailyPoint{Date: day}
+			o.Daily = append(o.Daily, DailyPoint{Date: day})
+		}
 	}
 	tasks := map[string]*TopTask{}
 	esc := 0
@@ -298,7 +308,7 @@ func (l *Ledger) Aggregate(days int, loc *time.Location) (*Overview, error) {
 		default:
 			o.LaneDist["sub"]++
 		}
-		day := c.TS.In(loc).Format("2006-01-02")
+		day := c.TS.In(loc).Format(bucketFmt)
 		if p, ok := daily[day]; ok {
 			p.CostUSD += c.CostUSD
 			p.BaselineCostUSD += c.BaselineCostUSD

@@ -104,18 +104,44 @@ function Recent() {
   );
 }
 
-function Spark({ daily }: { daily: { date: string; cost_usd: number; baseline_cost_usd: number }[] }) {
-  const max = Math.max(0.01, ...daily.map((d) => d.baseline_cost_usd));
+type Point = { date: string; cost_usd: number; baseline_cost_usd: number };
+const SHICHEN = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+
+/** 今天按小时；后宫主题把 24 小时并成十二时辰（子时跨 23 点到 1 点） */
+function useBuckets(daily: Point[]): { points: Point[]; label: (p: Point, i: number) => string; title: (p: Point) => string } {
+  const { effectiveId } = useTheme();
+  const hourly = daily.length > 0 && daily[0].date.includes('T');
+  if (!hourly) {
+    return { points: daily, label: (p, i) => dayLabel(p.date, i === daily.length - 1, daily.length), title: (p) => p.date };
+  }
+  const hourOf = (p: Point) => Number(p.date.slice(11, 13));
+  const nowH = new Date().getHours();
+  if (effectiveId === 'harem') {
+    const points: Point[] = SHICHEN.map((name, i) => {
+      const hs = [(i * 2 + 23) % 24, i * 2];
+      const members = daily.filter((p) => hs.includes(hourOf(p)));
+      return { date: name, cost_usd: members.reduce((s, p) => s + p.cost_usd, 0), baseline_cost_usd: members.reduce((s, p) => s + p.baseline_cost_usd, 0) };
+    });
+    const cur = Math.floor(((nowH + 1) % 24) / 2);
+    return { points, label: (_p, i) => `${SHICHEN[i]}${i === cur ? '·今' : ''}`, title: (p) => `${p.date}时` };
+  }
+  return { points: daily, label: (p, i) => { const h = hourOf(p); return h % 3 === 0 || i === daily.length - 1 ? `${h} 时` : ''; }, title: (p) => `${hourOf(p)} 时` };
+}
+
+function Spark({ daily }: { daily: Point[] }) {
+  const { points, label, title } = useBuckets(daily);
+  const max = Math.max(0.01, ...points.map((d) => d.baseline_cost_usd));
+  const dense = points.length > 12;
   return (
     <>
-      <div className={`spark ${daily.length > 10 ? 'dense' : ''}`}>
-        {daily.map((d) => (
-          <div key={d.date} style={{ height: `${(d.baseline_cost_usd / max) * 100}%` }} title={`${d.date}：${usd(d.cost_usd)}，全用 Opus ${usd(d.baseline_cost_usd)}`}>
+      <div className={`spark ${dense ? 'dense' : ''}`}>
+        {points.map((d) => (
+          <div key={d.date} style={{ height: `${(d.baseline_cost_usd / max) * 100}%` }} title={`${title(d)}：${usd(d.cost_usd)}，全用 Opus ${usd(d.baseline_cost_usd)}`}>
             <b style={{ height: `${d.baseline_cost_usd ? (d.cost_usd / d.baseline_cost_usd) * 100 : 0}%` }} />
           </div>
         ))}
       </div>
-      <div className={`days ${daily.length > 10 ? 'dense' : ''}`}>{daily.map((d, i) => <span key={d.date}>{dayLabel(d.date, i === daily.length - 1, daily.length)}</span>)}</div>
+      <div className={`days ${dense ? 'dense' : ''}`}>{points.map((d, i) => <span key={d.date}>{label(d, i)}</span>)}</div>
     </>
   );
 }
