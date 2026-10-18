@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -445,6 +446,17 @@ func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) 
 			out = append(out, Target{Lane: LaneMedia, Provider: "agnes", Model: model, EstCostUSD: usd, AccountID: acc.ID})
 		}
 	}
+	// 排序：能用的付费渠道在前，ChatGPT 订阅出图当兜底，没账号的放最后只作提示
+	rank := func(c Target) int {
+		switch {
+		case c.Skipped != "":
+			return 2
+		case c.Provider == "codex":
+			return 1
+		}
+		return 0
+	}
+	sort.SliceStable(out, func(i, j int) bool { return rank(out[i]) < rank(out[j]) })
 	return out
 }
 
