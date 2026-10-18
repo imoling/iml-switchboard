@@ -54,6 +54,9 @@ export function Accounts() {
       {sortedTiers(a).map(([k, v]) => (
         <span key={k} className={`tile ${v ? '' : 'off'}`}>{isTier(k) && <TierSprite tier={k} scale={2} />}<span className="tn">{isTier(k) ? t(`tier.${k}`) : k}</span><span className="tm">{name(a, v)}</span></span>
       ))}
+      {(a.media ?? []).map((m) => (
+        <span key={m.model} className="tile media" title={m.model}><span className="chip c-m">{m.kind === 'video' ? '生视频' : '生图'}</span><span className="tm">{m.display}</span></span>
+      ))}
       <span className="chev">▾</span>
     </div>
   );
@@ -79,7 +82,7 @@ export function Accounts() {
               {a.status === 'missing'
                 ? <button className="btn sm" onClick={() => a.install_hint && toast(`在终端运行：${a.install_hint}`)}>怎么安装</button>
                 : null}
-              {a.tiers && Object.keys(a.tiers).length > 0 && tierTiles(a)}
+              {((a.tiers && Object.keys(a.tiers).length > 0) || (a.media && a.media.length > 0)) && tierTiles(a)}
               {a.status === 'cooldown' && <span className="hint">{a.detail}</span>}
             </div>
           ))}
@@ -99,7 +102,7 @@ export function Accounts() {
               <select className="sel" value="" onChange={(e) => { const v = e.target.value; if (v === 'toggle') void act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled })); if (v === 'verify') void act(a.id, () => api.verifyAccount(a.id)); if (v === 'delete') void act(a.id, () => api.deleteAccount(a.id)); }}>
                 <option value="">操作 ▾</option><option value="verify">重新验证</option><option value="toggle">{a.enabled ? '停用' : '启用'}</option><option value="delete">删除</option>
               </select>
-              {a.tiers && Object.keys(a.tiers).length > 0 && tierTiles(a)}
+              {((a.tiers && Object.keys(a.tiers).length > 0) || (a.media && a.media.length > 0)) && tierTiles(a)}
             </div>
           ))}
           <div className="hint mt12">密钥只存在这台电脑上，不会上传</div>

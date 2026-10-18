@@ -1,6 +1,7 @@
 package core
 
 import (
+	"sort"
 	"strings"
 	"sync"
 )
@@ -101,6 +102,25 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "google/veo-3.1", Provider: "openrouter", Display: "Veo 3.1", PerSecond: 0.40, Currency: "USD", NeedsProxy: true})
 	add(ModelInfo{ID: "wan3.0-video", Provider: "dashscope", Display: "Wan 3.0", PerSecond: cny(0.6), Currency: "CNY"})
 	return r
+}
+
+// MediaByProvider 列出某供应商能出图 / 出视频的型号。
+func (r *Registry) MediaByProvider(provider string) []ModelInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []ModelInfo
+	for _, m := range r.models {
+		if m.Provider == provider && (m.PerImage > 0 || m.PerSecond > 0 || m.ID == "codex-imagegen") {
+			out = append(out, m)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if (out[i].PerSecond > 0) != (out[j].PerSecond > 0) {
+			return out[i].PerSecond == 0
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
 }
 
 // Lookup 查模型；找不到返回 false。

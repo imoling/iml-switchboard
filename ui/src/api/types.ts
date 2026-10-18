@@ -44,7 +44,7 @@ export interface Account {
   id: string; kind: 'subscription' | 'api'; provider: string; label: string; status: AccountStatus; detail: string;
   month_cost_usd?: number; month_cost_native?: number; currency?: string;
   quota?: { window: string; pct: number; resets_at?: string }[];
-  tiers?: Record<string, string>; tier_options?: Record<string, string[]>; labels?: Record<string, string>; models: string[]; needs_proxy?: boolean; enabled: boolean; install_hint?: string;
+  tiers?: Record<string, string>; tier_options?: Record<string, string[]>; labels?: Record<string, string>; media?: { kind: 'image' | 'video'; model: string; display: string }[]; models: string[]; needs_proxy?: boolean; enabled: boolean; install_hint?: string;
   top_up_url?: string;
 }
 

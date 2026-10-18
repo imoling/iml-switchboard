@@ -802,6 +802,7 @@ type accountView struct {
 	Tiers           map[string]any      `json:"tiers,omitempty"`
 	TierOptions     map[string][]string `json:"tier_options,omitempty"`
 	Labels          map[string]string   `json:"labels,omitempty"`
+	Media           []mediaItem         `json:"media,omitempty"`
 	Models          []string            `json:"models"`
 	NeedsProxy      bool                `json:"needs_proxy,omitempty"`
 	Enabled         bool                `json:"enabled"`
@@ -858,6 +859,9 @@ func (s *Server) accountViews() []accountView {
 		if !sl.Enabled {
 			v.Status = "disabled"
 		}
+		if sb.lane == core.LaneCodexSub && sl.ImageGen {
+			v.Media = []mediaItem{{Kind: "image", Model: "codex-imagegen", Display: "ChatGPT 订阅出图"}}
+		}
 		out = append(out, v)
 	}
 	for _, a := range cfg.API {
@@ -895,6 +899,7 @@ func (s *Server) accountViews() []accountView {
 			}
 		}
 		v.Tiers = tiers
+		v.Media = s.mediaItems(a.Provider)
 		if c, ok := costs[a.Provider]; ok {
 			v.MonthCostUSD, v.MonthCostNative = c[0], c[1]
 		}
@@ -929,6 +934,24 @@ func presetModels(ops AccountOps, provider string) ([]string, bool) {
 		out = append(out, tiers[k]...)
 	}
 	return out, true
+}
+
+type mediaItem struct {
+	Kind    string `json:"kind"` // image video
+	Model   string `json:"model"`
+	Display string `json:"display"`
+}
+
+func (s *Server) mediaItems(provider string) []mediaItem {
+	var out []mediaItem
+	for _, m := range s.d.Router.Registry().MediaByProvider(provider) {
+		kind := "image"
+		if m.PerSecond > 0 {
+			kind = "video"
+		}
+		out = append(out, mediaItem{Kind: kind, Model: m.ID, Display: m.Display})
+	}
+	return out
 }
 
 func labelOr(a, b string) string {
