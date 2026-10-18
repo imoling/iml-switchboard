@@ -1266,8 +1266,16 @@ func (s *Server) integrationUpdate(w http.ResponseWriter, r *http.Request) (any,
 // --- 设置 ---
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) (any, error) {
-	st := s.d.Router.Config().Get().Settings
-	return st, nil
+	return settingsBody(s.d.Router.Config().Get().Settings), nil
+}
+
+// settingsBody 在设置之外附带只读的数据目录，界面要显示它。
+func settingsBody(st config.Settings) map[string]any {
+	b, _ := json.Marshal(st)
+	out := map[string]any{}
+	_ = json.Unmarshal(b, &out)
+	out["data_dir"] = config.DataDir()
+	return out
 }
 
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -1300,7 +1308,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) (any, error
 		s.d.Router.SetMode(core.Mode(s.d.Router.Config().Get().Settings.DefaultMode))
 	}
 	s.d.Bus.Publish("status", s.statusBody())
-	return s.d.Router.Config().Get().Settings, nil
+	return settingsBody(s.d.Router.Config().Get().Settings), nil
 }
 
 // --- 评估 ---
