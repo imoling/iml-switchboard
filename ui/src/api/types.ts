@@ -90,7 +90,8 @@ export interface Evaluation {
   id: string; status: 'running' | 'done' | 'failed'; started_at: string; finished_at?: string; sample: number; cost_usd: number;
   range_label?: string; delta_pct?: number;
   summary: { low_better: number; tie: number; high_better: number };
-  by_task: { task_type: string; n: number; low_better: number; tie: number; high_better: number; suggestion?: string; to_tier?: Tier; weekly_delta_usd?: number }[];
+  error?: string; note?: string;
+  by_task: { task_type: string; name?: string; n: number; low_better: number; tie: number; high_better: number; suggestion?: string; to_tier?: Tier; weekly_delta_usd?: number }[];
 }
 
 export interface QuickPreview extends Decision { alternatives: { label: string; lane: Lane; provider: string; model: string; display?: string; est_cost_usd?: number; note?: string; tier?: Tier; media_tier?: MediaTier }[] }

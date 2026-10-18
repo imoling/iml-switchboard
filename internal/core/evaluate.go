@@ -16,7 +16,7 @@ type Evaluation struct {
 	Sample     int           `json:"sample"`
 	CostUSD    float64       `json:"cost_usd"`
 	Summary    EvalSummary   `json:"summary"`
-	ByTask     []EvalTaskRow `json:"by_task"`
+	ByTask     []EvalTaskRow `json:"by_task"` // 始终非 nil，界面直接 .map
 	Error      string        `json:"error,omitempty"`
 	Note       string        `json:"note,omitempty"`
 }

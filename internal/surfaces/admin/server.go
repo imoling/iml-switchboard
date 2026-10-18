@@ -1349,7 +1349,7 @@ func (s *Server) startEvaluation(w http.ResponseWriter, r *http.Request) (any, e
 		Sample int `json:"sample"`
 	}
 	_ = decode(r, &in)
-	ev := &core.Evaluation{ID: core.NewID("eval"), Status: "running", StartedAt: time.Now(), Sample: in.Sample}
+	ev := &core.Evaluation{ID: core.NewID("eval"), Status: "running", StartedAt: time.Now(), Sample: in.Sample, ByTask: []core.EvalTaskRow{}}
 	s.mu.Lock()
 	s.evals[ev.ID] = ev
 	s.mu.Unlock()
