@@ -84,7 +84,13 @@ export function Popover() {
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
-    const apply = () => { const h = Math.min(760, Math.max(300, Math.ceil(el.scrollHeight))); void desktop.resizeSelf(340, h); };
+    // 根元素撑满窗口（minHeight 100vh），量它永远缩不回去；量里面那层内容，再加上根元素的内边距和边框
+    const apply = () => {
+      const inner = el.firstElementChild as HTMLElement | null;
+      const content = inner ? inner.getBoundingClientRect().height : el.scrollHeight;
+      const h = Math.min(760, Math.max(300, Math.ceil(content + 26)));
+      void desktop.resizeSelf(340, h);
+    };
     const ro = new ResizeObserver(apply);
     ro.observe(el.firstElementChild ?? el);
     apply();
