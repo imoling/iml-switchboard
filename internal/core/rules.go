@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/imoling/iml-switchboard/internal/config"
@@ -92,13 +93,35 @@ func MatchTaskType(table []config.TaskType, prompt string, sig Signals) (config.
 	return config.TaskType{}, false
 }
 
+var patternCache sync.Map // 正则字符串 → *regexp.Regexp
+
+func compiled(p string) *regexp.Regexp {
+	if v, ok := patternCache.Load(p); ok {
+		return v.(*regexp.Regexp)
+	}
+	re, err := regexp.Compile("(?i)" + p)
+	if err != nil {
+		re = regexp.MustCompile(`$^`) // 写坏的正则永远不命中，不让一条规则拖垮路由
+	}
+	patternCache.Store(p, re)
+	return re
+}
+
 func matches(m config.Match, lower string, sig Signals) bool {
-	if len(m.Keywords) > 0 {
+	if len(m.Keywords) > 0 || len(m.Patterns) > 0 {
 		hit := false
 		for _, k := range m.Keywords {
 			if strings.Contains(lower, strings.ToLower(k)) {
 				hit = true
 				break
+			}
+		}
+		for _, p := range m.Patterns {
+			if hit {
+				break
+			}
+			if compiled(p).MatchString(lower) {
+				hit = true
 			}
 		}
 		if !hit {

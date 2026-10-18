@@ -64,8 +64,8 @@ func Default() *Config {
 			{ID: "vision_only_with_image", Title: "带图片时只用能看图的模型", Note: "关掉后图片会被忽略", Enabled: true},
 		},
 		TaskTable: []TaskType{
-			{Type: "image", Name: "生图", Hint: "调用 generate_image，或「画」「配图」「封面」", Kind: "image", MediaTier: "default", Match: Match{Keywords: []string{"画一张", "画个", "配图", "封面图", "生成图片", "生成一张图", "做一张图", "插图", "海报"}}, Order: 1},
-			{Type: "video", Name: "生视频", Hint: "调用 generate_video，或「视频」「短片」", Kind: "video", MediaTier: "cheap", Match: Match{Keywords: []string{"生成视频", "做个视频", "做一个视频", "短片", "秒的视频", "图生视频", "介绍视频", "宣传视频", "短视频", "做成视频", "一段视频", "秒视频"}}, Order: 2},
+			{Type: "image", Name: "生图", Hint: "调用 generate_image，或「画」「配图」「封面」", Kind: "image", MediaTier: "default", Match: Match{Keywords: []string{"画一张", "画个", "配图", "封面图", "生成图片", "生成一张图", "做一张图", "插图", "海报"}, Patterns: []string{`(画|生成|做|来|出|要)[^。！？\n]{0,12}(图片|图|插画|海报|封面)`}}, Order: 1},
+			{Type: "video", Name: "生视频", Hint: "调用 generate_video，或「视频」「短片」", Kind: "video", MediaTier: "cheap", Match: Match{Keywords: []string{"生成视频", "做个视频", "做一个视频", "短片", "秒的视频", "图生视频", "介绍视频", "宣传视频", "短视频", "做成视频", "一段视频", "秒视频"}, Patterns: []string{`(生成|做|来|出|要|制作|拍|剪)[^。！？\n]{0,15}视频`}}, Order: 2},
 			{Type: "animation", Name: "动画", Hint: "调用 make_animation，或「动画」「动效」「Remotion」", Kind: "animation", Match: Match{Keywords: []string{"动画", "动效", "remotion", "转场"}}, Order: 3},
 			{Type: "debug_hard", Name: "疑难调试", Hint: "有报错栈，或「试了很多次」「还是不行」", Tier: "high", Prefer: []string{"claude_sub", "codex_sub"}, Match: Match{HasStack: b(true)}, Order: 10},
 			{Type: "debug_stuck", Name: "疑难调试", Hint: "反复失败", Tier: "high", Prefer: []string{"claude_sub", "codex_sub"}, Match: Match{Keywords: []string{"试了很多次", "还是不行", "还是报错", "一直失败", "怎么都不行"}}, Order: 11},

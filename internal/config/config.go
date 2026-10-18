@@ -119,6 +119,7 @@ type ContextRule struct {
 // Match 是任务类型的识别条件；全部可选，设了的都要满足。
 type Match struct {
 	Keywords     []string `yaml:"keywords,omitempty" json:"keywords,omitempty"` // 任一命中
+	Patterns     []string `yaml:"patterns,omitempty" json:"patterns,omitempty"` // 正则，任一命中；和 keywords 二选一命中即可
 	MaxChars     int      `yaml:"max_chars,omitempty" json:"max_chars,omitempty"`
 	MinChars     int      `yaml:"min_chars,omitempty" json:"min_chars,omitempty"`
 	HasCode      *bool    `yaml:"has_code,omitempty" json:"has_code,omitempty"`
@@ -343,6 +344,17 @@ func fillMissing(c *Config) {
 				if m == "deepseek-v4.1-flash" {
 					c.API[i].Models[tier][j] = "deepseek-flash"
 				}
+			}
+		}
+	}
+	// 内置任务类型新增的正则匹配：老配置里没有就补上，不动用户改过的关键词
+	for i := range c.Routing.TaskTable {
+		if len(c.Routing.TaskTable[i].Match.Patterns) > 0 {
+			continue
+		}
+		for _, dt := range d.Routing.TaskTable {
+			if dt.Type == c.Routing.TaskTable[i].Type && len(dt.Match.Patterns) > 0 {
+				c.Routing.TaskTable[i].Match.Patterns = append([]string(nil), dt.Match.Patterns...)
 			}
 		}
 	}
