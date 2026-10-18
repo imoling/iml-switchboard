@@ -22,3 +22,5 @@
 /ui/src-tauri/icons/android/
 /ui/src-tauri/icons/ios/
 /.playwright-cli/
+# 发社交平台用的配图，不进仓库
+/assets/x/
