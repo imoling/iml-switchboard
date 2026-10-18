@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, ApiError } from '../api/client';
-import type { Account } from '../api/types';
+import type { Account, Tier } from '../api/types';
 import { Dot, ErrorLine, Modal, toast } from '../components/ui';
 import { TierSprite } from '../components/Pixel';
 import { VendorLogo } from '../components/Vendor';
