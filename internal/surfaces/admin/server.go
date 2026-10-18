@@ -808,7 +808,9 @@ type accountView struct {
 	TierOptions     map[string][]string `json:"tier_options,omitempty"`
 	Labels          map[string]string   `json:"labels,omitempty"`
 	Media           []mediaItem         `json:"media,omitempty"`
-	FreeModels      []string            `json:"free_models,omitempty"` // 平台当前免费的型号；有它才显示计费开关
+	FreeModels      []string            `json:"free_models,omitempty"`   // 平台当前免费的型号；有它才显示计费开关
+	MediaChoice     map[string]string   `json:"media_choice,omitempty"`  // image / video → 这个账号选用的型号，空串表示不用
+	MediaOptions    map[string][]string `json:"media_options,omitempty"` // image / video → 可选型号
 	AllowPaid       *bool               `json:"allow_paid,omitempty"`
 	Models          []string            `json:"models"`
 	NeedsProxy      bool                `json:"needs_proxy,omitempty"`
@@ -926,6 +928,19 @@ func (s *Server) accountViews() []accountView {
 		}
 		v.Tiers = tiers
 		v.Media = s.mediaItems(a.Provider)
+		if len(v.Media) > 0 {
+			v.MediaChoice = map[string]string{}
+			v.MediaOptions = map[string][]string{}
+			for _, m := range v.Media {
+				v.MediaOptions[m.Kind] = append(v.MediaOptions[m.Kind], m.Model)
+				v.Labels[m.Model] = m.Display
+			}
+			for _, k := range []string{"image", "video"} {
+				if len(v.MediaOptions[k]) > 0 {
+					v.MediaChoice[k] = a.MediaModel(k, s.d.Router.DefaultMediaModel(a.Provider, k))
+				}
+			}
+		}
 		if fm := s.d.Router.Registry().FreeModels(a.Provider); len(fm) > 0 {
 			v.FreeModels = fm
 			ap := a.AllowPaid
@@ -1052,10 +1067,11 @@ func (s *Server) addAccount(w http.ResponseWriter, r *http.Request) (any, error)
 func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, error) {
 	id := r.PathValue("id")
 	var in struct {
-		Enabled   *bool          `json:"enabled"`
-		Tiers     map[string]any `json:"tiers"`      // 订阅：tier → 型号；按量付费：tier → 首选型号（字符串）或完整列表
-		Plan      *string        `json:"plan"`       // 订阅：手填套餐名
-		AllowPaid *bool          `json:"allow_paid"` // 按量付费：是否允许用收费型号
+		Enabled   *bool             `json:"enabled"`
+		Tiers     map[string]any    `json:"tiers"`      // 订阅：tier → 型号；按量付费：tier → 首选型号（字符串）或完整列表
+		Plan      *string           `json:"plan"`       // 订阅：手填套餐名
+		AllowPaid *bool             `json:"allow_paid"` // 按量付费：是否允许用收费型号
+		Media     map[string]string `json:"media"`      // 按量付费：image / video → 型号，空串表示不用
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
@@ -1090,6 +1106,14 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 				if in.AllowPaid != nil {
 					c.API[i].AllowPaid = *in.AllowPaid
 					config.ApplyFreeOnly(&c.API[i], s.d.Router.Registry().IsFree)
+				}
+				if in.Media != nil {
+					if c.API[i].Media == nil {
+						c.API[i].Media = map[string]string{}
+					}
+					for k, m := range in.Media {
+						c.API[i].Media[k] = m
+					}
 				}
 				if in.Tiers != nil {
 					if c.API[i].Models == nil {

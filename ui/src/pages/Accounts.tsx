@@ -55,9 +55,14 @@ export function Accounts() {
       {sortedTiers(a).map(([k, v]) => (
         <span key={k} className={`tile ${v ? '' : 'off'}`}>{isTier(k) && <TierSprite tier={k} scale={2} />}<span className="tn">{isTier(k) ? t(`tier.${k}`) : k}</span><span className="tm">{name(a, v)}</span>{isFree(a, v) && <span className="free">免费</span>}</span>
       ))}
-      {(a.media ?? []).map((m) => (
-        <span key={m.model} className="tile media" title={m.model}><MediaSprite kind={m.kind} scale={2} /><span className="chip c-m">{t(m.kind === 'video' ? 'media.video' : 'media.image')}</span><span className="tm">{m.display}</span>{m.free && <span className="free">免费</span>}</span>
-      ))}
+      {a.media_choice
+        ? (['image', 'video'] as const).filter((k) => a.media_options?.[k]?.length).map((k) => {
+            const chosen = a.media_choice?.[k] ?? '';
+            return <span key={k} className={`tile media ${chosen ? '' : 'off'}`} title={chosen}><MediaSprite kind={k} scale={2} /><span className="chip c-m">{t(k === 'video' ? 'media.video' : 'media.image')}</span><span className="tm">{name(a, chosen)}</span>{isFree(a, chosen) && <span className="free">免费</span>}</span>;
+          })
+        : (a.media ?? []).map((m) => (
+          <span key={m.model} className="tile media" title={m.model}><MediaSprite kind={m.kind} scale={2} /><span className="chip c-m">{t(m.kind === 'video' ? 'media.video' : 'media.image')}</span><span className="tm">{m.display}</span>{m.free && <span className="free">免费</span>}</span>
+        ))}
       <span className="chev">▾</span>
     </div>
   );
@@ -118,6 +123,15 @@ export function Accounts() {
               <select className="sel" value={v} onChange={async (e) => { const tiers = { ...tierEdit.tiers, [k]: e.target.value }; setTierEdit({ ...tierEdit, tiers }); await act(tierEdit.id, () => api.updateAccount(tierEdit.id, { tiers })); }}>
                 {tierEdit.kind === 'api' && <option value="">不用</option>}
                 {[...(v ? [v] : []), ...tierEdit.models.filter((m) => m !== v)].filter((m) => tierEdit.allow_paid !== false || isFree(tierEdit, m)).map((m) => <option key={m} value={m}>{name(tierEdit, m)}{isFree(tierEdit, m) ? '（免费）' : ''}</option>)}
+              </select>
+            </div>
+          ))}
+          {tierEdit.media_choice && (['image', 'video'] as const).filter((k) => tierEdit.media_options?.[k]?.length).map((k) => (
+            <div key={k} className="setrow">
+              <div className="tt"><MediaSprite kind={k} scale={2} /> {t(k === 'video' ? 'media.video' : 'media.image')}</div>
+              <select className="sel" value={tierEdit.media_choice?.[k] ?? ''} onChange={async (e) => { const v = e.target.value; setTierEdit({ ...tierEdit, media_choice: { ...(tierEdit.media_choice ?? {}), [k]: v } }); await act(tierEdit.id, () => api.updateAccount(tierEdit.id, { media: { [k]: v } })); }}>
+                <option value="">不用</option>
+                {(tierEdit.media_options?.[k] ?? []).filter((m) => tierEdit.allow_paid !== false || isFree(tierEdit, m)).map((m) => <option key={m} value={m}>{name(tierEdit, m)}{isFree(tierEdit, m) ? '（免费）' : ''}</option>)}
               </select>
             </div>
           ))}

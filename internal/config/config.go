@@ -64,6 +64,18 @@ type APIAccount struct {
 	NeedsProxy bool                `yaml:"needs_proxy,omitempty" json:"needs_proxy,omitempty"`
 	// AllowPaid 为假时只用平台当前免费的型号（目前只有 Agnes 有免费型号）
 	AllowPaid bool `yaml:"allow_paid,omitempty" json:"allow_paid,omitempty"`
+	// Media 是这个账号出图 / 出视频各用哪个型号：image / video → 型号；值为空表示不用；没有这个键表示用默认
+	Media map[string]string `yaml:"media,omitempty" json:"media,omitempty"`
+}
+
+// MediaModel 返回账号在某种媒体上选的型号；没选过就用默认值 def，明确选了「不用」返回空。
+func (a APIAccount) MediaModel(kind, def string) string {
+	if a.Media != nil {
+		if v, ok := a.Media[kind]; ok {
+			return v
+		}
+	}
+	return def
 }
 
 // MediaTarget 是媒体某一档位的目标。

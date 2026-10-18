@@ -453,14 +453,21 @@ func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) 
 		}
 		out = append(out, tgt)
 	}
-	// 添加了同时会出图 / 出视频的按量付费账号（目前是 Agnes AI）时，自动当作兜底候选，不用改媒体档位配置
+	// 账号自己选了出图 / 出视频型号的按量付费账号，自动当作候选，不用改媒体档位配置；Agnes 默认用免费型号
 	for _, acc := range cfg.API {
-		if !acc.Enabled || acc.Provider != "agnes" {
+		if !acc.Enabled {
 			continue
 		}
-		model := "agnes-image-2.5-flash"
+		kind := "image"
 		if t.Kind == KindVideo {
-			model = "agnes-video-2.5-flash"
+			kind = "video"
+		}
+		model := acc.MediaModel(kind, r.DefaultMediaModel(acc.Provider, kind))
+		if model == "" {
+			continue
+		}
+		if !acc.AllowPaid && len(r.reg.FreeModels(acc.Provider)) > 0 && !r.reg.IsFree(model) {
+			continue
 		}
 		dup := false
 		for _, c := range out {
@@ -470,7 +477,7 @@ func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) 
 		}
 		if !dup {
 			usd, _, _ := r.reg.MediaCost(model, units)
-			out = append(out, Target{Lane: LaneMedia, Provider: "agnes", Model: model, EstCostUSD: usd, AccountID: acc.ID})
+			out = append(out, Target{Lane: LaneMedia, Provider: acc.Provider, Model: model, EstCostUSD: usd, AccountID: acc.ID})
 		}
 	}
 	// 排序：能用的付费渠道在前，ChatGPT 订阅出图当兜底，没账号的放最后只作提示
@@ -837,4 +844,15 @@ func (r *Router) accountFor(cfg *config.Config, provider, id string) *config.API
 		}
 	}
 	return nil
+}
+
+// DefaultMediaModel 是账号没选时的媒体型号：Agnes 用免费的 flash；其它供应商不自动出图，要用户在档位里选。
+func (r *Router) DefaultMediaModel(provider, kind string) string {
+	if provider != "agnes" {
+		return ""
+	}
+	if kind == "video" {
+		return "agnes-video-2.5-flash"
+	}
+	return "agnes-image-2.5-flash"
 }
