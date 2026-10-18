@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -198,6 +199,14 @@ func (q *QuotaManager) Windows(lane LaneID, models map[string]string) []QuotaWin
 			}
 			out = append(out, w)
 		}
+		rank := func(w string) int {
+			order := map[string]int{"5h": 0, "week": 1, "week_fable": 2, "month": 3, "5h_claude": 4, "week_claude": 5}
+			if r, ok := order[w]; ok {
+				return r
+			}
+			return 9
+		}
+		sort.SliceStable(out, func(i, j int) bool { return rank(out[i].Window) < rank(out[j].Window) })
 		if lane == LaneClaudeSub && !sawFable {
 			if fm, ok := models["top"]; ok && q.ledger != nil {
 				start := weekStart(now)
