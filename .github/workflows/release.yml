@@ -1,11 +1,24 @@
 # 打 v* 标签时：三个平台各自构建安装包（macOS dmg、Windows msi 和 exe、Linux AppImage 和 deb），发布为预发布版。
 # 发布说明取 docs/releases/<标签>.md。
-# 签名：macOS 需要 APPLE_* 这组密钥，Windows 需要代码签名证书；没配时照样出包，只是未签名。
+# 也可以手动触发，补构建某个已有标签的某个平台，产物挂到同一个发布上（用标签上的代码构建）。
+#
+# 签名：macOS 在仓库密钥里配了 APPLE_CERTIFICATE 等一组值才会正式签名和公证；没配时用临时签名（ad-hoc），
+# 首次打开要在「系统设置 → 隐私与安全性」里允许。Windows 目前不签名。
 name: release
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要补构建的标签，比如 v0.1.0
+        required: true
+      platform:
+        description: 只构建哪个平台
+        type: choice
+        options: [all, macos, windows, linux]
+        default: all
 
 jobs:
   build:
@@ -14,60 +27,90 @@ jobs:
       matrix:
         include:
           - os: macos-latest
+            platform: macos
             args: --target aarch64-apple-darwin
             rust-target: aarch64-apple-darwin
           - os: macos-latest
+            platform: macos
             args: --target x86_64-apple-darwin
             rust-target: x86_64-apple-darwin
           - os: windows-latest
+            platform: windows
             args: ''
             rust-target: ''
           - os: ubuntu-22.04
+            platform: linux
             args: ''
             rust-target: ''
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      # 手动补构建时，不是所选平台的任务直接跳过各步骤
+      SKIP: ${{ github.event_name == 'workflow_dispatch' && inputs.platform != 'all' && inputs.platform != matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        if: env.SKIP != 'true'
+        with:
+          ref: ${{ env.TAG }}
       - uses: actions/setup-go@v5
+        if: env.SKIP != 'true'
         with:
           go-version-file: go.mod
       - uses: actions/setup-node@v4
+        if: env.SKIP != 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+        if: env.SKIP != 'true'
         with:
           targets: ${{ matrix.rust-target }}
       - name: Linux 依赖
-        if: startsWith(matrix.os, 'ubuntu')
+        if: env.SKIP != 'true' && startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: macOS 签名方式
+        if: env.SKIP != 'true' && startsWith(matrix.os, 'macos')
+        shell: bash
+        env:
+          HAS_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: |
+          # 配了证书就把整组签名变量交给 Tauri；没配时只给临时签名，空变量会让 Tauri 去导入一个空证书而失败
+          if [ "$HAS_CERT" = "true" ]; then
+            {
+              echo "APPLE_CERTIFICATE=${{ secrets.APPLE_CERTIFICATE }}"
+              echo "APPLE_CERTIFICATE_PASSWORD=${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+              echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}"
+              echo "APPLE_ID=${{ secrets.APPLE_ID }}"
+              echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}"
+              echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}"
+            } >> "$GITHUB_ENV"
+          else
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+          fi
       - name: 读取发布说明
+        if: env.SKIP != 'true'
         id: notes
         shell: bash
         run: |
-          f="docs/releases/${GITHUB_REF_NAME}.md"
-          { echo 'body<<NOTES_EOF'; if [ -f "$f" ]; then cat "$f"; else echo "Switchboard ${GITHUB_REF_NAME}"; fi; echo 'NOTES_EOF'; } >> "$GITHUB_OUTPUT"
+          f="docs/releases/${TAG}.md"
+          { echo 'body<<NOTES_EOF'; if [ -f "$f" ]; then cat "$f"; else echo "Switchboard ${TAG}"; fi; echo 'NOTES_EOF'; } >> "$GITHUB_OUTPUT"
       - name: 安装界面依赖
+        if: env.SKIP != 'true'
         working-directory: ui
         run: npm ci
       - uses: tauri-apps/tauri-action@v0
+        if: env.SKIP != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: ui
-          tagName: ${{ github.ref_name }}
-          releaseName: Switchboard ${{ github.ref_name }}
+          tagName: ${{ env.TAG }}
+          releaseName: Switchboard ${{ env.TAG }}
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: true
