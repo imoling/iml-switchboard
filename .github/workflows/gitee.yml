@@ -1,0 +1,59 @@
+# 同步到 Gitee：main 和标签每次推送后强推到 Gitee（以 GitHub 为准）；发布构建完成后把发布和安装包同步过去。
+# 需要仓库密钥 GITEE_TOKEN（Gitee 私人令牌，勾选 projects 权限）。没配时只给警告，不算失败。
+# 也可以手动触发，补同步某个标签的发布，不填就同步全部。
+name: gitee
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要同步的发布标签，比如 v0.1.0；不填同步全部
+        required: false
+
+concurrency:
+  group: gitee
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      GITEE_REPO: imoling/iml-switchboard
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_REPO: ${{ github.repository }}
+    steps:
+      - name: 检查密钥
+        id: check
+        run: |
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::warning::没配 GITEE_TOKEN，跳过同步到 Gitee"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.skip != 'true'
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: 推送代码和标签
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          url="https://${GITEE_REPO%%/*}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
+          git fetch --tags --force origin
+          git push --force "$url" refs/remotes/origin/main:refs/heads/main
+          git push --force "$url" 'refs/tags/*:refs/tags/*'
+      - name: 同步发布
+        # 打标签那次推送时 release 还在构建，等它完成触发 workflow_run 再同步
+        if: steps.check.outputs.skip != 'true' && github.event_name != 'push'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: bash scripts/sync-gitee.sh ${TAG:+"$TAG"}
