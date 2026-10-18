@@ -343,3 +343,19 @@ cat "`+filepath.Join(dir, "ok.jsonl")+`"
 		t.Errorf("RetryAfter 应为正：%v", rl.RetryAfter)
 	}
 }
+
+func TestClaudePlanLabel(t *testing.T) {
+	cases := []struct{ org, tier, seat, want string }{
+		{"claude_max", "default_claude_max_20x", "", "Max 20x"},
+		{"claude_max", "default_claude_max_5x", "", "Max 5x"},
+		{"claude_pro", "", "", "Pro"},
+		{"claude_free", "", "", "免费版"},
+		{"claude_team", "", "premium", "Team 高级席位"},
+		{"", "", "", ""},
+	}
+	for _, c := range cases {
+		if got := ClaudePlanLabel(c.org, c.tier, c.seat); got != c.want {
+			t.Errorf("%s/%s: got %q want %q", c.org, c.tier, got, c.want)
+		}
+	}
+}

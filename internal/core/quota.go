@@ -63,6 +63,34 @@ func (q *QuotaManager) Observe(lane LaneID, windows []QuotaWindow) {
 	}
 }
 
+// ObservePlan 记住渠道自报的套餐名，重启后还在；空值不覆盖。
+func (q *QuotaManager) ObservePlan(lane LaneID, plan string) {
+	if plan == "" || q.ledger == nil {
+		return
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	saved := map[LaneID]string{}
+	q.ledger.KVGet("plan_observed", &saved)
+	if saved[lane] == plan {
+		return
+	}
+	saved[lane] = plan
+	_ = q.ledger.KVSet("plan_observed", saved)
+}
+
+// Plan 返回上次记住的套餐名；没有就是空。
+func (q *QuotaManager) Plan(lane LaneID) string {
+	if q.ledger == nil {
+		return ""
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	saved := map[LaneID]string{}
+	q.ledger.KVGet("plan_observed", &saved)
+	return saved[lane]
+}
+
 // ObservedAt 返回某渠道最近一次自报的时间；没有就是零值。
 func (q *QuotaManager) ObservedAt(lane LaneID) time.Time {
 	q.mu.Lock()

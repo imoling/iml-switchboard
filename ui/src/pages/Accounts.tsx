@@ -55,7 +55,7 @@ export function Accounts() {
         <span key={k} className={`tile ${v ? '' : 'off'}`}>{isTier(k) && <TierSprite tier={k} scale={2} />}<span className="tn">{isTier(k) ? t(`tier.${k}`) : k}</span><span className="tm">{name(a, v)}</span></span>
       ))}
       {(a.media ?? []).map((m) => (
-        <span key={m.model} className="tile media" title={m.model}><span className="chip c-m">{m.kind === 'video' ? '生视频' : '生图'}</span><span className="tm">{m.display}</span></span>
+        <span key={m.model} className="tile media" title={m.model}><span className="chip c-m">{t(m.kind === 'video' ? 'media.video' : 'media.image')}</span><span className="tm">{m.display}</span></span>
       ))}
       <span className="chev">▾</span>
     </div>
@@ -77,7 +77,7 @@ export function Accounts() {
           {subs.map((a) => (
             <div key={a.id} className={`acct ${a.enabled ? '' : 'dim'}`}>
               <VendorLogo provider={a.provider} />
-              <div className="grow"><b>{a.label}</b><div className="hint">{a.detail}</div></div>
+              <div className="grow"><b>{a.label}</b>{a.plan && <span className="plan">{a.plan}</span>}<div className="hint">{a.detail}</div></div>
               <span><Dot s={STATUS[a.status].dot} />{STATUS[a.status].text(a)}</span>
               {a.status === 'missing'
                 ? <button className="btn sm" onClick={() => a.install_hint && toast(`在终端运行：${a.install_hint}`)}>怎么安装</button>
@@ -91,7 +91,7 @@ export function Accounts() {
           {apis.map((a) => (
             <div key={a.id} className={`acct ${a.enabled ? '' : 'dim'}`}>
               <VendorLogo provider={a.provider} />
-              <div className="grow"><b>{a.label}</b><div className="hint">{a.detail}</div></div>
+              <div className="grow"><b>{a.label}</b>{a.plan && <span className="plan">{a.plan}</span>}<div className="hint">{a.detail}</div></div>
               <span><Dot s={STATUS[a.status].dot} />{STATUS[a.status].text(a)}</span>
               {a.status === 'error' && a.top_up_url
                 ? <button className="btn sm" onClick={() => desktop.openUrl(a.top_up_url!)}>去充值</button>

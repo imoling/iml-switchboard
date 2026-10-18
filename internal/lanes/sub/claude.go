@@ -423,7 +423,7 @@ func (d *ClaudeDriver) Health(ctx context.Context) core.Health {
 	q := append([]core.QuotaWindow(nil), d.lastQuota...)
 	cd := d.cooldown
 	d.mu.Unlock()
-	h := core.Health{Status: "ok", Detail: ver, Quota: q}
+	h := core.Health{Status: "ok", Detail: ver, Quota: q, Plan: readClaudePlan(d.home())}
 	if cd.After(d.now()) {
 		h.Status = "cooldown"
 		h.CooldownUntil = cd

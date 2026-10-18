@@ -169,6 +169,8 @@ type Job struct {
 type Health struct {
 	Status string `json:"status"` // ok warn missing error cooldown disabled
 	Detail string `json:"detail"`
+	// Plan 是套餐名（Max 20x、Pro、免费版…），只做展示
+	Plan string `json:"plan,omitempty"`
 	// 订阅渠道的额度窗口估算
 	Quota         []QuotaWindow `json:"quota,omitempty"`
 	CooldownUntil time.Time     `json:"cooldown_until,omitempty"`

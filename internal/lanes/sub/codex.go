@@ -444,10 +444,7 @@ func (d *CodexDriver) Health(ctx context.Context) core.Health {
 	d.mu.Lock()
 	cd := d.cooldown
 	d.mu.Unlock()
-	if d.planType != "" {
-		ver += " · ChatGPT " + PlanLabel(d.planType)
-	}
-	h := core.Health{Status: "ok", Detail: ver}
+	h := core.Health{Status: "ok", Detail: ver, Plan: PlanLabel(d.planType)}
 	if cd.After(d.now()) {
 		h.Status = "cooldown"
 		h.CooldownUntil = cd

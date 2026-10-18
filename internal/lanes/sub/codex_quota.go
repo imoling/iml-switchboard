@@ -79,12 +79,15 @@ func (d *CodexDriver) ProbeQuota(ctx context.Context) ([]core.QuotaWindow, error
 		return nil, err
 	}
 	windows, plan, err := ParseCodexRateLimits(raw)
+	// 免费套餐可能没有额度窗口，但套餐名照样记下
+	if plan != "" {
+		d.mu.Lock()
+		d.planType = plan
+		d.mu.Unlock()
+	}
 	if err != nil {
 		return nil, err
 	}
-	d.mu.Lock()
-	d.planType = plan
-	d.mu.Unlock()
 	return windows, nil
 }
 

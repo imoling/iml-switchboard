@@ -11,6 +11,8 @@ export const DEFAULT_WORDS: Record<string, string> = {
   'tier.mid': '中档',
   'tier.high': '高档',
   'tier.top': '顶配',
+  'media.image': '生图',
+  'media.video': '生视频',
   records: '请求记录',
   escalate: '这次判低了',
   pause: '暂停调度',

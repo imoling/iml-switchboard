@@ -795,6 +795,7 @@ type accountView struct {
 	Label           string              `json:"label"`
 	Status          string              `json:"status"`
 	Detail          string              `json:"detail"`
+	Plan            string              `json:"plan,omitempty"`
 	MonthCostUSD    float64             `json:"month_cost_usd"`
 	MonthCostNative float64             `json:"month_cost_native"`
 	Currency        string              `json:"currency"`
@@ -839,6 +840,13 @@ func (s *Server) accountViews() []accountView {
 			h := d.Health(context.Background())
 			s.d.Router.Quota().Observe(sb.lane, h.Quota)
 			v.Status = h.Status
+			if h.Plan != "" {
+				s.d.Router.Quota().ObservePlan(sb.lane, h.Plan)
+			}
+			v.Plan = h.Plan
+			if v.Plan == "" {
+				v.Plan = s.d.Router.Quota().Plan(sb.lane)
+			}
 			if h.Detail != "" {
 				v.Detail = h.Detail
 			}
@@ -865,7 +873,7 @@ func (s *Server) accountViews() []accountView {
 		out = append(out, v)
 	}
 	for _, a := range cfg.API {
-		v := accountView{ID: a.ID, Kind: "api", Provider: a.Provider, Label: labelOr(a.Label, core.ProviderLabel(a.Provider)), Enabled: a.Enabled, Currency: a.Currency, NeedsProxy: a.NeedsProxy, Status: "ok", Detail: ""}
+		v := accountView{ID: a.ID, Kind: "api", Provider: a.Provider, Label: labelOr(a.Label, core.ProviderLabel(a.Provider)), Enabled: a.Enabled, Currency: a.Currency, NeedsProxy: a.NeedsProxy, Status: "ok", Detail: "", Plan: "按量付费"}
 		tiers := map[string]any{}
 		v.TierOptions = map[string][]string{}
 		v.Labels = map[string]string{}

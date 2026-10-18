@@ -98,11 +98,32 @@ const TIER_SPRITES: Record<Exclude<ThemeId, 'standard'>, Record<Tier, SpriteDef>
   },
 };
 
-// 吉祥物：后宫是端着牌子的敬事房太监，点将台是主帅，海王是戴草帽的钓鱼人
+// 吉祥物：后宫是端着牌子的敬事房太监，点将台是主帅，海王是戴金冠、手持鱼叉的海王
 const MASCOTS: Record<Exclude<ThemeId, 'standard'>, SpriteDef> = {
   dianjiang: TIER_SPRITES.dianjiang.top,
   harem: person('....KKKK....', '...KKKKKK...', '..J.J.J.J...', '#4A6785', '#2E4458', { 9: '.GGGGGGGGGG.' }),
-  seaking: person('.YYYYYYYYYY.', '...YYYYYY...', '..CCCCCCCC.K', '#4A6785', '#2E4458', { 4: '....SSSS...K', 5: '.....SS....K', 6: '...CCCCCC..K', 7: '..CCCWWCCC.K', 9: '..CCCCCCCC.K', 10: '..CCCCCCCK..' }),
+  seaking: {
+    map: [
+      '.G.G.G...G.G',
+      '.GGGGG...GGG',
+      '.HSSSSH...G.',
+      '.HKSSKH...G.',
+      '..SSSS....G.',
+      '..LLLL....G.',
+      '..CCCCCC..G.',
+      '..CCCCCC.SG.',
+      '..CCCWWC.SG.',
+      '..CCCCCC..G.',
+      '..CCCCCC..G.',
+      '..CCCCCC..G.',
+      '..DDDDDD..G.',
+      '..CC..CC..G.',
+      '..CC..CC..G.',
+      '..KK..KK..G.',
+    ],
+    palette: { ...BASE, C: '#3F8F8A', D: '#2C6B67', H: '#D8D3C8' },
+    eyes: { row: 3, from: 'K', to: 'S' },
+  },
 };
 
 export function tierSprite(theme: ThemeId, tier: Tier | null | undefined): SpriteDef | null {
