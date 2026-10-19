@@ -9,6 +9,7 @@ export function quotaWarning(quotas: Quota[], yieldPct: number): string | null {
   return `${name} 额度已过 ${Math.floor(hot.pct / 10) * 10}%，低档和中档任务改走按量付费`;
 }
 
+export const STALE_BACKEND = '不是这个版本的后台，重启后换成新的';
 export const QUOTA_ESTIMATE_NOTE = '带「估算」的行是按本应用记录估的；其余由官方命令回报，以官方显示为准';
 
 /** 跟系统走的说法：macOS 叫菜单栏、Finder，Windows 叫托盘、资源管理器 */

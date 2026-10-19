@@ -55,6 +55,11 @@ func (fakeIntegr) Update(id string, o map[string]bool) (map[string]any, error) {
 
 func newServer(t *testing.T) (*httptest.Server, *core.Router) {
 	t.Helper()
+	return newServerWith(t, nil)
+}
+
+func newServerWith(t *testing.T, tweak func(*Deps)) (*httptest.Server, *core.Router) {
+	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("IMLS_DATA_DIR", dir)
 	t.Setenv("IMLS_SECRETS_FILE", "1")
@@ -68,7 +73,11 @@ func newServer(t *testing.T) (*httptest.Server, *core.Router) {
 	r.Register(&fake{core.LaneCodexSub})
 	bus := core.NewBus()
 	r.OnCall(func(c *core.Call) { bus.Publish("call", c) })
-	s := New(Deps{Router: r, Jobs: core.NewJobStore(l, nil), Bus: bus, Accounts: fakeAccounts{}, Integr: fakeIntegr{}, Secrets: core.NewSecrets(dir), StartedAt: time.Now()})
+	d := Deps{Router: r, Jobs: core.NewJobStore(l, nil), Bus: bus, Accounts: fakeAccounts{}, Integr: fakeIntegr{}, Secrets: core.NewSecrets(dir), StartedAt: time.Now()}
+	if tweak != nil {
+		tweak(&d)
+	}
+	s := New(d)
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	ts := httptest.NewServer(mux)
@@ -112,6 +121,28 @@ func TestStatusAndAuth(t *testing.T) {
 	code, m, _ = do(t, ts, "POST", "/api/projection", map[string]bool{"on": true})
 	if m["theme"] != "standard" || m["app_title"] != "Switchboard" {
 		t.Fatalf("投屏模式应切回标准：%v", m)
+	}
+}
+
+// 客户端靠 build 比对版本、靠 busy 提醒重启会打断几件事、靠 /api/quit 让旧后台让位
+func TestBuildBusyAndQuit(t *testing.T) {
+	quit := make(chan struct{})
+	ts, _ := newServerWith(t, func(d *Deps) { d.Build = "abc123def456"; d.Quit = func() { close(quit) } })
+	_, m, _ := do(t, ts, "GET", "/api/status", nil)
+	if m["build"] != "abc123def456" || m["busy"] != float64(0) {
+		t.Fatalf("状态里应有构建号和进行中的数量：%v", m)
+	}
+	code, m, _ := do(t, ts, "POST", "/api/quit", nil)
+	if code != 200 || m["ok"] != true {
+		t.Fatalf("%d %v", code, m)
+	}
+	select {
+	case <-quit:
+	case <-time.After(2 * time.Second):
+		t.Fatal("回话之后应当退出")
+	}
+	if resp, _ := http.Post(ts.URL+"/api/quit", "application/json", nil); resp.StatusCode != 403 {
+		t.Fatalf("没有客户端标识不能让后台退出，得到 %d", resp.StatusCode)
 	}
 }
 

@@ -38,7 +38,7 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
   const active = data?.jobs.filter((j) => j.status !== 'done' && j.status !== 'canceled' && !isFailed(j)) ?? [];
   const failed = data?.jobs.filter(isFailed) ?? [];
   /** 卡片标题：去掉宿主塞进来的提示块，取用户自己那句 */
-  const titleOf = (s?: string) => (s ?? '').replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim().slice(0, 60) || '（没有描述）';
+  const titleOf = (s?: string) => (s ?? '').replace(/<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder>/g, '').replace(/<\/?session>/g, '').trim().slice(0, 60) || '（没有描述）';
 
   return (
     <>

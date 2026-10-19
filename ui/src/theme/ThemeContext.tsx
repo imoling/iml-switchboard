@@ -30,6 +30,12 @@ export function ThemeProvider({ children, initialTheme = 'dianjiang', initialPro
     try { setThemes(await api.themes()); } catch { /* 后台没起：用代码兜底词 */ }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
+  // 后台还没起来时取不到词表；每 3 秒再试，直到拿到为止
+  useEffect(() => {
+    if (themes.length) return;
+    const id = setInterval(() => void reload(), 3000);
+    return () => clearInterval(id);
+  }, [themes.length, reload]);
 
   const effectiveId: ThemeId = projection ? 'standard' : themeId;
   const t = useMemo(() => {

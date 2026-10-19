@@ -48,6 +48,7 @@ export const hostLabel = (c: Pick<Call, 'source' | 'host'>) => HOST_LABEL[c.host
 
 export const hhmm = (iso: string) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 export const tokens = (n?: number) => (n === undefined ? '—' : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
+export const uptime = (s: number) => (s < 3600 ? `${Math.max(1, Math.round(s / 60))} 分钟` : s < 172800 ? `${Math.round(s / 3600)} 小时` : `${Math.round(s / 86400)} 天`);
 export const secs = (ms: number) => (ms >= 60000 ? `${Math.round(ms / 60000)} 分钟` : `${(ms / 1000).toFixed(1)} 秒`);
 export const eta = (s?: number) => (s === undefined ? '' : s >= 60 ? `约 ${Math.round(s / 60)} 分钟` : `约 ${s} 秒`);
 

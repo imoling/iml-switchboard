@@ -1,13 +1,17 @@
 import { hotkeyCaps, normalizeHotkey } from '../hotkey';
-import { TRAY_NAME } from '../copy';
+import { STALE_BACKEND, TRAY_NAME } from '../copy';
+import { restartBackend, useStaleBackend } from '../backend';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client';
-import type { Mode, Settings as S, ThemeId } from '../api/types';
+import type { Mode, Settings as S, ThemeId, UpdateInfo } from '../api/types';
 import { ErrorLine, RevealButton, Seg, SetRow, Toggle, toast } from '../components/ui';
-import { fromDisplay, moneySymbol, setMoney, toDisplay } from '../format';
+import { fromDisplay, moneySymbol, setMoney, toDisplay, uptime } from '../format';
 import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
-import { desktop } from '../tauri';
+import { desktop, inTauri } from '../tauri';
+
+/** 词表还没从后台拿到时的选项，id 与 internal/themes/*.json 一致 */
+const FALLBACK_THEMES: { id: ThemeId; name: string }[] = [{ id: 'standard', name: '标准' }, { id: 'dianjiang', name: '点将台' }, { id: 'harem', name: '后宫' }, { id: 'seaking', name: '海王' }];
 
 export const MODE_OPTIONS: { id: Mode; label: string }[] = [{ id: 'save', label: '省钱' }, { id: 'balanced', label: '均衡' }, { id: 'quality', label: '质量' }];
 
@@ -56,7 +60,7 @@ export function Settings() {
     try { await api.importRules(await file.text()); toast('规则已导入'); } catch (e) { setErr(e as ApiError); }
   };
 
-  const themeOptions = (themes.length ? themes : [{ id: 'standard' as ThemeId, name: '标准' }, { id: 'dianjiang' as ThemeId, name: '点将台' }]).map((x) => ({ id: x.id, label: x.name }));
+  const themeOptions = (themes.length ? themes : FALLBACK_THEMES).map((x) => ({ id: x.id, label: x.name }));
   const hotkeyParts = hotkeyCaps(data?.hotkey ?? 'Alt+Space');
 
   return (
@@ -75,7 +79,7 @@ export function Settings() {
           <SetRow title="开机启动" desc="关闭后，宿主调用时才启动，首次约慢 2 秒">
             <Toggle on={data.launch_at_login} onChange={(v) => save({ launch_at_login: v })} />
           </SetRow>
-          <SetRow title="通知" desc="只发四类：额度、预算、媒体完成或失败、规则建议">
+          <SetRow title="通知" desc="额度、预算、媒体完成或失败、规则建议、新版本">
             {(['quota', 'budget', 'media', 'suggestions'] as const).map((k) => (
               <label key={k} className="row" style={{ gap: 4, marginLeft: 8 }}><input type="checkbox" checked={data.notifications[k]} onChange={(e) => save({ notifications: { ...data.notifications, [k]: e.target.checked } })} />{{ quota: '额度', budget: '预算', media: '媒体', suggestions: '建议' }[k]}</label>
             ))}
@@ -106,13 +110,71 @@ export function Settings() {
           <SetRow title="数据位置" desc={<><span className="path">{(data.data_dir ?? '').replace(/^\/Users\/[^/]+/, '~')}</span>记录、规则、账号都在这里，换电脑时带走它；图片视频存在各自项目里</>}>
             <RevealButton path={data.data_dir} />
           </SetRow>
-          <SetRow title="规则" last>
+          <SetRow title="规则">
             <button className="btn sm" onClick={exportRules}>导出</button>
             <button className="btn sm" onClick={() => fileRef.current?.click()}>导入</button>
             <input ref={fileRef} type="file" accept=".yaml,.yml" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void importRules(f); e.target.value = ''; }} />
           </SetRow>
+          <BackendRow />
+          <VersionRow />
         </>
       )}
     </>
+  );
+}
+
+/** 后台服务：运行多久、是不是这个版本、重启 */
+function BackendRow() {
+  const { data: status, setData: setStatus } = useLoad(() => api.status());
+  const { reload: reloadThemes } = useTheme();
+  const stale = useStaleBackend(status);
+  const [confirming, setConfirming] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const restart = async () => {
+    const busy = (await api.status().catch(() => null))?.busy ?? 0;
+    if (busy > 0 && !confirming) { setConfirming(true); return; }
+    setConfirming(false); setRestarting(true); setFailed(null);
+    const why = await restartBackend();
+    setRestarting(false);
+    if (why) { setFailed(why); return; }
+    setStatus(await api.status().catch(() => null));
+    void reloadThemes();
+    toast('后台已重启');
+  };
+
+  const desc = failed ? `重启失败：${failed}`
+    : confirming ? `正在进行的 ${status?.busy ?? 0} 件事会中断`
+    : stale ? STALE_BACKEND
+    : status ? `运行中 · 已运行 ${uptime(status.uptime_s)}` : undefined;
+  return (
+    <SetRow title="后台服务" desc={<span className={failed || stale ? 'warn-text' : undefined}>{desc}</span>}>
+      {confirming && <button className="btn sm" onClick={() => setConfirming(false)}>取消</button>}
+      {inTauri && <button className={`btn sm ${stale || confirming ? 'pri' : ''}`} disabled={restarting} onClick={restart}>{restarting ? '正在重启…' : confirming ? '仍要重启' : '重启'}</button>}
+    </SetRow>
+  );
+}
+
+/** 版本：是不是最新，有新版本就给下载 */
+function VersionRow() {
+  const [version, setVersion] = useState('');
+  const [info, setInfo] = useState<UpdateInfo | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  useEffect(() => { void desktop.version().then(setVersion); void api.update().then(setInfo).catch(() => null); }, []);
+  const check = async () => {
+    setChecking(true); setFailed(null);
+    try { setInfo(await api.checkUpdate()); } catch (e) { setFailed((e as Error).message); }
+    setChecking(false);
+  };
+  const desc = failed ? `检查失败：${failed}`
+    : info?.has_update ? `有新版本 ${info.latest}，发布于 ${new Date(info.published_at).toLocaleDateString()}`
+    : info ? '已是最新' : undefined;
+  return (
+    <SetRow title={`版本 ${version}`} desc={<span className={failed ? 'warn-text' : undefined}>{desc}</span>} last>
+      {info?.has_update && <button className="btn sm pri" onClick={() => desktop.openUrl(info.url)}>下载</button>}
+      <button className="btn sm" disabled={checking} onClick={check}>{checking ? '正在检查…' : '检查更新'}</button>
+    </SetRow>
   );
 }

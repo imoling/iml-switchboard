@@ -52,7 +52,11 @@ export interface Account {
 export interface Status {
   version: string; uptime_s: number; mode: Mode; theme: ThemeId; paused: boolean; projection: boolean;
   node_available: boolean; data_dir: string; currency?: 'USD' | 'CNY'; usd_per_cny?: number;
+  /** 后台程序文件的指纹；busy 是重启会打断的请求与媒体任务数 */
+  build?: string; busy?: number;
 }
+
+export interface UpdateInfo { current: string; latest: string; has_update: boolean; url: string; page: string; notes?: string; published_at: string; checked_at: string }
 
 export interface Quota { account_id: string; label: string; provider?: string; window: string; pct: number; resets_at?: string; sub?: boolean; sub_label?: string; estimated?: boolean; observed_at?: string }
 

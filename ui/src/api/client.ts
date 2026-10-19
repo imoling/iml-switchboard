@@ -1,7 +1,6 @@
 import type { Quota,
   Account, Call, Decision, Evaluation, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview,
-  QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier,
-} from './types';
+  QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier, UpdateInfo } from './types';
 
 export const BASE = 'http://127.0.0.1:18081';
 const HEADERS = { 'X-IMLS-Client': 'ui' };
@@ -49,6 +48,9 @@ const qs = (o: Record<string, string | number | boolean | undefined>) => {
 export const api = {
   status: () => get<Status>('/api/status'),
   pause: (paused: boolean) => post<Status>('/api/pause', { paused }),
+  quit: () => post<{ ok: boolean }>('/api/quit'),
+  update: () => get<UpdateInfo>('/api/update'),
+  checkUpdate: () => post<UpdateInfo>('/api/update/check'),
   mode: (mode: Mode) => post<Status>('/api/mode', { mode }),
   projection: (on: boolean) => post<Status>('/api/projection', { on }),
   overview: (range: 'today' | '7d' | '30d') => get<Overview>(`/api/overview?range=${range}`),

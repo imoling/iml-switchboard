@@ -57,6 +57,9 @@ type Deps struct {
 	Secrets       core.Secrets
 	StartedAt     time.Time
 	NodeAvailable func() bool
+	Build         string                                             // 程序文件指纹，见 app.BuildID
+	Quit          func()                                             // 让后台自己退出；客户端「重启」先调它，再拉起安装包里的那份
+	Update        func(ctx context.Context, force bool) (any, error) // 查新版本；nil 表示不支持
 }
 
 // Server 是 /api 处理器。
@@ -113,6 +116,9 @@ func (s *Server) Routes(mux *http.ServeMux) {
 		})
 	}
 	h("GET /api/status", s.status)
+	h("POST /api/quit", s.quit)
+	h("GET /api/update", func(w http.ResponseWriter, r *http.Request) (any, error) { return s.update(r, false) })
+	h("POST /api/update/check", func(w http.ResponseWriter, r *http.Request) (any, error) { return s.update(r, true) })
 	h("POST /api/pause", s.pause)
 	h("POST /api/mode", s.mode)
 	h("POST /api/projection", s.projectionToggle)
@@ -210,7 +216,38 @@ func (s *Server) statusBody() map[string]any {
 		"paused": s.d.Router.Paused(), "projection": s.Projection(), "node_available": node,
 		"data_dir": config.DataDir(), "app_title": themes.Word(theme, "app.title"),
 		"currency": currencyOf(cfg.Settings), "usd_per_cny": cfg.Settings.USDPerCNY,
+		"build": s.d.Build, "busy": s.busy(),
 	}
+}
+
+// busy 是重启会打断的活：正在执行的请求，加上还没结束的媒体任务。
+func (s *Server) busy() int {
+	n := s.d.Router.InFlight()
+	if s.d.Jobs != nil {
+		n += s.d.Jobs.Active()
+	}
+	return n
+}
+
+func (s *Server) update(r *http.Request, force bool) (any, error) {
+	if s.d.Update == nil {
+		return nil, errors.New("这个后台不支持检查更新")
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	return s.d.Update(ctx, force)
+}
+
+// quit 先回话再退出，不然客户端收不到结果。
+func (s *Server) quit(w http.ResponseWriter, r *http.Request) (any, error) {
+	if s.d.Quit == nil {
+		return nil, errors.New("这个后台不支持从界面重启")
+	}
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		s.d.Quit()
+	}()
+	return map[string]any{"ok": true}, nil
 }
 
 func currencyOf(st config.Settings) string {

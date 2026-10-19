@@ -10,8 +10,30 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_positioner::{Position, WindowExt};
 use tauri_plugin_shell::ShellExt;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const TRAY_ID: &str = "main";
+
+/// 弹窗与快速面板「失焦即隐藏」的状态。
+/// armed：显示后真正拿到过焦点才算数；macOS 上应用没被激活时窗口会先收到一次失焦，不能据此藏掉。
+/// blurred_at：刚因失焦藏起来的时刻；点托盘图标本身会先让弹窗失焦，紧接着的那次点击应当是「关」而不是「再开」。
+struct Flyout {
+    armed: AtomicBool,
+    blurred_at: Mutex<Option<Instant>>,
+}
+
+static POPOVER: Flyout = Flyout { armed: AtomicBool::new(false), blurred_at: Mutex::new(None) };
+static QUICK: Flyout = Flyout { armed: AtomicBool::new(false), blurred_at: Mutex::new(None) };
+
+fn flyout(label: &str) -> Option<&'static Flyout> {
+    match label {
+        "popover" => Some(&POPOVER),
+        "quick" => Some(&QUICK),
+        _ => None,
+    }
+}
 
 fn tray_icon(status: &str) -> (Image<'static>, bool) {
     // 模板图只能单色，所以「额度紧张 / 出错 / 未运行」三种带色状态用非模板图
@@ -25,9 +47,20 @@ fn tray_icon(status: &str) -> (Image<'static>, bool) {
 
 fn toggle_window(app: &AppHandle, label: &str, position: Option<Position>) {
     if let Some(w) = app.get_webview_window(label) {
-        if w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) {
+        let f = flyout(label);
+        if let Some(f) = f {
+            let just_blurred = f.blurred_at.lock().unwrap().take().is_some_and(|t| t.elapsed() < Duration::from_millis(400));
+            if just_blurred {
+                return;
+            }
+        }
+        let armed = f.map_or(true, |f| f.armed.load(Ordering::SeqCst));
+        if w.is_visible().unwrap_or(false) && (w.is_focused().unwrap_or(false) || !armed) {
             let _ = w.hide();
             return;
+        }
+        if let Some(f) = f {
+            f.armed.store(false, Ordering::SeqCst);
         }
         if let Some(p) = position {
             let _ = w.move_window(p);
@@ -93,22 +126,54 @@ fn set_tray_status(app: AppHandle, status: String, tooltip: Option<String>) {
     }
 }
 
-/// 后台没起来时由界面点「启动」：等价于在终端里跑 `imls serve --background`，进程交给系统，不随窗口关闭。
+/// 后台没起来时由界面点「启动」：等价于在终端里跑 `imls serve --background`，进程交给系统，不随应用退出。
 /// 先用安装包里附带的 imls（Windows 用户不会自己把它放进 PATH），开发时没打包就退回 PATH 里的 imls。
+/// 故意不走 shell 插件：插件会在应用退出时杀掉它拉起的所有子进程，后台会跟着一起没了。
 #[tauri::command]
-async fn start_backend(app: AppHandle) -> Result<(), String> {
-    let shell = app.shell();
-    if let Ok(cmd) = shell.sidecar("imls") {
-        if cmd.args(["serve", "--background"]).spawn().is_ok() {
-            return Ok(());
+async fn start_backend() -> Result<(), String> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join(if cfg!(windows) { "imls.exe" } else { "imls" }));
         }
     }
-    shell
-        .command("imls")
-        .args(["serve", "--background"])
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    candidates.push("imls".into());
+    let mut last = String::from("没有找到 imls");
+    for bin in candidates {
+        match spawn_detached(&bin) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = format!("{}: {e}", bin.display()),
+        }
+    }
+    Err(last)
+}
+
+/// 另起一个进程组、不接管输入输出，应用退出时系统不会连带收掉它
+fn spawn_detached(bin: &std::path::Path) -> std::io::Result<()> {
+    use std::process::{Command, Stdio};
+    let mut cmd = Command::new(bin);
+    cmd.args(["serve", "--background"]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    cmd.spawn().map(|_| ())
+}
+
+/// 安装包里附带的 imls 的构建号；界面拿它和正在跑的后台比对。开发时没打包就返回 None，不做比对。
+#[tauri::command]
+async fn bundled_backend_build(app: AppHandle) -> Option<String> {
+    let out = app.shell().sidecar("imls").ok()?.args(["build-id"]).output().await.ok()?;
+    let id = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (out.status.success() && !id.is_empty()).then_some(id)
 }
 
 /// 快速面板的默认快捷键：Windows 上 Alt+Space 是窗口菜单，换成 Ctrl+Alt+Space（与后台配置的默认值一致）
@@ -173,6 +238,7 @@ pub fn run() {
             set_hotkey,
             set_tray_status,
             start_backend,
+            bundled_backend_build,
             show_about,
             copy_image,
             app_version
@@ -215,14 +281,17 @@ pub fn run() {
                 eprintln!("register hotkey: {e}");
             }
 
-            // 弹窗与快速面板：失焦即隐藏
+            // 弹窗与快速面板：拿到过焦点之后，失焦即隐藏
             for label in ["popover", "quick"] {
-                if let Some(w) = app.get_webview_window(label) {
+                if let (Some(w), Some(f)) = (app.get_webview_window(label), flyout(label)) {
                     let w2 = w.clone();
-                    w.on_window_event(move |e| {
-                        if let WindowEvent::Focused(false) = e {
+                    w.on_window_event(move |e| match e {
+                        WindowEvent::Focused(true) => f.armed.store(true, Ordering::SeqCst),
+                        WindowEvent::Focused(false) if f.armed.swap(false, Ordering::SeqCst) => {
+                            *f.blurred_at.lock().unwrap() = Some(Instant::now());
                             let _ = w2.hide();
                         }
+                        _ => {}
                     });
                 }
             }
@@ -239,6 +308,15 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Switchboard");
+        .build(tauri::generate_context!())
+        .expect("error while running Switchboard")
+        .run(|app, event| {
+            // 主窗口关掉只是藏起来；点 Dock 图标要能把它叫回来，否则 Dock 菜单里只剩「无可用的窗口」
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                show_main(app.clone());
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }

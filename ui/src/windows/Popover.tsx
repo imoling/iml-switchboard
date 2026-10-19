@@ -4,7 +4,8 @@ import type { Quota, Call, Mode, Overview, Settings, Status } from '../api/types
 import { Bar, Dot, LaneChip, Seg, TierChip } from '../components/ui';
 import { Vendor } from '../components/Vendor';
 import { Mascot } from '../components/Pixel';
-import { quotaWarning } from '../copy';
+import { quotaWarning, STALE_BACKEND } from '../copy';
+import { restartBackend, useStaleBackend } from '../backend';
 import { cost, usd, setMoney } from '../format';
 import { MODE_OPTIONS } from '../pages/Settings';
 import { useTheme } from '../theme/ThemeContext';
@@ -79,6 +80,9 @@ export function Popover() {
   }, (open) => { if (!open) setStatus('offline'); }), [setThemeId, setProjection]);
   useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') void desktop.hide('popover'); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, []);
 
+  const stale = useStaleBackend(status);
+  const [restarting, setRestarting] = useState(false);
+  const restart = async () => { setRestarting(true); await restartBackend(); setRestarting(false); void load(); };
   const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -113,6 +117,9 @@ export function Popover() {
   return (
     <div ref={rootRef} className="pop" style={{ margin: 0, width: '100%', minHeight: '100vh', overflow: 'auto', borderRadius: 12 }}><div>
       <div className="row" style={{ justifyContent: 'space-between' }}><b style={{ fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 8 }}><Mascot scale={2} />{t('app.title')}</b><span><Dot s={dot} />{dotText}</span></div>
+      {stale && (
+        <div className="qline warn-text mt8"><span>{STALE_BACKEND}</span><button className="btn sm" disabled={restarting} onClick={restart}>{restarting ? '正在重启…' : '重启'}</button></div>
+      )}
       {status === 'offline' && <Offline compact onStarted={load} />}
       {status && status !== 'offline' && ov && (
         <>

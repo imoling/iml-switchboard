@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/imoling/iml-switchboard/internal/config"
@@ -23,6 +24,7 @@ import (
 	"github.com/imoling/iml-switchboard/internal/surfaces/admin"
 	"github.com/imoling/iml-switchboard/internal/surfaces/facade"
 	mcpsurface "github.com/imoling/iml-switchboard/internal/surfaces/mcp"
+	"github.com/imoling/iml-switchboard/internal/update"
 )
 
 // Addr 是后台监听地址，只在本机。环境变量 IMLS_ADDR 可覆盖（测试用）。
@@ -54,6 +56,9 @@ type App struct {
 	Integr  *integrations.Manager
 	Version string
 	exe     string
+	updates *update.Checker
+	quitMu  sync.Mutex
+	quit    context.CancelFunc
 }
 
 // New 装配。
@@ -71,6 +76,14 @@ func New(version string) (*App, error) {
 		return nil, err
 	}
 	a := &App{Cfg: cfg, Ledger: ledger, Version: version}
+	a.updates = &update.Checker{Current: version}
+	// 老记录的摘录里带着宿主注入的内容，升级后清一次
+	var done bool
+	if !ledger.KVGet("migrate:clean_excerpts_v3", &done) || !done {
+		if _, err := ledger.CleanExcerpts(core.StripInjected); err == nil {
+			_ = ledger.KVSet("migrate:clean_excerpts_v3", true)
+		}
+	}
 	a.exe, _ = os.Executable()
 	a.Secrets = core.NewSecrets(dir)
 	a.Bus = core.NewBus()
@@ -95,6 +108,8 @@ func New(version string) (*App, error) {
 
 	a.Claude = sub.NewClaudeDriver()
 	a.Codex = sub.NewCodexDriver()
+	// 出图走订阅渠道的低档：用户自己的 Codex 配置里写的模型，免费套餐可能用不了
+	a.Codex.ImageModel = func() string { return cfg.Get().Sub["codex_sub"].Models["low"] }
 	a.API = api.NewAPIDriver(a.apiAccounts(cfg.Get()), client)
 	a.Media = media.New(a.mediaOptions(client))
 	a.Router.Register(a.Claude)
@@ -132,8 +147,11 @@ func New(version string) (*App, error) {
 	})
 	a.Integr = integrations.New(cfg, a.exe, BaseURL, func() string { return cfg.Get().Settings.FacadeKey })
 	a.Admin = admin.New(admin.Deps{Router: a.Router, Jobs: a.Jobs, Bus: a.Bus, Accounts: &accountOps{a: a}, Media: &mediaOps{a: a}, Integr: a.Integr, Secrets: a.Secrets, StartedAt: time.Now(),
-		NodeAvailable: func() bool { _, err := exec.LookPath("node"); return err == nil }})
+		NodeAvailable: func() bool { _, err := exec.LookPath("node"); return err == nil },
+		Build:         BuildID(), Quit: a.Quit,
+		Update: func(ctx context.Context, force bool) (any, error) { return a.updates.Check(ctx, force) }})
 	a.Facade = facade.New(a.Router, func() string { return cfg.Get().Settings.FacadeKey })
+	a.Facade.MediaURL = mediaURL(filepath.Join(dir, "media"))
 	return a, nil
 }
 
@@ -161,7 +179,7 @@ func kindTitle(k core.Kind) string {
 
 // httpClient 只给需要代理的海外服务走设置里的代理。
 func (a *App) httpClient() *http.Client {
-	proxied := []string{"openrouter.ai", "api.openai.com", "api.anthropic.com", "googleapis.com", "fal.run", "replicate.com"}
+	proxied := []string{"openrouter.ai", "api.openai.com", "api.anthropic.com", "googleapis.com", "fal.run", "replicate.com", "github.com"}
 	tr := &http.Transport{
 		Proxy: func(r *http.Request) (*url.URL, error) {
 			p := strings.TrimSpace(a.Cfg.Get().Settings.Proxy)
@@ -230,6 +248,7 @@ func (a *App) Handler() http.Handler {
 	a.Admin.Routes(mux)
 	a.Facade.Routes(mux)
 	mcpH := mcpsurface.HTTPHandler(BaseURL, a.Version, func() string { return a.Cfg.Get().Settings.FacadeKey })
+	mux.Handle("GET /media/{name}", mediaHandler(filepath.Join(config.DataDir(), "media")))
 	mux.Handle("POST /mcp", mcpH)
 	mux.Handle("GET /mcp", mcpH)
 	mux.Handle("DELETE /mcp", mcpH)
@@ -257,12 +276,26 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
+// Quit 让 Serve 正常收尾退出；不在常驻时什么也不做。
+func (a *App) Quit() {
+	a.quitMu.Lock()
+	defer a.quitMu.Unlock()
+	if a.quit != nil {
+		a.quit()
+	}
+}
+
 // Serve 启动后台直到 ctx 结束。
 func (a *App) Serve(ctx context.Context) error {
 	ln, err := net.Listen("tcp", Addr)
 	if err != nil {
 		return errors.New("后台已经在运行，或端口 18081 被占用")
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	a.quitMu.Lock()
+	a.quit = cancel
+	a.quitMu.Unlock()
 	srv := &http.Server{Handler: a.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -275,6 +308,7 @@ func (a *App) Serve(ctx context.Context) error {
 	a.startMonthlyEvaluation(ctx)
 	a.startSelfCheck(ctx)
 	a.startHousekeeping(ctx)
+	a.startUpdateCheck(ctx)
 	err = srv.Serve(ln)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
@@ -284,6 +318,32 @@ func (a *App) Serve(ctx context.Context) error {
 
 // fullTextKeep 是为评估保存完整原话的天数，和评估的抽样范围一致；过期只清原话，摘录和费用照留。
 const fullTextKeep = 30 * 24 * time.Hour
+
+// startUpdateCheck 启动两分钟后、之后每天一次查新版本；同一个版本只通知一次。
+func (a *App) startUpdateCheck(ctx context.Context) {
+	a.updates.Client = a.httpClient()
+	go func() {
+		wait := 2 * time.Minute
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			wait = 24 * time.Hour
+			info, err := a.updates.Check(ctx, false)
+			if err != nil || !info.HasUpdate {
+				continue
+			}
+			var told string
+			if a.Ledger.KVGet("update:notified", &told) && told == info.Latest {
+				continue
+			}
+			_ = a.Ledger.KVSet("update:notified", info.Latest)
+			a.Bus.Publish("notice", core.Notice{Title: "有新版本 " + info.Latest, Body: "到设置里下载安装包", Level: "info"})
+		}
+	}()
+}
 
 // startHousekeeping 启动时和之后每天清一次过期的完整原话。
 func (a *App) startHousekeeping(ctx context.Context) {

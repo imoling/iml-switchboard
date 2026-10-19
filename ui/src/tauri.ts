@@ -22,6 +22,8 @@ export const desktop = {
   setHotkey: (hotkey: string) => call('set_hotkey', { hotkey: toAccelerator(hotkey) }),
   setTrayStatus: (status: 'ok' | 'warn' | 'error' | 'off', tooltip?: string) => call('set_tray_status', { status, tooltip }),
   startBackend: () => call('start_backend'),
+  /** 安装包里附带的后台的构建号；浏览器里和开发时都是 undefined */
+  bundledBuild: () => call<string | null>('bundled_backend_build'),
   showAbout: () => call('show_about'),
   version: async () => (await call<string>('app_version')) ?? '1.0.0',
   /** 让当前窗口的高度跟着内容走（菜单栏弹窗用）；浏览器里不做事 */

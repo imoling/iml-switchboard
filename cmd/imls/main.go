@@ -21,7 +21,7 @@ import (
 	"github.com/imoling/iml-switchboard/internal/surfaces/mcp"
 )
 
-var version = "0.1.0"
+var version = "0.2.0"
 
 func main() {
 	admin.Version = version
@@ -53,6 +53,8 @@ func main() {
 		err = autostart.Uninstall()
 	case "version", "--version", "-v":
 		fmt.Println("Switchboard", version)
+	case "build-id": // 客户端用它读出安装包里附带的 imls 的构建号，和正在跑的后台比对
+		fmt.Println(app.BuildID())
 	default:
 		usage()
 		os.Exit(2)
@@ -86,6 +88,7 @@ func serve(background bool) error {
 			}
 		}
 	}
+	app.FixPath()
 	a, err := app.New(version)
 	if err != nil {
 		return err
