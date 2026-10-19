@@ -94,6 +94,49 @@ CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 // Close 关闭数据库。
 func (l *Ledger) Close() error { return l.db.Close() }
 
+// CleanExcerpts 把记录和媒体任务摘录里宿主注入的内容剥掉；给升级后清一次历史用，返回改了几条。
+func (l *Ledger) CleanExcerpts(clean func(string) string) (int, error) {
+	rows, err := l.db.Query(`SELECT id, prompt_excerpt, coalesce(prompt_full,'') FROM calls WHERE prompt_excerpt LIKE '%<system-reminder%' OR prompt_excerpt LIKE '%<session>%' OR prompt_excerpt LIKE '%<user_query>%'`)
+	if err != nil {
+		return 0, err
+	}
+	type row struct{ id, text, full string }
+	var dirty []row
+	for rows.Next() {
+		var r row
+		if rows.Scan(&r.id, &r.text, &r.full) == nil {
+			dirty = append(dirty, r)
+		}
+	}
+	rows.Close()
+	n := 0
+	for _, r := range dirty {
+		// 摘录是截断过的，注入块可能没闭合；有完整原话就按原话重算
+		src := r.text
+		if r.full != "" {
+			src = r.full
+		}
+		if c := excerpt(clean(src), 200); c != r.text {
+			if _, err := l.db.Exec(`UPDATE calls SET prompt_excerpt=? WHERE id=?`, c, r.id); err == nil {
+				n++
+			}
+		}
+	}
+	jobs, err := l.LoadJobs()
+	if err != nil {
+		return n, err
+	}
+	for _, j := range jobs {
+		if c := clean(j.PromptExcerpt); c != j.PromptExcerpt {
+			j.PromptExcerpt = c
+			if l.SaveJob(j) == nil {
+				n++
+			}
+		}
+	}
+	return n, nil
+}
+
 func js(v any) string { b, _ := json.Marshal(v); return string(b) }
 
 // Insert 写入一行。

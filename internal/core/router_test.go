@@ -115,6 +115,30 @@ func TestToolsSkipSubscription(t *testing.T) {
 	}
 }
 
+// 高档没配按量付费模型时，带工具的请求降到有模型的档位，而不是报「没有可用的模型」
+func TestToolsFallBackToLowerTier(t *testing.T) {
+	r, claude, api := newTestRouter(t)
+	call, _, err := r.Run(context.Background(), &Task{Prompt: "这个系统的架构怎么设计", Tools: []byte(`[{"type":"function"}]`), Source: "facade"}, nil)
+	if err != nil || call.Lane != LaneAPI || call.Model != "glm-5.3" || claude.calls != 0 || api.calls != 1 {
+		t.Fatalf("高档无按量付费模型时应降到中档：%+v %v", call, err)
+	}
+}
+
+// 宿主包装过的出图请求：媒体提示词和记录摘录都要是剥干净的原话
+func TestMediaPromptStripped(t *testing.T) {
+	r, _, _ := newTestRouter(t)
+	task := &Task{Prompt: "<system-reminder data-role=\"x\">环境信息</system-reminder>\n画一张海报", Source: "facade"}
+	d := r.Decide(task)
+	if d.Kind != KindImage || task.Prompt != "画一张海报" {
+		t.Fatalf("应判为生图且提示词剥干净：kind=%s prompt=%q", d.Kind, task.Prompt)
+	}
+	// 宿主转述的会话内容（WorkBuddy 的辅助请求）不能再出一张
+	quoted := &Task{Prompt: "<session>\n画一张海报\n</session>", Source: "facade"}
+	if d := r.Decide(quoted); d.Kind != KindText {
+		t.Fatalf("转述的会话不该当媒体任务：%+v", d.Reason)
+	}
+}
+
 func TestNonRetryableStops(t *testing.T) {
 	r, claude, api := newTestRouter(t)
 	claude.fail = &ErrProvider{Summary: "内容未通过审核", Retryable: false}

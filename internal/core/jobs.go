@@ -74,6 +74,19 @@ func (s *MemJobStore) List(kind Kind) []*Job {
 	return out
 }
 
+// Active 是还没结束的任务数。
+func (s *MemJobStore) Active() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for _, j := range s.jobs {
+		if j.Status == "queued" || j.Status == "submitted" || j.Status == "running" {
+			n++
+		}
+	}
+	return n
+}
+
 // Update 在锁内修改。
 func (s *MemJobStore) Update(id string, fn func(*Job)) (*Job, error) {
 	s.mu.Lock()

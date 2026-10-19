@@ -6,6 +6,26 @@ import (
 	"testing"
 )
 
+// WorkBuddy 的提醒块带属性，也要剥掉
+func TestStripInjectedWithAttributes(t *testing.T) {
+	long := `<system-reminder data-role="user-context">` + strings.Repeat("工作区信息 ", 200) + "</system-reminder>\n生成图片：一枝红杏出墙来"
+	if got := StripInjected(long); got != "生成图片：一枝红杏出墙来" {
+		t.Fatalf("带属性的提醒块没剥干净：%q", got)
+	}
+	if !IsMediaAsk(long) {
+		t.Fatal("剥掉提醒块后应是一句直接的出图请求")
+	}
+	if got := StripInjected(`<system-reminder data-role="user-context"> <craft_mode> You are now in Agent mode. Continue wi`); got != "" {
+		t.Fatalf("截断的提醒块要整段去掉：%q", got)
+	}
+	if got := StripInjected("<user_query>你好，你是什么模型</user_query>"); got != "你好，你是什么模型" {
+		t.Fatalf("user_query 标签要拆掉：%q", got)
+	}
+	if got := StripInjected("<session>\n生成图片：一枝红杏出墙来\n</session>"); got != "生成图片：一枝红杏出墙来" {
+		t.Fatalf("包装标签要拆掉：%q", got)
+	}
+}
+
 func TestIsMediaAsk(t *testing.T) {
 	if !IsMediaAsk("做一个 8 秒的标题动画") {
 		t.Fatal("短句应算媒体请求")

@@ -279,7 +279,11 @@ func TierLabel(t Tier) string {
 	return string(t)
 }
 
-var reminderRe = regexp.MustCompile(`(?s)<system-reminder>.*?</system-reminder>`)
+// 没闭合的也整段去掉：记录摘录只有 200 字，提醒块常常没到闭合标签就被截断
+var reminderRe = regexp.MustCompile(`(?s)<system-reminder\b[^>]*>.*?(?:</system-reminder>|\z)`)
+
+// wrapperRe 是宿主包在用户原话外面的标签（WorkBuddy 的 <session>、<user_query>），只拆标签，留内容
+var wrapperRe = regexp.MustCompile(`</?(session|user_query)>`)
 
 // mediaAskLimit 是「直接要图 / 要视频」的长度上限：超过它的多半是宿主塞进来的上下文，不是一句请求。
 const mediaAskLimit = 400
@@ -287,7 +291,12 @@ const mediaAskLimit = 400
 // StripInjected 去掉宿主注入的提示块（<system-reminder>…</system-reminder>），只留用户自己说的话。
 // 智能体宿主常把技能清单、系统提醒整段塞进用户消息，里面随便一个「动画」「视频」都不该参与路由判断。
 func StripInjected(prompt string) string {
-	return strings.TrimSpace(reminderRe.ReplaceAllString(prompt, ""))
+	return strings.TrimSpace(wrapperRe.ReplaceAllString(reminderRe.ReplaceAllString(prompt, ""), ""))
+}
+
+// IsQuoted 判断这段话是不是宿主转述的会话内容（包在 <session> 里）：那是给模型看的上下文，不是一句直接的请求。
+func IsQuoted(prompt string) bool {
+	return strings.HasPrefix(strings.TrimSpace(reminderRe.ReplaceAllString(prompt, "")), "<session>")
 }
 
 // IsMediaAsk 判断这段话像不像一句直接的媒体请求：去掉注入块后不超过 400 字。

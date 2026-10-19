@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/imoling/iml-switchboard/internal/config"
@@ -29,6 +30,7 @@ type Router struct {
 	onNotice func(title, body, level string)
 	loc      *time.Location
 	clsCache classifyCache
+	inflight atomic.Int64
 }
 
 // NewRouter 创建调度器。
@@ -49,8 +51,11 @@ func (r *Router) OnCall(fn func(*Call))                       { r.onCall = fn }
 func (r *Router) OnNotice(fn func(title, body, level string)) { r.onNotice = fn }
 
 // Mode / SetMode / Paused / SetPaused 是菜单栏的两个开关。
-func (r *Router) Mode() Mode            { r.mu.RLock(); defer r.mu.RUnlock(); return r.mode }
-func (r *Router) SetMode(m Mode)        { r.mu.Lock(); r.mode = m; r.mu.Unlock() }
+func (r *Router) Mode() Mode     { r.mu.RLock(); defer r.mu.RUnlock(); return r.mode }
+func (r *Router) SetMode(m Mode) { r.mu.Lock(); r.mode = m; r.mu.Unlock() }
+
+// InFlight 是正在执行的请求数；重启后台前用它提醒会中断多少个。
+func (r *Router) InFlight() int         { return int(r.inflight.Load()) }
 func (r *Router) Paused() bool          { r.mu.RLock(); defer r.mu.RUnlock(); return r.paused }
 func (r *Router) SetPaused(p bool)      { r.mu.Lock(); r.paused = p; r.mu.Unlock() }
 func (r *Router) Registry() *Registry   { return r.reg }
@@ -109,10 +114,15 @@ func (r *Router) Decide(t *Task) *Decision {
 			d.Reason = append(d.Reason, "长文本里出现媒体词，不当媒体任务")
 			tt, matched = config.TaskType{}, false
 		}
+		if matched && tt.Kind != "" && IsQuoted(t.Prompt) {
+			// WorkBuddy 每轮都会把用户原话包在 <session> 里另发一次辅助请求；按它出图就会一张变两张
+			d.Reason = append(d.Reason, "宿主转述的会话内容，不当媒体任务")
+			tt, matched = config.TaskType{}, false
+		}
 		if !matched || tt.Type == "qa_short" {
 			switch t.Judged {
 			case "image", "video", "animation":
-				if IsMediaAsk(ask) && !t.HasTools() {
+				if IsMediaAsk(ask) && !t.HasTools() && !IsQuoted(t.Prompt) {
 					tt, matched = config.TaskType{Type: t.Judged, Kind: t.Judged}, true
 					for _, row := range cfg.Routing.TaskTable {
 						if row.Type == t.Judged {
@@ -126,6 +136,7 @@ func (r *Router) Decide(t *Task) *Decision {
 		if matched && tt.Kind != "" {
 			t.Kind = Kind(tt.Kind)
 			d.Kind = t.Kind
+			t.Prompt = ask // 媒体提示词、产物文件名、媒体库标题都用剥干净的这句
 		} else {
 			t.Kind = KindText
 			d.Kind = KindText
@@ -282,6 +293,21 @@ func (r *Router) Decide(t *Task) *Decision {
 		}
 	}
 	d.Candidates = r.textCandidates(cfg, t, tier, prefer, sig.HasImage, &d.Reason)
+	if t.HasTools() && len(live(d.Candidates)) == 0 {
+		// 带工具只能走按量付费；这一档没配按量付费模型时往下找，总比整轮报错强
+		for _, down := range []Tier{TierMid, TierLow} {
+			if tierRank(down) >= tierRank(d.Tier) {
+				continue
+			}
+			var ignore []string
+			alt := r.textCandidates(cfg, t, down, prefer, sig.HasImage, &ignore)
+			if len(live(alt)) > 0 {
+				d.Reason = append(d.Reason, fmt.Sprintf("请求带工具，%s没有可用的按量付费模型，改用%s", TierLabel(d.Tier), TierLabel(down)))
+				d.Candidates = append(alt, d.Candidates...)
+				break
+			}
+		}
+	}
 	r.pinChoice(t, d)
 	return d
 }
@@ -666,12 +692,14 @@ func (r *Router) Run(ctx context.Context, t *Task, emit func(Event)) (*Call, *Re
 
 // Execute 按决策执行。
 func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Event)) (*Call, *Result, error) {
+	r.inflight.Add(1)
+	defer r.inflight.Add(-1)
 	start := time.Now()
 	cfg := r.cfg.Get()
 	call := &Call{ID: t.ID, TS: start, Source: t.Source, Host: t.Host, SessionID: t.SessionID, Kind: t.Kind, TaskType: d.TaskType,
 		Tier: d.Tier, MediaTier: d.MediaTier, Reason: d.Reason, Candidates: d.Candidates, JobID: ""}
 	if cfg.Settings.SavePrompts {
-		call.PromptExcerpt = excerpt(t.Prompt, 200)
+		call.PromptExcerpt = excerpt(StripInjected(t.Prompt), 200)
 	}
 	var lastErr error
 	var fallbackFrom string
