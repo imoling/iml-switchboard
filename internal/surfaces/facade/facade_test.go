@@ -25,6 +25,9 @@ func (f *fake) Run(ctx context.Context, t *core.Task, tg core.Target, emit func(
 	if emit != nil {
 		emit(core.Event{Type: "text_delta", Text: "流式"})
 	}
+	if t.Kind == core.KindImage {
+		return &core.Result{Path: "/tmp/imls-test/红杏.png", Model: tg.Model}, nil
+	}
 	return &core.Result{Text: "回答", Model: tg.Model, Usage: core.Usage{InputTokens: 3, OutputTokens: 2}}, nil
 }
 func (f *fake) Health(ctx context.Context) core.Health { return core.Health{Status: "ok"} }
@@ -138,5 +141,46 @@ func TestContextLengthExceeded(t *testing.T) {
 	resp, _ := post(ts, "/v1/chat/completions", "k", map[string]any{"model": "router-auto", "messages": []map[string]string{{"role": "user", "content": strings.Repeat("abcd", 300000)}}})
 	if resp.StatusCode != 200 {
 		t.Fatalf("30 万应装得下：%d", resp.StatusCode)
+	}
+}
+
+// WorkBuddy 这类宿主每轮都带工具，用户说「生成图片」时要走用户配好的媒体渠道，而不是只回文字让宿主去调自己收费的出图工具
+func TestToolsStillGetImageFromSwitchboard(t *testing.T) {
+	ts, _, _ := setup(t)
+	media := &fake{id: core.LaneMedia}
+	// 复用 setup 里的路由器：通过门面拿不到，直接再建一个带媒体渠道的
+	dir := t.TempDir()
+	t.Setenv("IMLS_DATA_DIR", dir)
+	cs, _ := config.Open()
+	_ = cs.Update(func(c *config.Config) error {
+		c.Settings.FacadeKey = "k"
+		c.API = []config.APIAccount{{ID: "z", Provider: "zhipu", Enabled: true, AllowPaid: true, Models: map[string][]string{"low": {"glm-5.3-flash"}, "mid": {"glm-5.3"}, "high": {"glm-5.3"}}}}
+		c.Media.Image = map[string]config.MediaTarget{"default": {Provider: "zhipu", Model: "cogview-x"}}
+		return nil
+	})
+	l, _ := core.OpenLedger(filepath.Join(dir, "l.db"))
+	t.Cleanup(func() { l.Close() })
+	r := core.NewRouter(cs, l, core.NewRegistry(0.14), core.NewQuotaManager(l, func() float64 { return 70 }))
+	text := &fake{id: core.LaneAPI}
+	r.Register(text)
+	r.Register(media)
+	mux := http.NewServeMux()
+	srv := New(r, func() string { return "k" })
+	srv.MediaURL = func(p string) string { return "http://127.0.0.1:18081/media/" + filepath.Base(p) }
+	srv.Routes(mux)
+	ts.Close()
+	ts = httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	prompt := `<system-reminder data-role="user-context">` + strings.Repeat("工作区信息 ", 200) + "</system-reminder>\n生成图片：一枝红杏出墙来"
+	resp, body := post(ts, "/v1/chat/completions", "k", map[string]any{
+		"model": "router-auto", "tools": []map[string]any{{"type": "function", "function": map[string]any{"name": "ImageGen"}}},
+		"messages": []map[string]any{{"role": "user", "content": prompt}},
+	})
+	if resp.StatusCode != 200 || media.last == nil || text.last != nil {
+		t.Fatalf("带工具的一句出图请求应走媒体渠道：%d %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "![](http://127.0.0.1:18081/media/红杏.png)") || !strings.Contains(body, "已生成 /tmp/imls-test/红杏.png") {
+		t.Fatalf("要把产物路径回给宿主：%s", body)
 	}
 }

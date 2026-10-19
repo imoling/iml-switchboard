@@ -22,6 +22,8 @@ import (
 type Server struct {
 	router *core.Router
 	key    func() string
+	// MediaURL 把产物路径换成本机可访问的地址；返回空串表示这个文件不对外提供
+	MediaURL func(path string) string
 }
 
 // New 创建门面。key 返回当前 facade_key。
@@ -153,9 +155,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if req.Model == "router-sub" {
 		t.Lane = core.LaneClaudeSub
 	}
-	if hasTools { // 带工具的是智能体回合，只要文字；要出图它们会自己调工具
-		t.Kind = core.KindText
-	}
+	// 带工具的智能体回合照样认一句直接的出图请求：宿主自带的出图工具往往另外收费，用户配好的渠道在这儿
 	for _, m := range req.Messages {
 		text, imgs := flatten(m.Content)
 		if m.Role == "system" {
@@ -212,7 +212,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-IMLS-Call-Id", call.ID)
 		w.Header().Set("X-IMLS-Model", call.Model)
-		msg := map[string]any{"role": "assistant", "content": res.Text}
+		msg := map[string]any{"role": "assistant", "content": s.replyText(call, res)}
 		if len(res.ToolCalls) > 0 {
 			msg["tool_calls"] = res.ToolCalls
 			if res.Text == "" {
@@ -249,8 +249,8 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		b, _ := json.Marshal(map[string]any{"error": map[string]any{"message": err.Error(), "type": "upstream_error"}})
 		fmt.Fprintf(w, "data: %s\n\n", b)
 	} else {
-		if !streamed && res != nil && res.Text != "" {
-			chunk(map[string]any{"content": res.Text}, nil)
+		if text := s.replyText(call, res); !streamed && text != "" {
+			chunk(map[string]any{"content": text}, nil)
 		}
 		if res != nil && len(res.ToolCalls) > 0 {
 			// 工具调用在上游拼好后一次发出：流式格式要求每个调用带 index
@@ -268,6 +268,23 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if fl != nil {
 		fl.Flush()
 	}
+}
+
+// replyText 是回给宿主的正文：文字照回；媒体产物没有正文，回路径，能对外提供的再加一行 Markdown 图片
+func (s *Server) replyText(call *core.Call, res *core.Result) string {
+	if res == nil {
+		return ""
+	}
+	if res.Text != "" || res.Path == "" {
+		return res.Text
+	}
+	line := fmt.Sprintf("已生成 %s（%s）", res.Path, s.router.Registry().Display(call.Model))
+	if s.MediaURL != nil {
+		if u := s.MediaURL(res.Path); u != "" {
+			return "![](" + u + ")\n\n" + line
+		}
+	}
+	return line
 }
 
 func hash(s string) string {

@@ -31,6 +31,9 @@ type CodexDriver struct {
 	Timeout time.Duration
 	// DefaultModel 是 target.Model 为空时传给 -m 的模型；空串表示不传 -m，用 Codex 自己的默认。
 	DefaultModel string
+	// ImageModel 返回出图时传给 -m 的模型（订阅渠道的低档）。不传的话 Codex 会用用户自己配置里的模型，
+	// 免费套餐常常用不了那一个，整条出图就卡在这里；nil 或返回空串时退回 DefaultModel。
+	ImageModel func() string
 	// Ephemeral 为真时加 --ephemeral，不在磁盘留会话。
 	Ephemeral bool
 	// Now 便于测试注入时间。
@@ -98,7 +101,10 @@ func (d *CodexDriver) BuildArgs(task *core.Task, target core.Target) (args []str
 	args = []string{"exec", "--json", "--skip-git-repo-check"}
 	model := target.Model
 	if isImageTask(task, target) {
-		model = "" // 出图用 Codex 默认模型；虚拟模型名不能传给 -m
+		model = "" // 虚拟模型名不能传给 -m
+		if d.ImageModel != nil {
+			model = d.ImageModel()
+		}
 	}
 	if model == "" {
 		model = d.DefaultModel
