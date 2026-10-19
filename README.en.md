@@ -28,6 +28,8 @@ It comes with a menu bar app (system tray on Windows) for quotas, spend, savings
 
 <p align="center"><img src="docs/images/overview.png" width="760" alt="Overview: calls, pay-as-you-go spend, savings versus Opus, subscription quota"></p>
 
+<p align="center"><a href="docs/videos/switchboard-launch-en.mp4"><img src="docs/images/launch-poster.png" width="760" alt="46-second intro video"></a><br><sub>What it does, in 46 seconds · <a href="docs/videos/switchboard-launch-en.mp4">play the video</a></sub></p>
+
 ## What it solves
 
 - **Your subscription goes unused while your API bill grows.** Claude and ChatGPT plan quota is spent first, through the official CLIs on your machine. Only when it runs out does work move to pay-as-you-go, and that stops at a monthly cap.
@@ -86,7 +88,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 | OpenClaw | OpenAI-compatible endpoint | Agent turns with tool calls verified |
 | DeepSeek Harness | OpenAI-compatible endpoint | Agent turns with tool calls verified |
 | Hermes Agent | MCP tools and image settings | Integration code is tested; not yet run for real |
-| WorkBuddy (Tencent) | OpenAI-compatible endpoint | Plain chat verified; tool calls not yet verified |
+| WorkBuddy (Tencent) | OpenAI-compatible endpoint | Agent turns with tool calls verified; "generate an image" goes straight to your Switchboard image lane |
 | Doubao Work (ByteDance) | Custom connector (MCP) | Manual setup |
 
 <table>
@@ -103,6 +105,8 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 **Also**
 - A ledger of every call: model, cost, and what the same call would have cost on Opus. The menu bar shows the last 7 days of savings. Costs can be shown in CNY or USD.
 - Themes: Standard plus three playful ones that only change the interface wording; one click returns to Standard for screen sharing.
+- Backend service: Settings shows uptime with a one-click restart, and warns when the running backend isn't the one shipped with the installed app.
+- Update check: once a day Switchboard looks at GitHub Releases (falling back to the Gitee mirror), notifies you of a new version, and offers the installer for your platform from Settings.
 
 ## Install
 
@@ -165,12 +169,12 @@ Most rule misses are hard problems that contain no telltale keywords, which is w
 
 - The Windows build hasn't been used by hand on a real machine yet. Installers aren't signed yet: macOS will say the developer can't be verified, and Windows will show a SmartScreen prompt.
 - Claude requests that carry their own system prompt aren't pre-warmed (requests from the OpenAI-compatible endpoint usually do).
-- The Codex subscription hand-off flow, and tool-calling turns from Hermes and WorkBuddy, haven't been run end to end for real.
+- The Codex subscription hand-off flow and tool-calling turns from Hermes haven't been run end to end for real.
 - Switchboard does not compact conversations on an agent's behalf; it returns the standard error and lets the agent compact.
 
 ## Roadmap
 
-- Signed installers and auto-update; verify Linux.
+- Signed installers and silent in-app updates (today: check for a new version and download it); verify Linux.
 - When Claude Code's subscription runs out, let it switch to Switchboard and continue on pay-as-you-go models (API keys only, never the subscription).
 - Rate limits on subscription lanes; stop sending whole conversations from the OpenAI-compatible endpoint to the Claude subscription by default.
 - More routing test data, growing the blind set to 200 cases.

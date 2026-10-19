@@ -26,6 +26,8 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 
 <p align="center"><img src="docs/images/overview.png" width="760" alt="概览：调度次数、按量花费、比全用 Opus 省了多少、订阅额度"></p>
 
+<p align="center"><a href="docs/videos/switchboard-launch.mp4"><img src="docs/images/launch-poster.png" width="760" alt="46 秒介绍视频"></a><br><sub>46 秒看懂它在做什么 · <a href="docs/videos/switchboard-launch.mp4">播放视频</a></sub></p>
+
 ## 它解决什么
 
 - **订阅额度用不完，按量付费却在涨。** Claude、ChatGPT 的套餐额度经本机官方命令行优先消耗，不够了才改走按量付费，月上限到了就停。
@@ -84,7 +86,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 | OpenClaw | 兼容入口 | 带工具的智能体回合实测通过 |
 | DeepSeek Harness | 兼容入口 | 带工具的智能体回合实测通过 |
 | Hermes Agent | MCP 工具 + 生图配置 | 接入代码有测试，未在真实环境跑过 |
-| WorkBuddy | 兼容入口 | 纯聊天实测通过；带工具的回合未验证 |
+| WorkBuddy | 兼容入口 | 带工具的回合实测通过；说「生成图片」直接走 Switchboard 的渠道出图 |
 | 豆包工作 | 自定义连接器（MCP） | 手动配置 |
 
 <table>
@@ -101,6 +103,8 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 **其他**
 - 账本：每次调用的模型、花费、全用 Opus 的对照价，菜单栏显示近 7 天省了多少；费用可按人民币或美元显示。
 - 风格主题：标准、点将台、后宫、海王，只换界面说法；投屏时一键切回标准。
+- 后台服务：设置里能看到运行多久、一键重启；连着的后台不是当前安装包里那份时会提示。
+- 检查更新：每天到 GitHub Releases 查一次，连不上就查 Gitee 镜像；有新版本通知一声，设置里一键下载本平台的安装包。
 
 ## 安装
 
@@ -163,12 +167,12 @@ imls golden                                           # 导出「判低了」的
 
 - Windows 版还没有在真实电脑上手工用过；安装包暂未签名，macOS 会提示「无法验证开发者」，Windows 会出现 SmartScreen 提示。
 - 带系统提示的 Claude 请求不预热（兼容入口转来的请求多半带系统提示）。
-- Codex 订阅渠道的派活流程、Hermes 和 WorkBuddy 的带工具回合还没有在真实环境完整跑过。
+- Codex 订阅渠道的派活流程、Hermes 的带工具回合还没有在真实环境完整跑过。
 - 不会替宿主压缩对话：只返回标准错误，由宿主自己压缩。
 
 ## 路线图
 
-- 签名安装包和自动更新；Linux 版验证。
+- 签名安装包和应用内静默更新（现在是检查新版本后给下载）；Linux 版验证。
 - Claude Code 订阅额度用完时，可以改连 Switchboard，用按量付费模型接着干（走 API 密钥，不碰订阅）。
 - 订阅渠道限速；兼容入口默认不把整轮对话交给 Claude 订阅。
 - 扩充路由测试数据，盲测集扩到 200 条。
