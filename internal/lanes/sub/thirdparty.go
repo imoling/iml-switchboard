@@ -51,9 +51,6 @@ func thirdPartyIn(paths ...string) []string {
 
 // claudeSettingsFiles 是 claude -p 会读到的设置文件：用户级，加上工作目录里的项目级。
 func (d *ClaudeDriver) claudeSettingsFiles(projectDir string) []string {
-	if d.ConfigDir != "" {
-		return nil // 网关是宿主自己的，不算「切到了第三方」
-	}
 	files := []string{filepath.Join(d.home(), ".claude", "settings.json")}
 	if projectDir != "" {
 		files = append(files, filepath.Join(projectDir, ".claude", "settings.json"), filepath.Join(projectDir, ".claude", "settings.local.json"))

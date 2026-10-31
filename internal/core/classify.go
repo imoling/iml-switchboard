@@ -81,7 +81,7 @@ func (r *Router) classify(ctx context.Context, prompt string) (label string, cos
 	cfg := r.cfg.Get()
 	// 不走 Decide：判档提示词里本身就有「架构」「视频」这些词，会被任务表认成别的类型，渠道顺序跟着变
 	var why []string
-	cands := r.textCandidates(cfg, t, TierLow, []string{"api", "winwork_sub", "codex_sub", "agy_sub", "claude_sub"}, false, &why)
+	cands := r.textCandidates(cfg, t, TierLow, []string{"api", "codex_sub", "agy_sub", "claude_sub"}, false, &why)
 	overBudget := false
 	if cfg.Settings.MonthlyAPILimitUSD > 0 {
 		if spent, err := r.ledger.MonthCost(r.loc); err == nil && spent >= cfg.Settings.MonthlyAPILimitUSD {

@@ -252,8 +252,8 @@ func fileExists(path string) bool {
 func versionOf(ctx context.Context, bin string) string {
 	var first string
 	res := runProc(ctx, procSpec{Bin: bin, Args: []string{"--version"}, Timeout: 15 * time.Second, OnLine: func(l string) {
-		if l = strings.TrimSpace(stripANSIPrefix(l)); first == "" && l != "" {
-			first = l
+		if first == "" && strings.TrimSpace(l) != "" {
+			first = strings.TrimSpace(l)
 		}
 	}})
 	if res.Err != nil || res.ExitCode != 0 {

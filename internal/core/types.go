@@ -33,12 +33,11 @@ const (
 type LaneID string
 
 const (
-	LaneClaudeSub  LaneID = "claude_sub"
-	LaneCodexSub   LaneID = "codex_sub"
-	LaneAgySub     LaneID = "agy_sub"
-	LaneWinWorkSub LaneID = "winwork_sub" // WinWork（讯飞）内嵌的 Claude Code，走讯飞网关
-	LaneAPI        LaneID = "api"
-	LaneMedia      LaneID = "media"
+	LaneClaudeSub LaneID = "claude_sub"
+	LaneCodexSub  LaneID = "codex_sub"
+	LaneAgySub    LaneID = "agy_sub"
+	LaneAPI       LaneID = "api"
+	LaneMedia     LaneID = "media"
 )
 
 // Mode 是调度模式：省钱、均衡、质量。

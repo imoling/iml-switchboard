@@ -25,7 +25,7 @@ const MAP: Record<string, string> = {
   qwen: qwen, alibaba: qwen, bailian: bailian, dashscope: bailian,
   volcengine: volcengine, ark: volcengine, doubao: doubao, seedream: volcengine, seedance: volcengine,
   openrouter: openrouter, deepseek: deepseek, moonshot: moonshot, kimi: moonshot, minimax: minimax,
-  nous: nous, nousresearch: nous, hermes: nous, workbuddy: workbuddy, winwork: winwork, winwork_sub: winwork, agnes: agnes,
+  nous: nous, nousresearch: nous, hermes: nous, workbuddy: workbuddy, winwork: winwork, agnes: agnes,
   doubao_work: doubao, pi: pi, deepseek_harness: deepseek, openclaw: openclaw,
 };
 

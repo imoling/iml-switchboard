@@ -44,10 +44,6 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "opus", Provider: "anthropic", Display: "Opus 5.5", InputPerM: 4, OutputPerM: 20, CacheReadPerM: 0.2, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "sonnet", Provider: "anthropic", Display: "Sonnet 5.5", InputPerM: 2, OutputPerM: 10, CacheReadPerM: 0.1, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "haiku", Provider: "anthropic", Display: "Haiku 5.5", InputPerM: 0.10, OutputPerM: 0.50, CacheReadPerM: 0.01, Currency: "USD", Context: 200000, Vision: true, Tools: true})
-	// WinWork（讯飞）网关里的型号：走它内嵌的 Claude Code，额度算在 WinWork 账上，这里不计价；窗口未知，按放得下处理
-	for _, w := range []struct{ id, name string }{{"winwork-snt-5.5", "Sonnet 5.5"}, {"winwork-os-5.5", "OS 5.5"}, {"winwork-os-5", "OS 5"}, {"winwork-gk-4.6", "GK 4.6"}, {"winwork-ds-v4.1-flash", "DeepSeek V4.1 Flash"}, {"winwork-ds-v4-pro-0813", "DeepSeek V4 Pro"}, {"winwork-qw-3.8-flash", "Qwen 3.8 Flash"}, {"winwork-km-k3", "Kimi K3"}} {
-		add(ModelInfo{ID: w.id, Provider: "winwork", Display: "WinWork " + w.name, Currency: "USD", Tools: true})
-	}
 	for _, a := range []string{"claude-fable-5-1:fable", "claude-opus-5-5:opus", "claude-sonnet-5-5:sonnet", "claude-haiku-5-5:haiku"} {
 		p := strings.Split(a, ":")
 		m := r.models[p[1]]

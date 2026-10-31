@@ -322,7 +322,7 @@ func (s *Server) maybeRefreshQuota(force bool) {
 	go func() {
 		defer func() { s.mu.Lock(); s.refreshing = false; s.mu.Unlock() }()
 		drivers := map[core.LaneID]core.Driver{}
-		for _, lane := range []core.LaneID{core.LaneClaudeSub, core.LaneCodexSub, core.LaneAgySub, core.LaneWinWorkSub} {
+		for _, lane := range []core.LaneID{core.LaneClaudeSub, core.LaneCodexSub, core.LaneAgySub} {
 			if d, ok := s.d.Router.Driver(lane); ok {
 				drivers[lane] = d
 			}
@@ -412,7 +412,7 @@ type quotaRow struct {
 
 func (s *Server) quotas(cfg *config.Config) []quotaRow {
 	out := []quotaRow{}
-	for _, lane := range []core.LaneID{core.LaneClaudeSub, core.LaneCodexSub, core.LaneAgySub, core.LaneWinWorkSub} {
+	for _, lane := range []core.LaneID{core.LaneClaudeSub, core.LaneCodexSub, core.LaneAgySub} {
 		sl, ok := cfg.Sub[string(lane)]
 		if !ok || !sl.Enabled {
 			continue
@@ -426,7 +426,7 @@ func (s *Server) quotas(cfg *config.Config) []quotaRow {
 		} else {
 			s.d.Router.Quota().Observe(lane, h.Quota)
 		}
-		label := map[core.LaneID]string{core.LaneClaudeSub: "Claude 订阅", core.LaneCodexSub: "ChatGPT 订阅", core.LaneAgySub: "Google AI 订阅", core.LaneWinWorkSub: "WinWork"}[lane]
+		label := map[core.LaneID]string{core.LaneClaudeSub: "Claude 订阅", core.LaneCodexSub: "ChatGPT 订阅", core.LaneAgySub: "Google AI 订阅"}[lane]
 		for _, wnd := range s.d.Router.Quota().Windows(lane, sl.Models) {
 			row := quotaRow{AccountID: string(lane), Label: label, Provider: providerOfLane(lane), Window: wnd.Label, WindowKey: wnd.Window, Pct: wnd.Pct, ResetsAt: wnd.ResetsAt, Sub: wnd.Window == "week_fable", Estimated: wnd.Estimated}
 			if !wnd.ObservedAt.IsZero() {
@@ -454,8 +454,6 @@ func (s *Server) quotas(cfg *config.Config) []quotaRow {
 
 func providerOfLane(l core.LaneID) string {
 	switch l {
-	case core.LaneWinWorkSub:
-		return "winwork"
 	case core.LaneClaudeSub:
 		return "anthropic"
 	case core.LaneCodexSub:
@@ -890,7 +888,6 @@ func (s *Server) accountViews() []accountView {
 		{core.LaneClaudeSub, "Claude", "用本机 claude 命令的登录，消耗你的订阅额度", "anthropic", ""},
 		{core.LaneCodexSub, "ChatGPT", "用本机 codex 命令的登录；含订阅出图", "openai", ""},
 		{core.LaneAgySub, "Google AI", "用本机 agy 命令的登录，消耗 Google AI 订阅额度", "google", "安装 Antigravity 并在终端运行一次 agy 登录"},
-		{core.LaneWinWorkSub, "WinWork", "用 WinWork 自带的模型服务，额度算在它账上", "winwork", "安装 WinWork 并登录一次"},
 	}
 	for _, sb := range subs {
 		sl := cfg.Sub[string(sb.lane)]

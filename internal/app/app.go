@@ -51,7 +51,6 @@ type App struct {
 	Claude  *sub.ClaudeDriver
 	Codex   *sub.CodexDriver
 	Agy     *sub.AntigravityDriver
-	WinWork *sub.ClaudeDriver
 	Admin   *admin.Server
 	Facade  *facade.Server
 	Integr  *integrations.Manager
@@ -117,8 +116,6 @@ func New(version string) (*App, error) {
 	a.Router.Register(a.Codex)
 	a.Agy = sub.NewAntigravityDriver()
 	a.Router.Register(a.Agy)
-	a.WinWork = sub.NewWinWorkDriver()
-	a.Router.Register(a.WinWork)
 	a.Router.Register(a.API)
 	a.Router.Register(a.Media)
 	a.Router.OnCall(func(c *core.Call) { a.Bus.Publish("call", a.Router.Decorate(c)); a.checkBudget(c) })
@@ -307,7 +304,7 @@ func (a *App) Serve(ctx context.Context) error {
 		_ = srv.Shutdown(sctx)
 	}()
 	// 常驻时才预热：命令行一次性调用跑完就退出，预热了也白费
-	a.Claude.Prewarm, a.Agy.Prewarm, a.WinWork.Prewarm = true, true, true
+	a.Claude.Prewarm, a.Agy.Prewarm = true, true
 	a.startMonthlyEvaluation(ctx)
 	a.startSelfCheck(ctx)
 	a.startHousekeeping(ctx)
