@@ -73,7 +73,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 - Mark a call as under-routed with one click; enough marks produce a rule suggestion. The evaluation feature re-runs samples on a high-tier model and has it judge blind whether the cheaper answer was good enough.
 
 **Lanes**
-- Subscriptions: Claude (`claude -p`), ChatGPT (`codex exec`), Antigravity (`agy -p`). While running, Switchboard starts the next CLI process ahead of time; measured end-to-end latency dropped from 7.5 s to about 4 s for Claude and from 32 s to about 5 s for Antigravity.
+- Subscriptions: Claude (`claude -p`), ChatGPT (`codex exec`), Antigravity (`agy -p`), and WinWork (iFLYTEK; Switchboard launches the Claude Code bundled inside it, so its gateway models become available to every other agent). While running, Switchboard starts the next CLI process ahead of time; measured end-to-end latency dropped from 7.5 s to about 4 s for Claude and from 32 s to about 5 s for Antigravity.
 - Pay-as-you-go: Zhipu (GLM), Alibaba Cloud Model Studio (Qwen), DeepSeek, Moonshot (Kimi), MiniMax, Volcengine Ark (Doubao), OpenRouter, Anthropic, Agnes AI and 302.ai. Keys live in the system credential store: the macOS Keychain or Windows Credential Manager.
 - Media: image and video generation in cheap, default and best tiers; motion graphics are written as Remotion code by a model and rendered to video on your machine.
 

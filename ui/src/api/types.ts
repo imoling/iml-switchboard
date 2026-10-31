@@ -1,7 +1,7 @@
 // 与 docs/API.md 一一对应；字段蛇形命名
 
 export type Tier = 'low' | 'mid' | 'high' | 'top';
-export type Lane = 'claude_sub' | 'codex_sub' | 'agy_sub' | 'api' | 'media';
+export type Lane = 'claude_sub' | 'codex_sub' | 'agy_sub' | 'winwork_sub' | 'api' | 'media';
 export type Kind = 'text' | 'image' | 'video' | 'animation';
 export type Mode = 'save' | 'balanced' | 'quality';
 export type ThemeId = 'standard' | 'dianjiang' | 'harem' | 'seaking';

@@ -30,6 +30,13 @@ type ClaudeDriver struct {
 	DefaultModel string
 	// Now 便于测试注入时间。
 	Now func() time.Time
+	// Lane 为空时是 Claude 订阅；WinWork 这类内嵌了 Claude Code 的宿主复用这个驱动，用自己的渠道名。
+	Lane core.LaneID
+	// Name 用在报错和状态里，默认「Claude」。
+	Name string
+	// ConfigDir 非空表示用别人的 Claude 配置目录（WinWork 的 ~/.kooky-data/claude-config）：
+	// 登录与否看这个目录，网关是它自己的，不做第三方接口拦截，也不读用户 ~/.claude.json 的套餐。
+	ConfigDir string
 	// Prewarm 为真时，文本子任务用完一个进程就在后台按同样参数预热下一个（后台服务里打开，测试里默认关）。
 	Prewarm bool
 
@@ -46,7 +53,19 @@ func NewClaudeDriver() *ClaudeDriver {
 }
 
 // ID 返回渠道标识。
-func (d *ClaudeDriver) ID() core.LaneID { return core.LaneClaudeSub }
+func (d *ClaudeDriver) ID() core.LaneID {
+	if d.Lane != "" {
+		return d.Lane
+	}
+	return core.LaneClaudeSub
+}
+
+func (d *ClaudeDriver) name() string {
+	if d.Name != "" {
+		return d.Name
+	}
+	return "Claude"
+}
 
 // subtaskSystem 替换 Claude Code 默认的编程智能体系统提示：派来的子任务自带上下文，用不上那一大段，
 // 换掉后每次调用的上下文从约 5400 降到约 2500 token。动画要改文件，仍用默认提示。
@@ -239,6 +258,7 @@ type claudeParser struct {
 }
 
 func (c *claudeParser) feed(line string) {
+	line = stripANSIPrefix(line)
 	line = strings.TrimSpace(line)
 	if line == "" || !strings.HasPrefix(line, "{") {
 		return
@@ -351,7 +371,7 @@ func ParseClaudeStream(data string, emit func(core.Event)) ClaudeParsed {
 func (d *ClaudeDriver) Run(ctx context.Context, task *core.Task, target core.Target, emit func(core.Event)) (*core.Result, error) {
 	bin := lookBin(d.bin())
 	if bin == "" {
-		return nil, &core.ErrProvider{Summary: "Claude 不可用：本机没有找到 claude 命令", Retryable: true}
+		return nil, &core.ErrProvider{Summary: d.name() + " 不可用：本机没有找到 claude 命令", Retryable: true}
 	}
 	dir := ""
 	if needsWrite(task) {
@@ -490,23 +510,36 @@ func (d *ClaudeDriver) timeout() time.Duration {
 func (d *ClaudeDriver) Health(ctx context.Context) core.Health {
 	bin := lookBin(d.bin())
 	if bin == "" {
+		if d.ConfigDir != "" {
+			return core.Health{Status: "missing", Detail: "本机没有安装 " + d.name()}
+		}
 		return core.Health{Status: "missing", Detail: "本机没有找到 claude 命令"}
 	}
 	ver := versionOf(ctx, bin)
 	if ver == "" {
 		return core.Health{Status: "error", Detail: "claude --version 运行失败"}
 	}
-	if !dirExists(filepath.Join(d.home(), ".claude")) {
-		return core.Health{Status: "warn", Detail: "claude 还没登录过：运行一次 claude 完成登录"}
-	}
-	if keys := thirdPartyIn(d.claudeSettingsFiles("")...); len(keys) > 0 {
-		return core.Health{Status: "warn", Detail: thirdPartyHint}
+	if d.ConfigDir != "" {
+		if !fileExists(filepath.Join(d.ConfigDir, "settings.json")) {
+			return core.Health{Status: "warn", Detail: d.name() + " 还没登录过：打开它登录一次"}
+		}
+	} else {
+		if !dirExists(filepath.Join(d.home(), ".claude")) {
+			return core.Health{Status: "warn", Detail: "claude 还没登录过：运行一次 claude 完成登录"}
+		}
+		if keys := thirdPartyIn(d.claudeSettingsFiles("")...); len(keys) > 0 {
+			return core.Health{Status: "warn", Detail: thirdPartyHint}
+		}
 	}
 	d.mu.Lock()
 	q := append([]core.QuotaWindow(nil), d.lastQuota...)
 	cd := d.cooldown
 	d.mu.Unlock()
-	h := core.Health{Status: "ok", Detail: ver, Quota: q, Plan: readClaudePlan(d.home())}
+	plan := ""
+	if d.ConfigDir == "" {
+		plan = readClaudePlan(d.home())
+	}
+	h := core.Health{Status: "ok", Detail: ver, Quota: q, Plan: plan}
 	if cd.After(d.now()) {
 		h.Status = "cooldown"
 		h.CooldownUntil = cd
@@ -516,4 +549,16 @@ func (d *ClaudeDriver) Health(ctx context.Context) core.Health {
 	p := d.problems
 	d.mu.Unlock()
 	return withSelfCheck(p, h)
+}
+
+// stripANSIPrefix 去掉行首的终端控制序列（清屏、光标归位）：WinWork 的包装脚本会在执行前打一串。
+func stripANSIPrefix(line string) string {
+	for strings.HasPrefix(line, "\x1b[") {
+		i := strings.IndexFunc(line[2:], func(r rune) bool { return r >= 0x40 && r <= 0x7e })
+		if i < 0 {
+			return line
+		}
+		line = line[2+i+1:]
+	}
+	return line
 }

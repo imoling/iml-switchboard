@@ -418,6 +418,10 @@ func fillMissing(c *Config) {
 	if c.Media.Animation.Renderer == "" {
 		c.Media.Animation = d.Media.Animation
 	}
+	// 老配置没有 WinWork 渠道：补上默认
+	if _, ok := c.Sub["winwork_sub"]; !ok {
+		c.Sub["winwork_sub"] = d.Sub["winwork_sub"]
+	}
 	// 早期版本把 Antigravity 写成停用且型号已过期；检测到旧型号就换成当前默认并启用
 	if sl, ok := c.Sub["agy_sub"]; ok {
 		if strings.HasPrefix(sl.Models["high"], "gemini-3.1") || len(sl.Models) == 0 {

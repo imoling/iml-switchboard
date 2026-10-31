@@ -260,9 +260,9 @@ func (r *Router) Decide(t *Task) *Decision {
 	// 7. 候选排序
 	prefer := tt.Prefer
 	if len(prefer) == 0 {
-		prefer = []string{"claude_sub", "api", "codex_sub", "agy_sub"}
+		prefer = []string{"claude_sub", "winwork_sub", "api", "codex_sub", "agy_sub"}
 		if tier == TierLow {
-			prefer = []string{"api", "codex_sub", "agy_sub", "claude_sub"}
+			prefer = []string{"api", "winwork_sub", "codex_sub", "agy_sub", "claude_sub"}
 		}
 	}
 	if tier == TierHigh || tier == TierTop {
@@ -276,11 +276,11 @@ func (r *Router) Decide(t *Task) *Decision {
 		prefer = append([]string{"claude_sub"}, rest...)
 	}
 	if hit.SubOnly {
-		prefer = []string{"claude_sub", "codex_sub", "agy_sub"}
+		prefer = []string{"claude_sub", "winwork_sub", "codex_sub", "agy_sub"}
 		d.Reason = append(d.Reason, "显式要求只用订阅")
 	} else {
 		// prefer 是优先顺序而不是白名单：没列到的渠道排在后面当回退
-		for _, lane := range []string{"claude_sub", "api", "codex_sub", "agy_sub"} {
+		for _, lane := range []string{"claude_sub", "winwork_sub", "api", "codex_sub", "agy_sub"} {
 			found := false
 			for _, p := range prefer {
 				if p == lane {
@@ -379,7 +379,7 @@ func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer [
 	}
 	for _, lane := range prefer {
 		switch lane {
-		case "claude_sub", "codex_sub", "agy_sub":
+		case "claude_sub", "winwork_sub", "codex_sub", "agy_sub":
 			lid := LaneID(lane)
 			sl, ok := cfg.Sub[lane]
 			if !ok || !sl.Enabled {
@@ -522,6 +522,8 @@ func live(ts []Target) []Target {
 
 func providerOf(l LaneID) string {
 	switch l {
+	case LaneWinWorkSub:
+		return "winwork"
 	case LaneClaudeSub:
 		return "anthropic"
 	case LaneCodexSub:
@@ -615,6 +617,8 @@ func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) 
 
 func providerLabel(p string) string {
 	switch p {
+	case "winwork":
+		return "WinWork"
 	case "ark":
 		return "火山方舟"
 	case "dashscope":
