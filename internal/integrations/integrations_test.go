@@ -170,3 +170,29 @@ func TestWinWork(t *testing.T) {
 		t.Fatalf("断开后应只去掉我们的条目：%s", b)
 	}
 }
+
+// 装了 WinWork：它的型号单列进 WorkBuddy 的模型表；重复接入不会重复写
+func TestWorkBuddyWinWorkEntries(t *testing.T) {
+	m, home := setup(t)
+	_ = m.cfg.Update(func(c *config.Config) error {
+		c.API = append(c.API, config.APIAccount{ID: "winwork", Provider: "winwork", Enabled: true, Models: map[string][]string{"high": {"winwork-snt-5.5"}, "low": {"winwork-ds-v4.1-flash"}}})
+		return nil
+	})
+	for i := 0; i < 2; i++ {
+		if _, err := m.Connect("workbuddy", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, _ := os.ReadFile(filepath.Join(home, ".workbuddy", "models.json"))
+	s := string(b)
+	if strings.Count(s, `"winwork-snt-5.5"`) != 1 || strings.Count(s, `"router-auto"`) != 1 || !strings.Contains(s, "WinWork Sonnet 5.5") || !strings.Contains(s, `"deepseek-v4-pro"`) {
+		t.Fatalf("WinWork 型号应各写一次，原有条目保留：%s", s)
+	}
+	if _, err := m.Disconnect("workbuddy"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(filepath.Join(home, ".workbuddy", "models.json"))
+	if strings.Contains(string(b), "winwork-") || !strings.Contains(string(b), `"deepseek-v4-pro"`) {
+		t.Fatalf("断开应去掉我们的全部条目：%s", b)
+	}
+}

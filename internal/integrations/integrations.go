@@ -762,6 +762,16 @@ func (m *Manager) workbuddyHas() bool {
 	return err == nil && bytes.Contains(b, []byte(`"router-auto"`))
 }
 
+// isOurWBEntry 判断 WorkBuddy 模型表里的一条是不是 Switchboard 写的：看厂商名，老版本只写了 id 的也认
+func isOurWBEntry(raw json.RawMessage) bool {
+	var probe struct {
+		ID     string `json:"id"`
+		Vendor string `json:"vendor"`
+	}
+	_ = json.Unmarshal(raw, &probe)
+	return probe.Vendor == "Switchboard" || probe.ID == "router-auto" || probe.ID == "router-sub"
+}
+
 func (m *Manager) connectWorkBuddy() error {
 	path := m.workbuddyModels()
 	b, err := os.ReadFile(path)
@@ -774,12 +784,8 @@ func (m *Manager) connectWorkBuddy() error {
 	}
 	keep := list[:0]
 	for _, raw := range list {
-		var probe struct {
-			ID string `json:"id"`
-		}
-		_ = json.Unmarshal(raw, &probe)
-		if probe.ID == "router-auto" || probe.ID == "router-sub" {
-			continue
+		if isOurWBEntry(raw) {
+			continue // 我们写过的条目全部换新，免得重复
 		}
 		keep = append(keep, raw)
 	}
@@ -804,11 +810,7 @@ func (m *Manager) disconnectWorkBuddy() error {
 	}
 	keep := list[:0]
 	for _, raw := range list {
-		var probe struct {
-			ID string `json:"id"`
-		}
-		_ = json.Unmarshal(raw, &probe)
-		if probe.ID != "router-auto" && probe.ID != "router-sub" {
+		if !isOurWBEntry(raw) {
 			keep = append(keep, raw)
 		}
 	}
