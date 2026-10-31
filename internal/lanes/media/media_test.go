@@ -270,10 +270,17 @@ type fakeVideo struct {
 	submitErr error
 	canceled  bool
 	url       string
+	busyTimes int // 前几次提交回「队列满」
+	submits   int
 }
 
 func (f *fakeVideo) Name() string { return f.name }
 func (f *fakeVideo) Submit(ctx context.Context, req VideoRequest) (string, error) {
+	f.submits++
+	if f.busyTimes > 0 {
+		f.busyTimes--
+		return "", &core.ErrProvider{Summary: "agnes 视频队列已满，请稍后重试", Retryable: true, Busy: true}
+	}
 	if f.submitErr != nil {
 		return "", f.submitErr
 	}
@@ -633,5 +640,33 @@ func TestCancelRetryAndLostTask(t *testing.T) {
 	}
 	if _, err := d.Retry(context.Background(), "nope", ""); err == nil {
 		t.Errorf("不存在的任务应报错")
+	}
+}
+
+// 服务端说队列满：原地等一会再提交，不急着换候选或报错
+func TestBusyRetry(t *testing.T) {
+	old := busyWaits
+	busyWaits = []time.Duration{time.Millisecond, time.Millisecond}
+	defer func() { busyWaits = old }()
+	n := 0
+	err := withBusyRetry(context.Background(), func() error {
+		n++
+		if n < 3 {
+			return &core.ErrProvider{Summary: "忙", Busy: true, Retryable: true}
+		}
+		return nil
+	})
+	if err != nil || n != 3 {
+		t.Fatalf("前两次忙第三次应成功：%v %d", err, n)
+	}
+	n = 0
+	err = withBusyRetry(context.Background(), func() error { n++; return &core.ErrProvider{Summary: "忙", Busy: true} })
+	if err == nil || n != 3 {
+		t.Fatalf("一直忙最多试三次：%v %d", err, n)
+	}
+	n = 0
+	err = withBusyRetry(context.Background(), func() error { n++; return &core.ErrProvider{Summary: "审核不过", Retryable: false} })
+	if err == nil || n != 1 {
+		t.Fatalf("不是正忙的错误不该重试：%v %d", err, n)
 	}
 }

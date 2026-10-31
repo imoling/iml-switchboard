@@ -245,7 +245,12 @@ func (d *MediaDriver) runImage(ctx context.Context, task *core.Task, target core
 		return nil, err
 	}
 	quality := qualityFor(task, target)
-	res, err := p.Generate(ctx, ImageRequest{Prompt: task.Prompt, Model: target.Model, Size: task.Size, Quality: quality, ImagePath: task.ImagePath})
+	var res ImageResult
+	err = withBusyRetry(ctx, func() error {
+		var e error
+		res, e = p.Generate(ctx, ImageRequest{Prompt: task.Prompt, Model: target.Model, Size: task.Size, Quality: quality, ImagePath: task.ImagePath})
+		return e
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -548,4 +553,26 @@ func classifyJobError(err error) (msg string, retryable bool) {
 		return rl.Error(), true
 	}
 	return firstLine(err.Error()), true
+}
+
+// busyWaits 是服务端正忙时的等待节奏；测试里改短。
+var busyWaits = []time.Duration{10 * time.Second, 20 * time.Second}
+
+// withBusyRetry 在服务端说「正忙」时原地等一会再做一次，最多补两次；其它错误原样返回。
+// 只用在「失败就没受理」的步骤上（出图请求、视频提交），所以不会重复计费。
+func withBusyRetry(ctx context.Context, fn func() error) error {
+	err := fn()
+	for _, wait := range busyWaits {
+		var pe *core.ErrProvider
+		if !errors.As(err, &pe) || !pe.Busy {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(wait):
+		}
+		err = fn()
+	}
+	return err
 }

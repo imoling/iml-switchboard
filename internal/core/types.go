@@ -243,6 +243,8 @@ type ErrProvider struct {
 	// Account 为真表示问题出在这个账号（密钥无效、余额不足），该账号先歇着，请求换下一个候选
 	Account  bool
 	Cooldown time.Duration
+	// Busy 为真表示服务端说现在忙（队列满、上游失败）：请求没被受理，原地等一会再试是安全的，不会重复计费
+	Busy bool
 }
 
 func (e *ErrProvider) Error() string { return e.Summary }

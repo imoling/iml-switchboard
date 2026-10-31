@@ -291,3 +291,19 @@ func TestCostPrefixMatchAndUSD(t *testing.T) {
 		t.Errorf("未知模型费用应为 0")
 	}
 }
+
+func TestClassifyBusyAndMessage(t *testing.T) {
+	err := ClassifyHTTPError("agnes", 500, []byte(`{"code":"video_queue_full","message":"视频队列已满，请稍后重试 (request id: 2026abc)","data":null}`))
+	var pe *core.ErrProvider
+	if !errors.As(err, &pe) || !pe.Busy || pe.Summary != "agnes 视频队列已满，请稍后重试" {
+		t.Fatalf("队列满应标成正忙、摘要是人话：%+v", err)
+	}
+	err = ClassifyHTTPError("agnes", 503, []byte(`{"error":{"message":"请求上游失败，请稍后重试 (request id: x)","type":"do_request_failed"}}`))
+	if !errors.As(err, &pe) || !pe.Busy || !strings.Contains(pe.Summary, "请求上游失败") {
+		t.Fatalf("%+v", err)
+	}
+	err = ClassifyHTTPError("zhipu", 500, []byte(`{"error":{"message":"internal error"}}`))
+	if !errors.As(err, &pe) || pe.Busy || pe.Summary != "zhipu 服务端出错：internal error" {
+		t.Fatalf("普通 5xx 不算正忙，但也要取 message：%+v", err)
+	}
+}

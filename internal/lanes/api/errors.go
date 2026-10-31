@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -23,10 +24,46 @@ func shortBody(body []byte) string {
 	return s
 }
 
+// bodyMessage 从回包里取出给人看的那句：{"message":…} 或 {"error":{"message":…}}；顺手去掉 request id。
+func bodyMessage(body []byte) (code, msg string) {
+	var v struct {
+		Code    any    `json:"code"`
+		Message string `json:"message"`
+		Error   struct {
+			Code    any    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &v) != nil {
+		return "", ""
+	}
+	msg = v.Message
+	code = fmt.Sprint(v.Code)
+	if msg == "" {
+		msg, code = v.Error.Message, fmt.Sprint(v.Error.Code)
+	}
+	if i := strings.Index(msg, "(request id"); i > 0 {
+		msg = msg[:i]
+	}
+	return strings.ToLower(code), strings.TrimSpace(msg)
+}
+
+// busyWords 是「服务端这会儿忙，稍后再试」的各种说法。
+var busyWords = []string{"queue_full", "do_request_failed", "overloaded", "server_busy", "try again", "稍后重试", "队列已满", "upstream"}
+
 // ClassifyHTTPError 把 HTTP 非 2xx 回包映射成一行人话的错误；供媒体渠道复用。
 func ClassifyHTTPError(provider string, status int, body []byte) error {
 	raw := fmt.Sprintf("HTTP %d: %s", status, strings.TrimSpace(string(body)))
 	lower := strings.ToLower(string(body))
+	code, msg := bodyMessage(body)
+	for _, w := range busyWords {
+		if strings.Contains(code, w) || strings.Contains(lower, w) {
+			if msg == "" {
+				msg = "服务端正忙，稍后重试"
+			}
+			return &core.ErrProvider{Summary: provider + " " + msg, Raw: raw, Retryable: true, Busy: true}
+		}
+	}
 	switch {
 	// 余额判断放在 401/403 前面：有的平台（Agnes）余额不足也回 403
 	case status == 402 || strings.Contains(lower, "insufficient") || strings.Contains(lower, "balance") || strings.Contains(lower, "余额") || strings.Contains(lower, "预扣费"):
@@ -40,6 +77,9 @@ func ClassifyHTTPError(provider string, status int, body []byte) error {
 	case status == 404:
 		return &core.ErrProvider{Summary: provider + " 找不到接口或模型：" + shortBody(body), Raw: raw, Retryable: true}
 	case status >= 500:
+		if msg != "" {
+			return &core.ErrProvider{Summary: provider + " 服务端出错：" + msg, Raw: raw, Retryable: true}
+		}
 		return &core.ErrProvider{Summary: provider + " 服务端出错：" + shortBody(body), Raw: raw, Retryable: true}
 	}
 	return &core.ErrProvider{Summary: fmt.Sprintf("%s 返回 %d：%s", provider, status, shortBody(body)), Raw: raw, Retryable: status >= 500}
