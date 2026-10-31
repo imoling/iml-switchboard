@@ -72,7 +72,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 
 **渠道**
 - 订阅：Claude（`claude -p`）、ChatGPT（`codex exec`）、Antigravity（`agy -p`）。常驻时会提前启动好下一个进程，实测 Claude 从 7.5 秒降到约 4 秒，Antigravity 从 32 秒降到约 5 秒。
-- 按量付费：智谱、阿里云百炼、DeepSeek、Moonshot、MiniMax、火山方舟、OpenRouter、Anthropic、Agnes AI、302.ai。密钥存在系统自带的凭据库里：macOS 钥匙串、Windows 凭据管理器。
+- 按量付费：智谱、阿里云百炼、DeepSeek、Moonshot、MiniMax、火山方舟、OpenRouter、Anthropic、Agnes AI、302.ai、WinWork（讯飞；装了就自动出现，用它网关里的 Sonnet 5.5、DeepSeek、Qwen、Kimi 等型号，额度算在 WinWork 账上，不计费）。密钥存在系统自带的凭据库里：macOS 钥匙串、Windows 凭据管理器。
 - 媒体：生图、生视频分便宜档、默认档、最好档；动画由模型写 Remotion 代码，在本机渲染成视频。
 
 **接入的宿主**

@@ -74,7 +74,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 
 **Lanes**
 - Subscriptions: Claude (`claude -p`), ChatGPT (`codex exec`), Antigravity (`agy -p`). While running, Switchboard starts the next CLI process ahead of time; measured end-to-end latency dropped from 7.5 s to about 4 s for Claude and from 32 s to about 5 s for Antigravity.
-- Pay-as-you-go: Zhipu (GLM), Alibaba Cloud Model Studio (Qwen), DeepSeek, Moonshot (Kimi), MiniMax, Volcengine Ark (Doubao), OpenRouter, Anthropic, Agnes AI and 302.ai. Keys live in the system credential store: the macOS Keychain or Windows Credential Manager.
+- Pay-as-you-go: Zhipu (GLM), Alibaba Cloud Model Studio (Qwen), DeepSeek, Moonshot (Kimi), MiniMax, Volcengine Ark (Doubao), OpenRouter, Anthropic, Agnes AI, 302.ai and WinWork (iFLYTEK; appears automatically when installed and exposes its gateway models, Sonnet 5.5, DeepSeek, Qwen, Kimi and more, at no cost to you). Keys live in the system credential store: the macOS Keychain or Windows Credential Manager.
 - Media: image and video generation in cheap, default and best tiers; motion graphics are written as Remotion code by a model and rendered to video on your machine.
 
 **Supported agents**

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/imoling/iml-switchboard/internal/config"
@@ -136,6 +137,21 @@ func TestMediaPromptStripped(t *testing.T) {
 	quoted := &Task{Prompt: "<session>\n画一张海报\n</session>", Source: "facade"}
 	if d := r.Decide(quoted); d.Kind != KindText {
 		t.Fatalf("转述的会话不该当媒体任务：%+v", d.Reason)
+	}
+}
+
+// 点名的型号不在判出来的档位里：临时候选要带账号，且不再请低档模型判档
+func TestPinnedModelCarriesAccount(t *testing.T) {
+	r, _, api := newTestRouter(t)
+	_ = r.cfg.Update(func(c *config.Config) error { c.API[0].Models["high"] = []string{"glm-5.3-pro"}; return nil })
+	call, _, err := r.Run(context.Background(), &Task{Prompt: "翻译：hello", Model: "glm-5.3-pro", Source: "facade", Tools: []byte(`[{"type":"function"}]`)}, nil)
+	if err != nil || api.calls != 1 || call.Provider != "zhipu" || call.Model != "glm-5.3-pro" || len(call.Candidates) == 0 || call.Candidates[0].AccountID != "zhipu-1" {
+		t.Fatalf("点名型号应带上账号：%+v %v", call, err)
+	}
+	for _, why := range call.Reason {
+		if strings.Contains(why, "判档用") {
+			t.Fatalf("点名了型号不该再判档：%v", call.Reason)
+		}
 	}
 }
 

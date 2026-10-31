@@ -30,6 +30,7 @@ MCP、stdio、OAuth、钥匙串、LiteLLM、JSONL、SSE、base_url、prompt cach
 ## 红线（代码评审必查）
 
 1. 不读取、不存储、不转发任何订阅凭据（`~/.claude/.credentials.json`、钥匙串、`~/.codex/auth.json`、`~/.gemini/oauth_creds.json`）。
+   例外：WinWork 是讯飞自家产品，它网关的令牌从 `~/.kooky-data/claude-config/settings.json` 现读，不落盘、不转发，只用于它自己的网关（`internal/lanes/api/winwork.go`）。
 2. 不伪装官方客户端请求头。
 3. 订阅额度只能由未修改的官方 CLI 子进程消耗。
 4. 启动 `claude -p` 前清掉 `ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`；永远不传 `--bare`。

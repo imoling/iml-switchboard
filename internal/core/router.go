@@ -312,6 +312,32 @@ func (r *Router) Decide(t *Task) *Decision {
 	return d
 }
 
+// accountWithModel 找配了这个型号的按量付费账号；档位里没配的，按型号的供应商匹配。找不到返回 nil。
+func (r *Router) accountWithModel(model string) *config.APIAccount {
+	cfg := r.cfg.Get()
+	for i := range cfg.API {
+		acc := &cfg.API[i]
+		if !acc.Enabled {
+			continue
+		}
+		for _, ms := range acc.Models {
+			for _, m := range ms {
+				if m == model {
+					return acc
+				}
+			}
+		}
+	}
+	if info, ok := r.reg.Lookup(model); ok {
+		for i := range cfg.API {
+			if cfg.API[i].Enabled && cfg.API[i].Provider == info.Provider {
+				return &cfg.API[i]
+			}
+		}
+	}
+	return nil
+}
+
 // pinChoice 让调用方点名的渠道或模型排在最前：点了渠道只留该渠道，点了模型把它提到首位（没有就临时构造一个候选）。
 func (r *Router) pinChoice(t *Task, d *Decision) {
 	if t.Lane == "" && t.Model == "" {
@@ -343,7 +369,14 @@ func (r *Router) pinChoice(t *Task, d *Decision) {
 				}
 			}
 		}
-		pinned = append(pinned, Target{Lane: lane, Provider: providerOf(lane), Model: t.Model, EstCostUSD: r.reg.EstimateText(t.Model, t.EstTokens)})
+		tgt := Target{Lane: lane, Provider: providerOf(lane), Model: t.Model, EstCostUSD: r.reg.EstimateText(t.Model, t.EstTokens)}
+		if lane == LaneAPI {
+			// 找哪个账号有这个型号：先看档位里配没配，再看型号的供应商和账号对不对得上
+			if acc := r.accountWithModel(t.Model); acc != nil {
+				tgt.AccountID, tgt.Provider = acc.ID, acc.Provider
+			}
+		}
+		pinned = append(pinned, tgt)
 	}
 	if len(pinned) == 0 {
 		d.Reason = append(d.Reason, "点名的渠道不可用，按默认顺序")
@@ -615,6 +648,8 @@ func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) 
 
 func providerLabel(p string) string {
 	switch p {
+	case "winwork":
+		return "WinWork"
 	case "ark":
 		return "火山方舟"
 	case "dashscope":
@@ -674,7 +709,7 @@ func (r *Router) Run(ctx context.Context, t *Task, emit func(Event)) (*Call, *Re
 	}
 	kind, prompt := t.Kind, t.Prompt
 	d := r.Decide(t)
-	if d.Unsure && !d.Sticky && !r.cfg.Get().Settings.RulesOnly && t.Source != "classifier" {
+	if d.Unsure && !d.Sticky && !r.cfg.Get().Settings.RulesOnly && t.Source != "classifier" && t.Model == "" && t.Lane == "" {
 		label, c, model := r.classify(ctx, prompt)
 		if label != "" {
 			t.JudgeCostUSD = c

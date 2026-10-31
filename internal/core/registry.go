@@ -44,6 +44,10 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "opus", Provider: "anthropic", Display: "Opus 5.5", InputPerM: 4, OutputPerM: 20, CacheReadPerM: 0.2, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "sonnet", Provider: "anthropic", Display: "Sonnet 5.5", InputPerM: 2, OutputPerM: 10, CacheReadPerM: 0.1, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "haiku", Provider: "anthropic", Display: "Haiku 5.5", InputPerM: 0.10, OutputPerM: 0.50, CacheReadPerM: 0.01, Currency: "USD", Context: 200000, Vision: true, Tools: true})
+	// WinWork（讯飞）网关里的型号：额度算在 WinWork 账上，对用户不计费，所以标成免费，排在收费型号前面
+	for _, w := range WinWorkModels {
+		add(ModelInfo{ID: w.ID, Provider: "winwork", Display: "WinWork " + w.Name, Currency: "CNY", Tools: true, Free: true, Vision: w.Vision, Context: w.Context})
+	}
 	for _, a := range []string{"claude-fable-5-1:fable", "claude-opus-5-5:opus", "claude-sonnet-5-5:sonnet", "claude-haiku-5-5:haiku"} {
 		p := strings.Split(a, ":")
 		m := r.models[p[1]]
@@ -225,4 +229,20 @@ func (r *Registry) FreeModels(provider string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// WinWorkModels 是 WinWork 网关 availableModels 里的型号。snt 后面是 Claude Sonnet，其余按网关的叫法。
+var WinWorkModels = []struct {
+	ID, Name string
+	Vision   bool
+	Context  int
+}{
+	{"winwork-snt-5.5", "Sonnet 5.5", true, 200000},
+	{"winwork-os-5.5", "OS 5.5", false, 0},
+	{"winwork-os-5", "OS 5", false, 0},
+	{"winwork-gk-4.6", "GK 4.6", false, 0},
+	{"winwork-ds-v4-pro-0813", "DeepSeek V4 Pro", false, 0},
+	{"winwork-ds-v4.1-flash", "DeepSeek V4.1 Flash", false, 0},
+	{"winwork-qw-3.8-flash", "Qwen 3.8 Flash", false, 0},
+	{"winwork-km-k3", "Kimi K3", false, 0},
 }

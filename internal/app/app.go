@@ -110,6 +110,7 @@ func New(version string) (*App, error) {
 	a.Codex = sub.NewCodexDriver()
 	// 出图走订阅渠道的低档：用户自己的 Codex 配置里写的模型，免费套餐可能用不了
 	a.Codex.ImageModel = func() string { return cfg.Get().Sub["codex_sub"].Models["low"] }
+	ensureWinWorkAccount(cfg)
 	a.API = api.NewAPIDriver(a.apiAccounts(cfg.Get()), client)
 	a.Media = media.New(a.mediaOptions(client))
 	a.Router.Register(a.Claude)
@@ -146,7 +147,7 @@ func New(version string) (*App, error) {
 		return nil
 	})
 	a.Integr = integrations.New(cfg, a.exe, BaseURL, func() string { return cfg.Get().Settings.FacadeKey })
-	a.Admin = admin.New(admin.Deps{Router: a.Router, Jobs: a.Jobs, Bus: a.Bus, Accounts: &accountOps{a: a}, Media: &mediaOps{a: a}, Integr: a.Integr, Secrets: a.Secrets, StartedAt: time.Now(),
+	a.Admin = admin.New(admin.Deps{Router: a.Router, Jobs: a.Jobs, Bus: a.Bus, Accounts: &accountOps{a: a}, Media: &mediaOps{a: a}, Integr: a.Integr, Secrets: secretsWithWinWork{a.Secrets}, StartedAt: time.Now(),
 		NodeAvailable: func() bool { _, err := exec.LookPath("node"); return err == nil },
 		Build:         BuildID(), Quit: a.Quit,
 		Update: func(ctx context.Context, force bool) (any, error) { return a.updates.Check(ctx, force) }})
@@ -216,6 +217,13 @@ func (a *App) apiAccounts(c *config.Config) []api.Account {
 		}
 		id := acc.ID
 		ac := p.Account(id, func() (string, error) { return a.Secrets.Get(id) })
+		if acc.Provider == "winwork" {
+			// 网关地址和令牌都在 WinWork 自己的配置里，现读；不进钥匙串
+			if base, _, err := api.WinWorkGateway(); err == nil {
+				ac.BaseURL = base
+			}
+			ac.APIKeyGetter = func() (string, error) { _, tok, err := api.WinWorkGateway(); return tok, err }
+		}
 		if acc.BaseURL != "" {
 			ac.BaseURL = acc.BaseURL
 		}
@@ -432,6 +440,13 @@ func (o *accountOps) Verify(ctx context.Context, provider, baseURL, apiKey strin
 	if !ok {
 		return nil, errors.New("不认识的供应商：" + provider)
 	}
+	if provider == "winwork" {
+		base, _, err := api.WinWorkGateway()
+		if err != nil {
+			return nil, err
+		}
+		p.BaseURL = base
+	}
 	if baseURL != "" {
 		p.BaseURL = baseURL
 	}
@@ -458,6 +473,7 @@ var defaultTiers = map[string]map[string][]string{
 	"openrouter": {"low": {}, "mid": {"anthropic/claude-sonnet-5.5"}, "high": {"anthropic/claude-opus-5.5"}},
 	"anthropic":  {"low": {"claude-haiku-5-5"}, "mid": {"claude-sonnet-5-5"}, "high": {"claude-opus-5-5"}},
 	"agnes":      {"low": {"agnes-3.0-flash", "agnes-2.5-flash"}, "mid": {"agnes-3.0-flash", "agnes-2.5-pro-beta"}, "high": {"agnes-2.5-pro"}},
+	"winwork":    {"low": {"winwork-ds-v4.1-flash", "winwork-qw-3.8-flash"}, "mid": {"winwork-ds-v4-pro-0813", "winwork-gk-4.6"}, "high": {"winwork-snt-5.5", "winwork-os-5.5"}},
 	"ark":        {"low": {}, "mid": {}, "high": {}},
 	"302ai":      {"low": {}, "mid": {}, "high": {}},
 }
@@ -477,9 +493,52 @@ func (o *accountOps) Preset(provider string) (string, string, map[string][]strin
 func (o *accountOps) Providers() []string {
 	var out []string
 	for _, p := range api.Presets {
+		if p.ID == "winwork" {
+			continue // 不用填密钥，装了 WinWork 就自动出现
+		}
 		out = append(out, p.ID)
 	}
 	return out
+}
+
+// Discover 找本机能自动接的账号；找到新的就重建驱动。
+func (o *accountOps) Discover() bool {
+	if !ensureWinWorkAccount(o.a.Cfg) {
+		return false
+	}
+	o.Reload(o.a.Cfg.Get())
+	return true
+}
+
+// ensureWinWorkAccount 在装了 WinWork 时把它的网关记成一个按量付费账号（不计费）；已有就不动。返回是否新加。
+func ensureWinWorkAccount(cfg *config.Store) bool {
+	if !api.WinWorkInstalled() {
+		return false
+	}
+	for _, acc := range cfg.Get().API {
+		if acc.Provider == "winwork" {
+			return false
+		}
+	}
+	tiers := map[string][]string{}
+	for k, v := range defaultTiers["winwork"] {
+		tiers[k] = append([]string{}, v...)
+	}
+	return cfg.Update(func(c *config.Config) error {
+		c.API = append(c.API, config.APIAccount{ID: "winwork", Provider: "winwork", Label: "WinWork", Currency: "CNY", Enabled: true, AllowPaid: true, Models: tiers})
+		return nil
+	}) == nil
+}
+
+// secretsWithWinWork 让「验证账号」也能拿到 WinWork 的令牌：它不在钥匙串里，从 WinWork 的配置现读。
+type secretsWithWinWork struct{ core.Secrets }
+
+func (s secretsWithWinWork) Get(name string) (string, error) {
+	if name == "winwork" {
+		_, tok, err := api.WinWorkGateway()
+		return tok, err
+	}
+	return s.Secrets.Get(name)
 }
 
 func (o *accountOps) Reload(cfg *config.Config) {

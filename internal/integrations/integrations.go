@@ -18,6 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/imoling/iml-switchboard/internal/config"
+	"github.com/imoling/iml-switchboard/internal/core"
 )
 
 //go:embed assets
@@ -722,10 +723,33 @@ type wbModel struct {
 }
 
 func (m *Manager) wbEntries() []wbModel {
-	return []wbModel{
+	out := []wbModel{
 		{ID: "router-auto", Name: "Switchboard 自动", Vendor: "Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: true, SupportsImages: true},
 		{ID: "router-sub", Name: "Switchboard 订阅优先", Vendor: "Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: false, SupportsImages: false},
 	}
+	// 装了 WinWork：它网关里配进档位的型号也单列出来，在 WorkBuddy 里能直接选
+	for _, acc := range m.cfg.Get().API {
+		if acc.Provider != "winwork" || !acc.Enabled {
+			continue
+		}
+		seen := map[string]bool{}
+		for _, tier := range []string{"high", "mid", "low"} {
+			for _, id := range acc.Models[tier] {
+				if seen[id] {
+					continue
+				}
+				seen[id] = true
+				name, vision := id, false
+				for _, w := range core.WinWorkModels {
+					if w.ID == id {
+						name, vision = w.Name, w.Vision
+					}
+				}
+				out = append(out, wbModel{ID: id, Name: "Switchboard · WinWork " + name, Vendor: "Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: true, SupportsImages: vision})
+			}
+		}
+	}
+	return out
 }
 
 func (m *Manager) workbuddySnippet() string {

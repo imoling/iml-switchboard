@@ -51,11 +51,13 @@ fn toggle_window(app: &AppHandle, label: &str, position: Option<Position>) {
         if let Some(f) = f {
             let just_blurred = f.blurred_at.lock().unwrap().take().is_some_and(|t| t.elapsed() < Duration::from_millis(400));
             if just_blurred {
+                trace(app, &format!("toggle {label}: just blurred, treat as close"));
                 return;
             }
         }
         let armed = f.map_or(true, |f| f.armed.load(Ordering::SeqCst));
         if w.is_visible().unwrap_or(false) && (w.is_focused().unwrap_or(false) || !armed) {
+            trace(app, &format!("toggle {label}: hide (focused={:?} armed={armed})", w.is_focused().ok()));
             let _ = w.hide();
             return;
         }
@@ -64,12 +66,50 @@ fn toggle_window(app: &AppHandle, label: &str, position: Option<Position>) {
         }
         if let Some(p) = position {
             let _ = w.move_window(p);
+            keep_on_screen(app, &w);
         } else {
             let _ = w.center();
         }
         let _ = w.show();
         let _ = w.set_focus();
         let _ = w.emit("imls://shown", ());
+        trace(app, &format!("show {label} at {:?} visible={:?} focused={:?}", w.outer_position().ok(), w.is_visible().ok(), w.is_focused().ok()));
+    }
+}
+
+/// 弹窗按托盘位置摆好后，若落在所有屏幕之外（多显示器、副屏在负坐标时会发生），改放到鼠标所在屏幕的顶部居中
+fn keep_on_screen(app: &AppHandle, w: &tauri::WebviewWindow) {
+    let (Ok(pos), Ok(size), Ok(monitors)) = (w.outer_position(), w.outer_size(), w.available_monitors()) else { return };
+    let inside = |x: i32, y: i32| monitors.iter().any(|m| {
+        let (mp, ms) = (m.position(), m.size());
+        x >= mp.x && y >= mp.y && x < mp.x + ms.width as i32 && y < mp.y + ms.height as i32
+    });
+    if inside(pos.x + size.width as i32 / 2, pos.y + 1) {
+        return;
+    }
+    let Ok(cur) = app.cursor_position() else { return };
+    let (cx, cy) = (cur.x as i32, cur.y as i32);
+    let Some(m) = monitors.iter().find(|m| { let (mp, ms) = (m.position(), m.size()); cx >= mp.x && cy >= mp.y && cx < mp.x + ms.width as i32 && cy < mp.y + ms.height as i32 }) else { return };
+    let (mp, ms) = (m.position(), m.size());
+    let x = (cx - size.width as i32 / 2).clamp(mp.x, mp.x + ms.width as i32 - size.width as i32);
+    let y = mp.y + (30.0 * m.scale_factor()) as i32;
+    trace(app, &format!("popover off-screen at {:?}, moved to ({x},{y}) on {:?}", pos, m.name()));
+    let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+/// 托盘与弹窗的动作记一行到数据目录的 logs/app.log：面板「不见了」时看这里
+fn trace(app: &AppHandle, msg: &str) {
+    use std::io::Write;
+    let dir = if cfg!(target_os = "macos") {
+        app.path().home_dir().ok().map(|h| h.join("Library/Application Support/Switchboard/logs"))
+    } else {
+        app.path().app_log_dir().ok()
+    };
+    let Some(dir) = dir else { return };
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("app.log")) {
+        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let _ = writeln!(f, "{ts} {msg}");
     }
 }
 
@@ -270,7 +310,8 @@ pub fn run() {
                 })
                 .on_tray_icon_event(|tray, event| {
                     tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, position, rect, .. } = event {
+                        trace(tray.app_handle(), &format!("tray click at {:?} rect={:?}", position, rect.position));
                         toggle_window(tray.app_handle(), "popover", Some(Position::TrayCenter));
                     }
                 })
@@ -289,6 +330,7 @@ pub fn run() {
                         WindowEvent::Focused(true) => f.armed.store(true, Ordering::SeqCst),
                         WindowEvent::Focused(false) if f.armed.swap(false, Ordering::SeqCst) => {
                             *f.blurred_at.lock().unwrap() = Some(Instant::now());
+                            trace(&w2.app_handle().clone(), &format!("{label}: blurred, hide"));
                             let _ = w2.hide();
                         }
                         _ => {}

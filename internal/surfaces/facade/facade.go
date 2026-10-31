@@ -87,10 +87,26 @@ func oaiErr(w http.ResponseWriter, code int, typ, msg string) {
 func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": []map[string]any{
+	data := []map[string]any{
 		{"id": "router-auto", "object": "model", "created": now, "owned_by": "iml-switchboard"},
 		{"id": "router-sub", "object": "model", "created": now, "owned_by": "iml-switchboard"},
-	}})
+	}
+	// 按量付费账号里配好的型号也列出来，宿主能直接点名
+	seen := map[string]bool{}
+	for _, acc := range s.router.Config().Get().API {
+		if !acc.Enabled {
+			continue
+		}
+		for _, tier := range []string{"high", "mid", "low"} {
+			for _, m := range acc.Models[tier] {
+				if !seen[m] {
+					seen[m] = true
+					data = append(data, map[string]any{"id": m, "object": "model", "created": now, "owned_by": acc.Provider})
+				}
+			}
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
 }
 
 type oaiMessage struct {
@@ -154,6 +170,9 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Model == "router-sub" {
 		t.Lane = core.LaneClaudeSub
+	}
+	if req.Model != "" && !strings.HasPrefix(req.Model, "router-") {
+		t.Model = req.Model // 宿主在自己的模型列表里选了具体某个，就按它来
 	}
 	// 带工具的智能体回合照样认一句直接的出图请求：宿主自带的出图工具往往另外收费，用户配好的渠道在这儿
 	for _, m := range req.Messages {

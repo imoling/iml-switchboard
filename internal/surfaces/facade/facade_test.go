@@ -184,3 +184,20 @@ func TestToolsStillGetImageFromSwitchboard(t *testing.T) {
 		t.Fatalf("要把产物路径回给宿主：%s", body)
 	}
 }
+
+// 宿主在模型列表里点名某个型号就按它来；列表里有账号配好的型号
+func TestModelPinAndList(t *testing.T) {
+	ts, _, api := setup(t)
+	resp, body := post(ts, "/v1/chat/completions", "k", map[string]any{"model": "glm-5.3", "messages": []map[string]any{{"role": "user", "content": "你好"}}})
+	if resp.StatusCode != 200 || api.last == nil || !strings.Contains(body, `"model":"glm-5.3"`) {
+		t.Fatalf("点名型号应走它：%d %s", resp.StatusCode, body)
+	}
+	req, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer k")
+	r2, _ := http.DefaultClient.Do(req)
+	var buf bytes.Buffer
+	buf.ReadFrom(r2.Body)
+	if !strings.Contains(buf.String(), `"id":"glm-5.3"`) || !strings.Contains(buf.String(), `"id":"router-auto"`) {
+		t.Fatalf("模型列表应含账号型号：%s", buf.String())
+	}
+}

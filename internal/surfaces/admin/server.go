@@ -29,6 +29,8 @@ type AccountOps interface {
 	Preset(provider string) (baseURL, currency string, tiers map[string][]string, needsProxy bool, ok bool)
 	Providers() []string
 	Reload(cfg *config.Config)
+	// Discover 找本机能自动接的账号（目前是 WinWork）；找到新的返回真
+	Discover() bool
 }
 
 // MediaOps 由媒体渠道提供：任务的取消、重试、改一句重做。
@@ -138,7 +140,10 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	h("GET /api/accounts", s.accounts)
 	h("GET /api/providers", s.providers)
 	h("POST /api/accounts", s.addAccount)
-	h("POST /api/accounts/detect", s.accounts)
+	h("POST /api/accounts/detect", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		s.d.Accounts.Discover()
+		return s.accountViews(), nil
+	})
 	h("PUT /api/accounts/{id}", s.updateAccount)
 	h("DELETE /api/accounts/{id}", s.deleteAccount)
 	h("POST /api/accounts/{id}/verify", s.verifyAccount)

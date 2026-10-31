@@ -39,6 +39,7 @@ func (fakeAccounts) Preset(p string) (string, string, map[string][]string, bool,
 }
 func (fakeAccounts) Providers() []string   { return []string{"zhipu"} }
 func (fakeAccounts) Reload(*config.Config) {}
+func (fakeAccounts) Discover() bool        { return false }
 
 type fakeIntegr struct{}
 
