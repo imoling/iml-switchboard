@@ -1,4 +1,4 @@
-// Package integrations 负责把 Switchboard 接进各个宿主（Claude Code、Codex、Gemini CLI、Hermes、WorkBuddy 等）。
+// Package integrations 负责把 Switchboard 接进各个宿主（Claude Code、Codex、Gemini CLI、Hermes、WorkBuddy、WinWork 等）。
 // 原则：能用宿主官方命令就用官方命令；改文件前先备份；只增删带标记的内容。
 package integrations
 
@@ -61,7 +61,7 @@ func (m *Manager) dshEnv() string      { return filepath.Join(m.dshHome(), ".env
 
 // List 返回三个宿主的状态。
 func (m *Manager) List() []map[string]any {
-	return []map[string]any{m.view("claude_code"), m.view("codex"), m.view("gemini_cli"), m.view("workbuddy"), m.view("doubao_work"), m.view("deepseek_harness"), m.view("pi"), m.view("openclaw"), m.view("hermes")}
+	return []map[string]any{m.view("claude_code"), m.view("codex"), m.view("gemini_cli"), m.view("workbuddy"), m.view("winwork"), m.view("doubao_work"), m.view("deepseek_harness"), m.view("pi"), m.view("openclaw"), m.view("hermes")}
 }
 
 func (m *Manager) view(id string) map[string]any {
@@ -114,6 +114,14 @@ func (m *Manager) view(id string) map[string]any {
 			v["status"] = "connected"
 		}
 		v["snippet"] = m.workbuddySnippet()
+	case "winwork":
+		if !m.winworkInstalled() {
+			v["available"] = false
+			v["detail"] = "本机没有安装 WinWork"
+		} else if m.winworkRegistered() {
+			v["status"] = "connected"
+		}
+		v["options"] = map[string]bool{"write_claude_md": instructionBlockIn(m.winworkMdPath()), "commands": commandsInstalledIn(m.winworkCfgDir())}
 	case "doubao_work":
 		v["status"] = "manual"
 		// 只在 macOS 上能可靠判断装没装；其他系统照常给出手动配置的片段
@@ -170,6 +178,8 @@ func (m *Manager) Connect(id string, opts map[string]bool) (map[string]any, erro
 		err = m.connectHermes()
 	case "workbuddy":
 		err = m.connectWorkBuddy()
+	case "winwork":
+		err = m.connectWinWork(opts)
 	case "pi":
 		err = m.connectPi()
 	case "deepseek_harness":
@@ -213,6 +223,8 @@ func (m *Manager) Disconnect(id string) (map[string]any, error) {
 		err = m.disconnectHermes()
 	case "workbuddy":
 		err = m.disconnectWorkBuddy()
+	case "winwork":
+		err = m.disconnectWinWork()
 	case "pi":
 		err = m.disconnectPi()
 	case "deepseek_harness":
@@ -236,8 +248,21 @@ func (m *Manager) Disconnect(id string) (map[string]any, error) {
 	return m.view(id), nil
 }
 
-// Update 只改选项（目前只有 Claude Code 有）。
+// Update 只改选项（Claude Code 和 WinWork 有）。
 func (m *Manager) Update(id string, opts map[string]bool) (map[string]any, error) {
+	if id == "winwork" {
+		if v, ok := opts["write_claude_md"]; ok {
+			if err := setInstructionBlock(m.winworkMdPath(), v); err != nil {
+				return nil, err
+			}
+		}
+		if v, ok := opts["commands"]; ok {
+			if err := setCommandsIn(m.winworkCfgDir(), v); err != nil {
+				return nil, err
+			}
+		}
+		return m.view(id), nil
+	}
 	if id != "claude_code" {
 		return m.view(id), nil
 	}
@@ -334,13 +359,23 @@ func (m *Manager) setClaudeMd(on bool) error {
 	return setInstructionBlock(m.claudeMdPath(), on)
 }
 
-func (m *Manager) commandsInstalled() bool {
-	_, err := os.Stat(filepath.Join(m.claudeDir(), "commands", "iml-img.md"))
+func (m *Manager) commandsInstalled() bool { return commandsInstalledIn(m.claudeDir()) }
+
+func commandsInstalledIn(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "commands", "iml-img.md"))
 	return err == nil
 }
 
-func (m *Manager) setCommands(on bool) error {
-	dir := filepath.Join(m.claudeDir(), "commands")
+func instructionBlockIn(path string) bool {
+	b, err := os.ReadFile(path)
+	return err == nil && bytes.Contains(b, []byte(markStart))
+}
+
+func (m *Manager) setCommands(on bool) error { return setCommandsIn(m.claudeDir(), on) }
+
+// setCommandsIn 往某个 Claude 配置目录装或卸斜杠命令。
+func setCommandsIn(cfgDir string, on bool) error {
+	dir := filepath.Join(cfgDir, "commands")
 	entries, _ := assets.ReadDir("assets/commands")
 	if !on {
 		for _, e := range entries {
@@ -559,6 +594,118 @@ func deleteKey(parent *yaml.Node, key string) {
 			return
 		}
 	}
+}
+
+// ---------- WinWork ----------
+// WinWork（讯飞）内嵌了一份 Claude Code，配置目录固定在 ~/.kooky-data/claude-config。
+// 接法和 Claude Code 一样：往它的 .claude.json 登记 MCP、写调用约定、装斜杠命令。
+// 它的 settings.json 里有讯飞网关的令牌，这里从不读它。
+
+func (m *Manager) winworkCfgDir() string {
+	return filepath.Join(m.home, ".kooky-data", "claude-config")
+}
+func (m *Manager) winworkMdPath() string { return filepath.Join(m.winworkCfgDir(), "CLAUDE.md") }
+func (m *Manager) winworkJSON() string   { return filepath.Join(m.winworkCfgDir(), ".claude.json") }
+
+func (m *Manager) winworkInstalled() bool {
+	st, err := os.Stat(m.winworkCfgDir())
+	return err == nil && st.IsDir()
+}
+
+func (m *Manager) winworkRegistered() bool {
+	servers, _, err := readMCPServers(m.winworkJSON())
+	if err != nil {
+		return false
+	}
+	_, ok := servers[mcpName]
+	return ok
+}
+
+// readMCPServers 读 .claude.json 里的 mcpServers，其余字段原样保留（按原始字节），写回时不会改动。
+func readMCPServers(path string) (map[string]json.RawMessage, map[string]json.RawMessage, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(b, &top); err != nil {
+		return nil, nil, fmt.Errorf("WinWork 的 .claude.json 不是预期的格式")
+	}
+	servers := map[string]json.RawMessage{}
+	if raw, ok := top["mcpServers"]; ok && len(raw) > 0 {
+		if err := json.Unmarshal(raw, &servers); err != nil {
+			return nil, nil, fmt.Errorf("WinWork 的 .claude.json 里 mcpServers 不是预期的格式")
+		}
+	}
+	return servers, top, nil
+}
+
+func writeMCPServers(path string, top map[string]json.RawMessage, servers map[string]json.RawMessage) error {
+	raw, _ := json.Marshal(servers)
+	top["mcpServers"] = raw
+	out, err := json.MarshalIndent(top, "", "  ")
+	if err != nil {
+		return err
+	}
+	// 第一次动它之前留一份备份
+	bak := path + ".bak-switchboard"
+	if _, err := os.Stat(bak); err != nil {
+		if orig, err := os.ReadFile(path); err == nil {
+			_ = os.WriteFile(bak, orig, 0o600)
+		}
+	}
+	tmp := path + ".tmp-switchboard"
+	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func (m *Manager) connectWinWork(opts map[string]bool) error {
+	if !m.winworkInstalled() {
+		return errors.New("本机没有安装 WinWork")
+	}
+	servers, top, err := readMCPServers(m.winworkJSON())
+	if errors.Is(err, os.ErrNotExist) {
+		servers, top = map[string]json.RawMessage{}, map[string]json.RawMessage{}
+	} else if err != nil {
+		return err
+	}
+	if _, ok := servers[mcpName]; !ok {
+		entry, _ := json.Marshal(map[string]any{"type": "stdio", "command": m.exe, "args": []string{"mcp"}, "env": map[string]string{"IMLS_HOST": "winwork"}})
+		servers[mcpName] = entry
+		if err := writeMCPServers(m.winworkJSON(), top, servers); err != nil {
+			return fmt.Errorf("写入 WinWork 配置失败：%s", err)
+		}
+	}
+	if opts == nil {
+		opts = map[string]bool{"write_claude_md": true, "commands": true}
+	}
+	if v, ok := opts["write_claude_md"]; ok {
+		if err := setInstructionBlock(m.winworkMdPath(), v); err != nil {
+			return err
+		}
+	}
+	if v, ok := opts["commands"]; ok {
+		if err := setCommandsIn(m.winworkCfgDir(), v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) disconnectWinWork() error {
+	if servers, top, err := readMCPServers(m.winworkJSON()); err == nil {
+		if _, ok := servers[mcpName]; ok {
+			delete(servers, mcpName)
+			if err := writeMCPServers(m.winworkJSON(), top, servers); err != nil {
+				return fmt.Errorf("改写 WinWork 配置失败：%s", err)
+			}
+		}
+	}
+	_ = setInstructionBlock(m.winworkMdPath(), false)
+	_ = setCommandsIn(m.winworkCfgDir(), false)
+	return nil
 }
 
 // ---------- WorkBuddy ----------

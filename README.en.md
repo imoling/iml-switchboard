@@ -89,6 +89,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 | DeepSeek Harness | OpenAI-compatible endpoint | Agent turns with tool calls verified |
 | Hermes Agent | MCP tools and image settings | Integration code is tested; not yet run for real |
 | WorkBuddy (Tencent) | OpenAI-compatible endpoint | Agent turns with tool calls verified; "generate an image" goes straight to your Switchboard image lane |
+| WinWork (iFLYTEK) | MCP tools, usage notes in its bundled Claude Code's `CLAUDE.md`, slash commands | Connected on the author's machine |
 | Doubao Work (ByteDance) | Custom connector (MCP) | Manual setup |
 
 <table>

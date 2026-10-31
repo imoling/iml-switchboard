@@ -31,7 +31,7 @@ export function Calls({ live }: { live?: Call | null }) {
         <div className="tools">
           <input className="input sm" style={{ width: 180 }} placeholder="搜索内容或模型" value={q} onChange={(e) => setQ(e.target.value)} />
           <select className="sel" value={source} onChange={(e) => setSource(e.target.value)}>
-            <option value="">全部来源</option><option value="claude_code">Claude Code</option><option value="hermes">Hermes</option><option value="workbuddy">WorkBuddy</option><option value="quick">快速面板</option><option value="cli">命令行</option>
+            <option value="">全部来源</option><option value="claude_code">Claude Code</option><option value="hermes">Hermes</option><option value="workbuddy">WorkBuddy</option><option value="winwork">WinWork</option><option value="quick">快速面板</option><option value="cli">命令行</option>
           </select>
           <select className="sel" value={lane} onChange={(e) => setLane(e.target.value)}>
             <option value="">全部渠道</option><option value="sub">订阅</option><option value="api">按量付费</option><option value="media">媒体</option>

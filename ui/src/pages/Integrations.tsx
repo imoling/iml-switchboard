@@ -17,6 +17,7 @@ const META: Record<IntegrationId, { name: string; desc: string; manual?: boolean
   openclaw: { name: 'OpenClaw', desc: '多一个模型提供方；改动从下次启动网关生效' },
   hermes: { name: 'Hermes Agent', desc: '辅助任务和生图交给 {app}；改动从下次启动 Hermes 生效' },
   workbuddy: { name: 'WorkBuddy', desc: '需要在 WorkBuddy 设置里手动添加两个自定义模型', manual: true },
+  winwork: { name: 'WinWork', desc: 'WinWork 里的智能体能调用生图、生视频、问别的模型；下次新建会话生效' },
 };
 
 /** 说明里的 {app} 换成应用名：英文名两边留空格，中文名（点将台等主题）不留 */
@@ -61,22 +62,24 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
               ? <button className="btn sm" disabled={it.available === false} onClick={async () => { await desktop.copyText(it.snippet ?? ''); toast(`已复制，去 ${META[it.id].name} 里粘贴`); }}>复制配置</button>
               : it.status === 'connected'
                 ? <button className="btn sm" disabled={busy === it.id} onClick={() => run(it.id, () => api.disconnect(it.id))}>断开</button>
-                : <button className="btn pri sm" disabled={busy === it.id || it.available === false} onClick={() => run(it.id, () => api.connect(it.id, it.id === 'claude_code' ? { write_claude_md: true } : undefined))}>{busy === it.id ? '正在接入…' : '接入'}</button>}
-            {it.snippet && it.id !== 'claude_code' && (
+                : <button className="btn pri sm" disabled={busy === it.id || it.available === false} onClick={() => run(it.id, () => api.connect(it.id, it.id === 'claude_code' || it.id === 'winwork' ? { write_claude_md: true, commands: true } : undefined))}>{busy === it.id ? '正在接入…' : '接入'}</button>}
+            {it.snippet && it.id !== 'claude_code' && it.id !== 'winwork' && (
               <details className="raw cfg">
                 <summary>{META[it.id].manual ? '怎么填' : '写进去的内容'}</summary>
                 <pre>{it.snippet}</pre>
               </details>
             )}
           </div>
-          {it.id === 'claude_code' && it.status === 'connected' && (
+          {(it.id === 'claude_code' || it.id === 'winwork') && it.status === 'connected' && (
             <div className="panel" style={{ margin: '-1px 0 10px', borderTopLeftRadius: 0, borderTopRightRadius: 0, fontSize: 12.5, padding: '4px 14px' }}>
-              <SetRow title="写入调用约定" desc="加到你的全局 CLAUDE.md，Claude 才知道什么时候把活交出来">
+              <SetRow title="写入调用约定" desc={it.id === 'winwork' ? '加到 WinWork 自己的 CLAUDE.md，它才知道什么时候把活交出来' : '加到你的全局 CLAUDE.md，Claude 才知道什么时候把活交出来'} last={it.id === 'winwork'}>
                 <Toggle on={!!it.options.write_claude_md} onChange={(v) => run(it.id, () => api.setIntegration(it.id, { ...it.options, write_claude_md: v }))} />
               </SetRow>
-              <SetRow title="规划用 Opus，执行用 Sonnet" desc="改的是 Claude Code 自己的设置，额度消耗约减三成" last>
-                <Toggle on={!!it.options.opusplan} onChange={(v) => run(it.id, () => api.setIntegration(it.id, { ...it.options, opusplan: v }))} />
-              </SetRow>
+              {it.id === 'claude_code' && (
+                <SetRow title="规划用 Opus，执行用 Sonnet" desc="改的是 Claude Code 自己的设置，额度消耗约减三成" last>
+                  <Toggle on={!!it.options.opusplan} onChange={(v) => run(it.id, () => api.setIntegration(it.id, { ...it.options, opusplan: v }))} />
+                </SetRow>
+              )}
             </div>
           )}
         </div>

@@ -12,6 +12,7 @@ import moonshot from '../assets/vendors/moonshot.svg';
 import minimax from '../assets/vendors/minimax-color.svg';
 import nous from '../assets/vendors/nousresearch.svg';
 import workbuddy from '../assets/vendors/workbuddy.png';
+import winwork from '../assets/vendors/winwork.png';
 import agnes from '../assets/vendors/agnes.png';
 import pi from '../assets/vendors/pi.svg';
 import openclaw from '../assets/vendors/openclaw.svg';
@@ -24,7 +25,7 @@ const MAP: Record<string, string> = {
   qwen: qwen, alibaba: qwen, bailian: bailian, dashscope: bailian,
   volcengine: volcengine, ark: volcengine, doubao: doubao, seedream: volcengine, seedance: volcengine,
   openrouter: openrouter, deepseek: deepseek, moonshot: moonshot, kimi: moonshot, minimax: minimax,
-  nous: nous, nousresearch: nous, hermes: nous, workbuddy: workbuddy, agnes: agnes,
+  nous: nous, nousresearch: nous, hermes: nous, workbuddy: workbuddy, winwork: winwork, agnes: agnes,
   doubao_work: doubao, pi: pi, deepseek_harness: deepseek, openclaw: openclaw,
 };
 
@@ -37,7 +38,7 @@ export function Vendor({ provider, size = 'sm' }: { provider?: string; size?: 's
 
 export function VendorLogo({ provider }: { provider: string }) {
   const src = MAP[provider.toLowerCase()];
-  return <div className={`logo ${provider === 'workbuddy' || provider === 'agnes' ? 'lgimg' : ''}`}>{src ? <img src={src} alt="" /> : <span className="muted">?</span>}</div>;
+  return <div className={`logo ${provider === 'workbuddy' || provider === 'winwork' || provider === 'agnes' ? 'lgimg' : ''}`}>{src ? <img src={src} alt="" /> : <span className="muted">?</span>}</div>;
 }
 
 export const Model = ({ provider, name }: { provider?: string; name: string }) => <><Vendor provider={provider} />{name}</>;

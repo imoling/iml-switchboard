@@ -1,6 +1,7 @@
 package integrations
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,5 +120,53 @@ func TestWorkBuddy(t *testing.T) {
 	}
 	if !strings.Contains(m.workbuddySnippet(), "router-auto") {
 		t.Fatal("片段应包含模型")
+	}
+}
+
+// WinWork 内嵌的 Claude Code 用自己的配置目录；登记 MCP 时其它字段要原样保留，宿主名记为 winwork
+func TestWinWork(t *testing.T) {
+	m, home := setup(t)
+	if m.view("winwork")["available"] != false {
+		t.Fatal("没有配置目录时应显示未安装")
+	}
+	dir := filepath.Join(home, ".kooky-data", "claude-config")
+	_ = os.MkdirAll(dir, 0o755)
+	orig := `{"numStartups": 12, "machineID": "abc", "mcpServers": {"playwright-test": {"type": "stdio", "command": "npx", "args": ["playwright"]}}, "projects": {"/x": {"allowedTools": []}}, "theme": "dark"}`
+	_ = os.WriteFile(filepath.Join(dir, ".claude.json"), []byte(orig), 0o600)
+	if m.view("winwork")["status"] != "disconnected" {
+		t.Fatalf("有目录但没登记应是未接入：%v", m.view("winwork"))
+	}
+	if _, err := m.Connect("winwork", nil); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, ".claude.json"))
+	var top map[string]any
+	if err := json.Unmarshal(b, &top); err != nil {
+		t.Fatal(err)
+	}
+	servers := top["mcpServers"].(map[string]any)
+	ours, ok := servers[mcpName].(map[string]any)
+	if !ok || ours["command"] != "/usr/local/bin/imls" || ours["env"].(map[string]any)["IMLS_HOST"] != "winwork" {
+		t.Fatalf("登记内容不对：%v", servers)
+	}
+	if _, ok := servers["playwright-test"]; !ok || top["numStartups"] != float64(12) || top["theme"] != "dark" || top["machineID"] != "abc" {
+		t.Fatalf("其它字段不能丢：%s", b)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude.json.bak-switchboard")); err != nil {
+		t.Fatal("动之前要留备份")
+	}
+	md, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if !strings.Contains(string(md), "generate_image") || !commandsInstalledIn(dir) {
+		t.Fatal("调用约定和斜杠命令要写进 WinWork 的配置目录")
+	}
+	if v := m.view("winwork"); v["status"] != "connected" {
+		t.Fatalf("%v", v)
+	}
+	if _, err := m.Disconnect("winwork"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(filepath.Join(dir, ".claude.json"))
+	if strings.Contains(string(b), mcpName) || !strings.Contains(string(b), "playwright-test") || commandsInstalledIn(dir) {
+		t.Fatalf("断开后应只去掉我们的条目：%s", b)
 	}
 }

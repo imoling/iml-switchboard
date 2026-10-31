@@ -87,6 +87,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 | DeepSeek Harness | 兼容入口 | 带工具的智能体回合实测通过 |
 | Hermes Agent | MCP 工具 + 生图配置 | 接入代码有测试，未在真实环境跑过 |
 | WorkBuddy | 兼容入口 | 带工具的回合实测通过；说「生成图片」直接走 Switchboard 的渠道出图 |
+| WinWork（讯飞） | MCP 工具 + 它内嵌 Claude Code 的 `CLAUDE.md` 调用约定 + 斜杠命令 | 已在本机接入 |
 | 豆包工作 | 自定义连接器（MCP） | 手动配置 |
 
 <table>
