@@ -28,6 +28,9 @@ func (f *fake) Run(ctx context.Context, t *core.Task, tg core.Target, emit func(
 	if t.Kind == core.KindImage {
 		return &core.Result{Path: "/tmp/imls-test/红杏.png", Model: tg.Model}, nil
 	}
+	if len(t.Tools) > 0 && strings.Contains(t.Prompt, "用工具") && (len(t.Messages) == 0 || t.Messages[len(t.Messages)-1].Role != "tool") {
+		return &core.Result{Model: tg.Model, FinishReason: "tool_calls", ToolCalls: json.RawMessage(`[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"合肥\"}"}}]`)}, nil
+	}
 	return &core.Result{Text: "回答", Model: tg.Model, Usage: core.Usage{InputTokens: 3, OutputTokens: 2}}, nil
 }
 func (f *fake) Health(ctx context.Context) core.Health { return core.Health{Status: "ok"} }
@@ -199,5 +202,151 @@ func TestModelPinAndList(t *testing.T) {
 	buf.ReadFrom(r2.Body)
 	if !strings.Contains(buf.String(), `"id":"glm-5.3"`) || !strings.Contains(buf.String(), `"id":"router-auto"`) {
 		t.Fatalf("模型列表应含账号型号：%s", buf.String())
+	}
+}
+
+func postAnth(ts *httptest.Server, key string, body any) (*http.Response, string) {
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/messages", bytes.NewReader(b))
+	req.Header.Set("x-api-key", key)
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := http.DefaultClient.Do(req)
+	var buf bytes.Buffer
+	buf.ReadFrom(resp.Body)
+	return resp, buf.String()
+}
+
+// Anthropic 协议：工具两头转换、工具结果变成 tool 消息、用 x-api-key 鉴权
+func TestAnthropicMessages(t *testing.T) {
+	ts, _, api := setup(t)
+	tools := []map[string]any{{"name": "get_weather", "description": "查天气", "input_schema": map[string]any{"type": "object", "properties": map[string]any{"city": map[string]string{"type": "string"}}}}}
+	resp, body := postAnth(ts, "k", map[string]any{"model": "router-mid", "max_tokens": 100, "system": "你是助手", "tools": tools,
+		"messages": []map[string]any{{"role": "user", "content": "合肥天气？用工具查"}}})
+	if resp.StatusCode != 200 || api.last == nil {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, `"type":"tool_use"`) || !strings.Contains(body, `"name":"get_weather"`) || !strings.Contains(body, `"city":"合肥"`) || !strings.Contains(body, `"stop_reason":"tool_use"`) {
+		t.Fatalf("应回 tool_use 块：%s", body)
+	}
+	if !strings.Contains(string(api.last.Tools), `"parameters"`) || api.last.System != "你是助手" || api.last.Tier != core.TierMid {
+		t.Fatalf("工具应转成 OpenAI 格式、系统提示与档位要带上：%s %q %s", api.last.Tools, api.last.System, api.last.Tier)
+	}
+	// 第二轮：助手的 tool_use 和用户的 tool_result 要变成 OpenAI 的 tool_calls / tool 消息
+	resp, body = postAnth(ts, "k", map[string]any{"model": "router-auto", "max_tokens": 100, "tools": tools, "messages": []map[string]any{
+		{"role": "user", "content": "合肥天气？用工具查"},
+		{"role": "assistant", "content": []map[string]any{{"type": "tool_use", "id": "toolu_1", "name": "get_weather", "input": map[string]string{"city": "合肥"}}}},
+		{"role": "user", "content": []map[string]any{{"type": "tool_result", "tool_use_id": "toolu_1", "content": "晴 22 度"}}},
+	}})
+	if resp.StatusCode != 200 || !strings.Contains(body, `"type":"text"`) {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+	msgs := api.last.Messages
+	if len(msgs) != 3 || msgs[1].Role != "assistant" || !strings.Contains(string(msgs[1].ToolCalls), `"toolu_1"`) || msgs[2].Role != "tool" || msgs[2].ToolCallID != "toolu_1" || msgs[2].Content != "晴 22 度" {
+		t.Fatalf("消息转换不对：%+v", msgs)
+	}
+	if resp, _ := postAnth(ts, "wrong", map[string]any{"model": "router-auto", "messages": []map[string]any{{"role": "user", "content": "x"}}}); resp.StatusCode != 401 {
+		t.Fatalf("密钥不对应 401，得到 %d", resp.StatusCode)
+	}
+}
+
+// 流式：事件顺序是 message_start → 文本块 → 工具块 → message_delta → message_stop
+func TestAnthropicStream(t *testing.T) {
+	ts, _, _ := setup(t)
+	resp, body := postAnth(ts, "k", map[string]any{"model": "router-auto", "max_tokens": 50, "stream": true,
+		"tools":    []map[string]any{{"name": "get_weather", "input_schema": map[string]any{"type": "object"}}},
+		"messages": []map[string]any{{"role": "user", "content": "合肥天气？用工具查"}}})
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+	order := []string{"event: message_start", "event: content_block_start", `"type":"tool_use"`, "input_json_delta", "event: content_block_stop", `"stop_reason":"tool_use"`, "event: message_stop"}
+	pos := 0
+	for _, want := range order {
+		i := strings.Index(body[pos:], want)
+		if i < 0 {
+			t.Fatalf("缺少或顺序不对：%s\n%s", want, body)
+		}
+		pos += i
+	}
+	// 纯文字：流式文本块
+	_, body = postAnth(ts, "k", map[string]any{"model": "router-auto", "max_tokens": 50, "stream": true, "messages": []map[string]any{{"role": "user", "content": "你好"}}})
+	if !strings.Contains(body, `"text_delta"`) || !strings.Contains(body, `"stop_reason":"end_turn"`) {
+		t.Fatalf("%s", body)
+	}
+	// 估算 token
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/messages/count_tokens", strings.NewReader(`{"model":"router-auto","messages":[{"role":"user","content":"你好世界"}]}`))
+	req.Header.Set("x-api-key", "k")
+	r2, _ := http.DefaultClient.Do(req)
+	var buf bytes.Buffer
+	buf.ReadFrom(r2.Body)
+	if r2.StatusCode != 200 || !strings.Contains(buf.String(), "input_tokens") {
+		t.Fatalf("%d %s", r2.StatusCode, buf.String())
+	}
+	// Claude 自家的模型名按档位理解
+	task := &core.Task{}
+	applyModelName(task, "claude-haiku-5-5")
+	if task.Tier != core.TierLow || task.Model != "" {
+		t.Fatalf("haiku 应当低档：%+v", task)
+	}
+	task = &core.Task{}
+	applyModelName(task, "gpt-5.6-luna")
+	if task.Tier != core.TierLow || task.Model != "" {
+		t.Fatalf("gpt 小型号应当低档：%+v", task)
+	}
+	task = &core.Task{}
+	applyModelName(task, "winwork-snt-5.5")
+	if task.Model != "winwork-snt-5.5" {
+		t.Fatalf("其它名字当点名：%+v", task)
+	}
+}
+
+func postResp(ts *httptest.Server, key string, body any) (*http.Response, string) {
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/responses", bytes.NewReader(b))
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := http.DefaultClient.Do(req)
+	var buf bytes.Buffer
+	buf.ReadFrom(resp.Body)
+	return resp, buf.String()
+}
+
+// Responses 协议（Codex）：instructions 是系统提示，function_call / function_call_output 两头转换，流式事件齐全
+func TestResponsesAPI(t *testing.T) {
+	ts, _, api := setup(t)
+	tools := []map[string]any{{"type": "function", "name": "get_weather", "description": "查天气", "parameters": map[string]any{"type": "object"}}, {"type": "local_shell"}}
+	resp, body := postResp(ts, "k", map[string]any{"model": "router-mid", "instructions": "你是助手", "tools": tools, "input": "合肥天气？用工具查"})
+	if resp.StatusCode != 200 || api.last == nil || !strings.Contains(body, `"type":"function_call"`) || !strings.Contains(body, `"call_id":"call_1"`) || !strings.Contains(body, `"object":"response"`) {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+	if api.last.System != "你是助手" || api.last.Tier != core.TierMid || strings.Contains(string(api.last.Tools), "local_shell") {
+		t.Fatalf("系统提示、档位要带上，内置工具要去掉：%q %s %s", api.last.System, api.last.Tier, api.last.Tools)
+	}
+	resp, body = postResp(ts, "k", map[string]any{"model": "router-auto", "tools": tools, "input": []map[string]any{
+		{"type": "message", "role": "user", "content": []map[string]any{{"type": "input_text", "text": "合肥天气？用工具查"}}},
+		{"type": "function_call", "call_id": "call_9", "name": "get_weather", "arguments": `{"city":"合肥"}`},
+		{"type": "function_call_output", "call_id": "call_9", "output": "晴 22 度"},
+	}})
+	if resp.StatusCode != 200 || !strings.Contains(body, `"output_text"`) {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+	msgs := api.last.Messages
+	if len(msgs) != 3 || msgs[1].Role != "assistant" || !strings.Contains(string(msgs[1].ToolCalls), `"call_9"`) || msgs[2].Role != "tool" || msgs[2].ToolCallID != "call_9" || msgs[2].Content != "晴 22 度" {
+		t.Fatalf("消息转换不对：%+v", msgs)
+	}
+	resp, body = postResp(ts, "k", map[string]any{"model": "router-auto", "stream": true, "tools": tools, "input": "合肥天气？用工具查"})
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+	pos := 0
+	for _, want := range []string{"event: response.created", "event: response.output_item.added", `"type":"function_call"`, "event: response.function_call_arguments.done", "event: response.output_item.done", "event: response.completed", `"status":"completed"`} {
+		i := strings.Index(body[pos:], want)
+		if i < 0 {
+			t.Fatalf("缺少或顺序不对：%s\n%s", want, body)
+		}
+		pos += i
+	}
+	_, body = postResp(ts, "k", map[string]any{"model": "router-auto", "stream": true, "input": "你好"})
+	if !strings.Contains(body, "response.output_text.delta") || !strings.Contains(body, "response.output_text.done") {
+		t.Fatalf("%s", body)
 	}
 }

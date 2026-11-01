@@ -18,6 +18,7 @@ Switchboard brings your subscription models (Claude, ChatGPT, Antigravity), your
 Two ways to use it:
 
 - **Delegate**: Claude Code, Codex and Gemini CLI keep their own main model and hand sub-tasks (translation, a second opinion, images) to Switchboard as MCP tools. The main conversation and its prompt cache are untouched.
+- **Take over Claude Code and Codex**: flip "Take over model" on the Integrations page and their own conversations go through Switchboard (Anthropic Messages for Claude Code, OpenAI Responses for Codex; streaming, tool calls and prompt caching are native). `/model` lists "auto", "high / mid / low" and every pay-as-you-go model; switch it off and the original config is restored.
 - **Be the main model**: WorkBuddy, pi, OpenClaw and DeepSeek Harness use Switchboard as a model through an OpenAI-compatible endpoint. Every request carries the full conversation; Switchboard picks a model by difficulty and falls over to the next one if it fails.
 
 It comes with a menu bar app (system tray on Windows) for quotas, spend, savings, and routing rules.

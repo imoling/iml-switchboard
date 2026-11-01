@@ -79,7 +79,7 @@ export interface Suggestion { task_type: string; name?: string; escalations: num
 export type IntegrationId = 'claude_code' | 'codex' | 'gemini_cli' | 'doubao_work' | 'pi' | 'deepseek_harness' | 'openclaw' | 'hermes' | 'workbuddy' | 'winwork';
 export interface Integration {
   id: IntegrationId; status: 'connected' | 'disconnected' | 'manual';
-  options: { write_claude_md?: boolean; opusplan?: boolean; commands?: boolean }; snippet?: string; available?: boolean; detail?: string;
+  options: { write_claude_md?: boolean; opusplan?: boolean; commands?: boolean; takeover?: boolean }; snippet?: string; available?: boolean; detail?: string;
   calls_7d?: number; last_call?: string;
 }
 

@@ -80,7 +80,7 @@ func (m *Manager) view(id string) map[string]any {
 		if m.claudeRegistered() {
 			v["status"] = "connected"
 		}
-		opts := map[string]bool{"write_claude_md": m.claudeMdHasBlock(), "opusplan": m.claudeModelIs("opusplan"), "commands": m.commandsInstalled()}
+		opts := map[string]bool{"write_claude_md": m.claudeMdHasBlock(), "opusplan": m.claudeModelIs("opusplan"), "commands": m.commandsInstalled(), "takeover": m.claudeTakenOver()}
 		v["options"] = opts
 	case "codex":
 		if _, err := exec.LookPath("codex"); err != nil {
@@ -90,6 +90,7 @@ func (m *Manager) view(id string) map[string]any {
 		if m.codexRegistered() {
 			v["status"] = "connected"
 		}
+		v["options"] = map[string]bool{"takeover": m.codexTakenOver()}
 	case "gemini_cli":
 		if _, err := exec.LookPath("gemini"); err != nil {
 			v["available"] = false
@@ -264,6 +265,14 @@ func (m *Manager) Update(id string, opts map[string]bool) (map[string]any, error
 		}
 		return m.view(id), nil
 	}
+	if id == "codex" {
+		if v, ok := opts["takeover"]; ok {
+			if err := m.setCodexTakeover(v); err != nil {
+				return nil, err
+			}
+		}
+		return m.view(id), nil
+	}
 	if id != "claude_code" {
 		return m.view(id), nil
 	}
@@ -279,6 +288,11 @@ func (m *Manager) Update(id string, opts map[string]bool) (map[string]any, error
 	}
 	if v, ok := opts["commands"]; ok {
 		if err := m.setCommands(v); err != nil {
+			return nil, err
+		}
+	}
+	if v, ok := opts["takeover"]; ok {
+		if err := m.setClaudeTakeover(v); err != nil {
 			return nil, err
 		}
 	}

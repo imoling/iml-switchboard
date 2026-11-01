@@ -70,14 +70,21 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
               </details>
             )}
           </div>
-          {(it.id === 'claude_code' || it.id === 'winwork') && it.status === 'connected' && (
+          {(it.id === 'claude_code' || it.id === 'winwork' || it.id === 'codex') && it.status === 'connected' && (
             <div className="panel" style={{ margin: '-1px 0 10px', borderTopLeftRadius: 0, borderTopRightRadius: 0, fontSize: 12.5, padding: '4px 14px' }}>
-              <SetRow title="写入调用约定" desc={it.id === 'winwork' ? '加到 WinWork 自己的 CLAUDE.md，它才知道什么时候把活交出来' : '加到你的全局 CLAUDE.md，Claude 才知道什么时候把活交出来'} last={it.id === 'winwork'}>
-                <Toggle on={!!it.options.write_claude_md} onChange={(v) => run(it.id, () => api.setIntegration(it.id, { ...it.options, write_claude_md: v }))} />
-              </SetRow>
+              {it.id !== 'codex' && (
+                <SetRow title="写入调用约定" desc={it.id === 'winwork' ? '加到 WinWork 自己的 CLAUDE.md，它才知道什么时候把活交出来' : '加到你的全局 CLAUDE.md，Claude 才知道什么时候把活交出来'} last={it.id === 'winwork'}>
+                  <Toggle on={!!it.options.write_claude_md} onChange={(v) => run(it.id, () => api.setIntegration(it.id, { ...it.options, write_claude_md: v }))} />
+                </SetRow>
+              )}
               {it.id === 'claude_code' && (
-                <SetRow title="规划用 Opus，执行用 Sonnet" desc="改的是 Claude Code 自己的设置，额度消耗约减三成" last>
+                <SetRow title="规划用 Opus，执行用 Sonnet" desc="改的是 Claude Code 自己的设置，额度消耗约减三成">
                   <Toggle on={!!it.options.opusplan} onChange={(v) => run(it.id, () => api.setIntegration(it.id, { ...it.options, opusplan: v }))} />
+                </SetRow>
+              )}
+              {(it.id === 'claude_code' || it.id === 'codex') && (
+                <SetRow title="接管模型" desc={it.id === 'claude_code' ? '对话改走按量付费模型，订阅暂停；/model 里可选型号；关掉恢复原设置' : '对话改走按量付费模型；重启 Codex 生效；关掉恢复原设置'} last>
+                  <Toggle on={!!it.options.takeover} onChange={(v) => run(it.id, () => api.setIntegration(it.id, { ...it.options, takeover: v }))} />
                 </SetRow>
               )}
             </div>

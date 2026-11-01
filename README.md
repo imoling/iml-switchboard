@@ -19,6 +19,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 
 - **派活**：Claude Code、Codex、Gemini CLI 保留自己的主力模型，把翻译、第二意见、生图这些子任务交给 Switchboard（MCP 工具）。主力的上下文和缓存不受影响。
 - **当主力模型**：WorkBuddy、pi、OpenClaw、DeepSeek Harness 直接把 Switchboard 当成一个模型（OpenAI 兼容接口）。每次请求带着完整对话，Switchboard 按难易挑模型，一个失败就换下一个接着答。
+- **接管 Claude Code 和 Codex**：接入页打开「接管模型」，它们自己的对话就改走 Switchboard（Claude Code 用 Anthropic 协议，Codex 用 Responses 协议，流式、工具调用、提示缓存都是原生的），`/model` 里能选「自动分档」「高档 / 中档 / 低档」或任何一个按量付费型号；关掉开关原样恢复。订阅额度用完、或想用 WinWork 网关的模型接着写代码时用它。
 
 配一个菜单栏（Windows 上是托盘）应用：看额度、看花费、看省了多少、改规则。
 

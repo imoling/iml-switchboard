@@ -34,12 +34,23 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/models", s.auth(s.models))
 	mux.HandleFunc("POST /v1/chat/completions", s.auth(s.chat))
 	mux.HandleFunc("POST /v1/images/generations", s.auth(s.images))
+	mux.HandleFunc("POST /v1/responses", s.auth(s.responses))
+	mux.HandleFunc("POST /v1/messages", s.auth(s.messages))
+	mux.HandleFunc("POST /v1/messages/count_tokens", s.auth(s.countTokens))
 }
 
 func (s *Server) auth(fn http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		host, ok := config.CheckHostKey(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), s.key())
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if got == "" {
+			got = r.Header.Get("x-api-key") // Anthropic 协议的宿主用这个头
+		}
+		host, ok := config.CheckHostKey(got, s.key())
 		if !ok {
+			if strings.HasPrefix(r.URL.Path, "/v1/messages") {
+				anthErr(w, 401, "authentication_error", "密钥不对：到设置里复制门面密钥")
+				return
+			}
 			oaiErr(w, 401, "invalid_api_key", "密钥不对：到设置里复制门面密钥")
 			return
 		}
@@ -87,9 +98,16 @@ func oaiErr(w http.ResponseWriter, code int, typ, msg string) {
 func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix()
 	w.Header().Set("Content-Type", "application/json")
+	item := func(id, name, owner string) map[string]any {
+		// OpenAI 和 Anthropic 两种列表格式的字段都给，宿主各取所需
+		return map[string]any{"id": id, "object": "model", "type": "model", "created": now, "created_at": time.Unix(now, 0).UTC().Format(time.RFC3339), "owned_by": owner, "display_name": name}
+	}
 	data := []map[string]any{
-		{"id": "router-auto", "object": "model", "created": now, "owned_by": "iml-switchboard"},
-		{"id": "router-sub", "object": "model", "created": now, "owned_by": "iml-switchboard"},
+		item("router-auto", "Switchboard 自动分档", "iml-switchboard"),
+		item("router-high", "Switchboard 高档", "iml-switchboard"),
+		item("router-mid", "Switchboard 中档", "iml-switchboard"),
+		item("router-low", "Switchboard 低档", "iml-switchboard"),
+		item("router-sub", "Switchboard 订阅优先", "iml-switchboard"),
 	}
 	// 按量付费账号里配好的型号也列出来，宿主能直接点名
 	seen := map[string]bool{}
@@ -101,12 +119,12 @@ func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 			for _, m := range acc.Models[tier] {
 				if !seen[m] {
 					seen[m] = true
-					data = append(data, map[string]any{"id": m, "object": "model", "created": now, "owned_by": acc.Provider})
+					data = append(data, item(m, s.router.Registry().Display(m), acc.Provider))
 				}
 			}
 		}
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
+	_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data, "has_more": false})
 }
 
 type oaiMessage struct {
@@ -171,8 +189,8 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if req.Model == "router-sub" {
 		t.Lane = core.LaneClaudeSub
 	}
-	if req.Model != "" && !strings.HasPrefix(req.Model, "router-") {
-		t.Model = req.Model // 宿主在自己的模型列表里选了具体某个，就按它来
+	if req.Model != "router-sub" {
+		applyModelName(t, req.Model) // 宿主在自己的模型列表里选了什么，就按什么来
 	}
 	// 带工具的智能体回合照样认一句直接的出图请求：宿主自带的出图工具往往另外收费，用户配好的渠道在这儿
 	for _, m := range req.Messages {
@@ -320,6 +338,10 @@ func hostOf(r *http.Request) string {
 	switch {
 	case strings.Contains(ua, "workbuddy"):
 		return "workbuddy"
+	case strings.Contains(ua, "claude-cli"):
+		return "claude_code"
+	case strings.Contains(ua, "codex"):
+		return "codex"
 	case strings.Contains(ua, "hermes"):
 		return "hermes"
 	}

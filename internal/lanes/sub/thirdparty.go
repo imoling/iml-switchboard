@@ -58,4 +58,4 @@ func (d *ClaudeDriver) claudeSettingsFiles(projectDir string) []string {
 	return files
 }
 
-const thirdPartyHint = "Claude Code 设置里配了第三方接口，订阅暂停使用；多半是 cc-switch 切过，切回官方登录后恢复"
+const thirdPartyHint = "Claude Code 设置里配了第三方接口，订阅暂停使用；多半是接管或 cc-switch 切过，切回官方登录后恢复"
