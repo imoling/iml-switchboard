@@ -146,7 +146,7 @@ func TestWinWorkConfigDirVariants(t *testing.T) {
 		t.Fatalf("开发版要找到：%s", got)
 	}
 	write(filepath.Join(home, ".kooky-data"), now.Add(-time.Hour))
-	if got := WinWorkConfigDir(); !strings.HasSuffix(got, ".kooky-data-dev/claude-config") {
+	if got := WinWorkConfigDir(); got != filepath.Join(home, ".kooky-data-dev", "claude-config") {
 		t.Fatalf("取最近改过的：%s", got)
 	}
 	write(filepath.Join(home, "elsewhere"), now.Add(time.Hour))
