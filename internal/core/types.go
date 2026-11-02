@@ -55,6 +55,8 @@ type Message struct {
 	Content string `json:"content"`
 	// Images 是本地文件路径或 data URL，按量付费渠道会转成供应商格式。
 	Images []string `json:"images,omitempty"`
+	// ToolImage 表示这条消息只是工具返回的图片，不是用户的要求：没有能看图的模型时可以去掉，不该让整轮失败。
+	ToolImage bool `json:"-"`
 	// 智能体回合的工具调用：助手消息带 ToolCalls（OpenAI 格式原样保留），工具消息带 ToolCallID。
 	// 兼容入口必须原样转发，否则宿主的工具调用对不上号，智能体跑不起来。
 	ToolCalls  json.RawMessage `json:"tool_calls,omitempty"`
@@ -189,6 +191,8 @@ type Health struct {
 	// 订阅渠道的额度窗口估算
 	Quota         []QuotaWindow `json:"quota,omitempty"`
 	CooldownUntil time.Time     `json:"cooldown_until,omitempty"`
+	// SignedOut 表示订阅没登录：一点额度都用不了，界面上不显示，路由也不去试；登录后自动出现
+	SignedOut bool `json:"signed_out,omitempty"`
 }
 
 // QuotaWindow 是一个额度窗口。

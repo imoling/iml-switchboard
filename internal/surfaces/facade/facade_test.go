@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,11 +23,14 @@ type fake struct {
 func (f *fake) ID() core.LaneID { return f.id }
 func (f *fake) Run(ctx context.Context, t *core.Task, tg core.Target, emit func(core.Event)) (*core.Result, error) {
 	f.last = t
+	if t.Kind == core.KindImage { // 媒体渠道没有流式文字
+		return &core.Result{Path: "/tmp/imls-test/红杏.png", Model: tg.Model}, nil
+	}
+	if t.Kind == core.KindVideo { // 没等到结果，只有任务号
+		return &core.Result{JobID: "job-1", Model: tg.Model}, nil
+	}
 	if emit != nil {
 		emit(core.Event{Type: "text_delta", Text: "流式"})
-	}
-	if t.Kind == core.KindImage {
-		return &core.Result{Path: "/tmp/imls-test/红杏.png", Model: tg.Model}, nil
 	}
 	if len(t.Tools) > 0 && strings.Contains(t.Prompt, "用工具") && (len(t.Messages) == 0 || t.Messages[len(t.Messages)-1].Role != "tool") {
 		return &core.Result{Model: tg.Model, FinishReason: "tool_calls", ToolCalls: json.RawMessage(`[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"合肥\"}"}}]`)}, nil
@@ -149,9 +153,146 @@ func TestContextLengthExceeded(t *testing.T) {
 
 // WorkBuddy 这类宿主每轮都带工具，用户说「生成图片」时要走用户配好的媒体渠道，而不是只回文字让宿主去调自己收费的出图工具
 func TestToolsStillGetImageFromSwitchboard(t *testing.T) {
-	ts, _, _ := setup(t)
+	ts, media, text := setupMedia(t)
+	prompt := `<system-reminder data-role="user-context">` + strings.Repeat("工作区信息 ", 200) + "</system-reminder>\n生成图片：一枝红杏出墙来"
+	resp, body := post(ts, "/v1/chat/completions", "k", map[string]any{
+		"model": "router-auto", "tools": []map[string]any{{"type": "function", "function": map[string]any{"name": "ImageGen"}}},
+		"messages": []map[string]any{{"role": "user", "content": prompt}},
+	})
+	if resp.StatusCode != 200 || media.last == nil || text.last != nil {
+		t.Fatalf("带工具的一句出图请求应走媒体渠道：%d %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "![](http://127.0.0.1:18081/media/红杏.png)") || !strings.Contains(body, "已生成 /tmp/imls-test/红杏.png") {
+		t.Fatalf("要把产物路径回给宿主：%s", body)
+	}
+}
+
+// 接管后对话走 Responses 和 Anthropic 协议：出图结果没有正文，同样要回路径，否则宿主收到一条空回复
+func TestTakeoverGetsMediaResult(t *testing.T) {
+	ts, media, _ := setupMedia(t)
+	const ask = "生成图片：一枝红杏出墙来"
+	tools := []map[string]any{{"type": "function", "name": "exec_command", "parameters": map[string]any{"type": "object"}}}
+	anthTools := []map[string]any{{"name": "Bash", "input_schema": map[string]any{"type": "object"}}}
+	msgs := []map[string]any{{"role": "user", "content": ask}}
+	for name, call := range map[string]func() (*http.Response, string){
+		"Responses": func() (*http.Response, string) {
+			return postResp(ts, "k", map[string]any{"model": "router-auto", "tools": tools, "input": ask})
+		},
+		"Responses 流式": func() (*http.Response, string) {
+			return postResp(ts, "k", map[string]any{"model": "router-auto", "stream": true, "tools": tools, "input": ask})
+		},
+		"Anthropic": func() (*http.Response, string) {
+			return postAnth(ts, "k", map[string]any{"model": "router-auto", "max_tokens": 100, "tools": anthTools, "messages": msgs})
+		},
+		"Anthropic 流式": func() (*http.Response, string) {
+			return postAnth(ts, "k", map[string]any{"model": "router-auto", "max_tokens": 100, "stream": true, "tools": anthTools, "messages": msgs})
+		},
+	} {
+		media.last = nil
+		resp, body := call()
+		if resp.StatusCode != 200 || media.last == nil {
+			t.Fatalf("%s 应走媒体渠道：%d %s", name, resp.StatusCode, body)
+		}
+		if !strings.Contains(body, "http://127.0.0.1:18081/media/红杏.png") || !strings.Contains(body, "已生成 /tmp/imls-test/红杏.png") {
+			t.Fatalf("%s 要把产物回给宿主：%s", name, body)
+		}
+	}
+}
+
+// Codex 一轮并发调两个工具、其中一个回图片：调用要在同一条助手消息里，结果紧跟着，图片排在所有结果之后，判档仍看用户原话
+func TestResponsesParallelToolsAndImages(t *testing.T) {
+	ts, _, api := setup(t)
+	const png = "data:image/png;base64,iVBORw0KGgo="
+	tools := []map[string]any{{"type": "function", "name": "view_image", "parameters": map[string]any{"type": "object"}}}
+	input := []map[string]any{
+		{"type": "message", "role": "user", "content": []map[string]any{{"type": "input_text", "text": "检查排版"}}},
+		{"type": "function_call", "call_id": "a", "name": "view_image", "arguments": `{"path":"1.png"}`},
+		{"type": "function_call", "call_id": "b", "name": "view_image", "arguments": `{"path":"2.png"}`},
+		{"type": "function_call_output", "call_id": "a", "output": []map[string]any{{"type": "input_image", "image_url": png}}},
+		{"type": "function_call_output", "call_id": "b", "output": "没找到文件"},
+	}
+	resp, body := postResp(ts, "k", map[string]any{"model": "winwork-os-5.5", "tools": tools, "input": input})
+	if resp.StatusCode != 200 || api.last == nil {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+	m := api.last.Messages
+	if len(m) != 5 {
+		t.Fatalf("消息条数不对：%+v", m)
+	}
+	var calls []map[string]any
+	_ = json.Unmarshal(m[1].ToolCalls, &calls)
+	if m[1].Role != "assistant" || len(calls) != 2 {
+		t.Fatalf("并发调用要在同一条助手消息里：%+v", m[1])
+	}
+	if !strings.Contains(m[2].Content, "第 1 张") {
+		t.Fatalf("要写明图片归哪个调用：%q", m[2].Content)
+	}
+	if m[2].Role != "tool" || m[2].ToolCallID != "a" || m[3].Role != "tool" || m[3].ToolCallID != "b" || m[3].Content != "没找到文件" {
+		t.Fatalf("工具结果要紧跟调用：%+v", m[2:4])
+	}
+	if m[4].Role != "user" || len(m[4].Images) != 1 || m[4].Images[0] != png {
+		t.Fatalf("工具回的图片要带给模型：%+v", m[4])
+	}
+	if api.last.Prompt != "检查排版" {
+		t.Fatalf("判档要看用户原话：%q", api.last.Prompt)
+	}
+
+	// 这一档没有能看图的模型：图片换成文字提示，任务继续，不能整轮报错
+	api.last = nil
+	resp, body = postResp(ts, "k", map[string]any{"model": "router-mid", "tools": tools, "input": input})
+	if resp.StatusCode != 200 || api.last == nil {
+		t.Fatalf("没有能看图的模型也要能跑：%d %s", resp.StatusCode, body)
+	}
+	m = api.last.Messages
+	if len(m) != 5 || len(m[4].Images) != 0 || !strings.Contains(m[4].Content, "看不了图") {
+		t.Fatalf("要告诉模型图看不了：%+v", m[len(m)-1])
+	}
+}
+
+// 视频没等到结果时回任务号，不能是空回复
+func TestReplyTextJob(t *testing.T) {
+	s := &Server{}
+	if got := s.replyText(&core.Call{}, &core.Result{JobID: "job-1"}); !strings.Contains(got, "job-1") {
+		t.Fatalf("要回任务号：%q", got)
+	}
+	if got := s.replyText(&core.Call{}, &core.Result{ToolCalls: json.RawMessage(`[]`)}); got != "" {
+		t.Fatalf("只有工具调用时没有正文：%q", got)
+	}
+}
+
+// Codex 桌面应用不加载 http 图片，只有它拿本机文件地址；空格、中文、括号都要编码，否则 Markdown 断开
+func TestCodexGetsFileURL(t *testing.T) {
+	ts, media, _ := setupMedia(t)
+	const ask = "生成图片：一枝红杏出墙来"
+	resp, body := postResp(ts, "k.codex", map[string]any{"model": "router-auto", "input": ask})
+	if resp.StatusCode != 200 || media.last == nil {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+	const file = "file:///tmp/imls-test/%E7%BA%A2%E6%9D%8F.png"
+	if !strings.Contains(body, "![]("+file+")") || !strings.Contains(body, "[打开原图]("+file+")") || strings.Contains(body, "http://127.0.0.1") {
+		t.Fatalf("Codex 要拿本机文件地址：%s", body)
+	}
+	if strings.Contains(body, "已生成") || strings.Contains(body, "/tmp/imls-test/红杏") {
+		t.Fatalf("Codex 里不露明文路径：%s", body)
+	}
+	task := &core.Call{Host: "codex", Kind: core.KindVideo}
+	if got := (&Server{}).replyText(task, &core.Result{Path: "/tmp/a.mp4"}); !strings.Contains(got, "[打开文件](file:///tmp/a.mp4)") {
+		t.Fatalf("视频不叫原图：%s", got)
+	}
+	_, body = postResp(ts, "k.claude_desktop", map[string]any{"model": "router-auto", "input": ask})
+	if !strings.Contains(body, "http://127.0.0.1:18081/media/") || !strings.Contains(body, "已生成 /tmp/imls-test/红杏.png") {
+		t.Fatalf("别的宿主照旧：%s", body)
+	}
+	got := (&url.URL{Scheme: "file", Path: "/Users/a/Application Support/米饭 (1).png"}).String()
+	if got != "file:///Users/a/Application%20Support/%E7%B1%B3%E9%A5%AD%20%281%29.png" {
+		t.Fatalf("编码不对：%s", got)
+	}
+}
+
+// setupMedia 建一个带媒体渠道的门面。setup 里的路由器通过门面拿不到，这里另建一个。
+func setupMedia(t *testing.T) (*httptest.Server, *fake, *fake) {
+	t.Helper()
 	media := &fake{id: core.LaneMedia}
-	// 复用 setup 里的路由器：通过门面拿不到，直接再建一个带媒体渠道的
 	dir := t.TempDir()
 	t.Setenv("IMLS_DATA_DIR", dir)
 	cs, _ := config.Open()
@@ -171,21 +312,9 @@ func TestToolsStillGetImageFromSwitchboard(t *testing.T) {
 	srv := New(r, func() string { return "k" })
 	srv.MediaURL = func(p string) string { return "http://127.0.0.1:18081/media/" + filepath.Base(p) }
 	srv.Routes(mux)
-	ts.Close()
-	ts = httptest.NewServer(mux)
+	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
-
-	prompt := `<system-reminder data-role="user-context">` + strings.Repeat("工作区信息 ", 200) + "</system-reminder>\n生成图片：一枝红杏出墙来"
-	resp, body := post(ts, "/v1/chat/completions", "k", map[string]any{
-		"model": "router-auto", "tools": []map[string]any{{"type": "function", "function": map[string]any{"name": "ImageGen"}}},
-		"messages": []map[string]any{{"role": "user", "content": prompt}},
-	})
-	if resp.StatusCode != 200 || media.last == nil || text.last != nil {
-		t.Fatalf("带工具的一句出图请求应走媒体渠道：%d %s", resp.StatusCode, body)
-	}
-	if !strings.Contains(body, "![](http://127.0.0.1:18081/media/红杏.png)") || !strings.Contains(body, "已生成 /tmp/imls-test/红杏.png") {
-		t.Fatalf("要把产物路径回给宿主：%s", body)
-	}
+	return ts, media, text
 }
 
 // 宿主在模型列表里点名某个型号就按它来；列表里有账号配好的型号
@@ -283,19 +412,87 @@ func TestAnthropicStream(t *testing.T) {
 	}
 	// Claude 自家的模型名按档位理解
 	task := &core.Task{}
-	applyModelName(task, "claude-haiku-5-5")
+	applyModelName(task, "claude-haiku-5-5", nil)
 	if task.Tier != core.TierLow || task.Model != "" {
 		t.Fatalf("haiku 应当低档：%+v", task)
 	}
 	task = &core.Task{}
-	applyModelName(task, "gpt-5.6-luna")
+	applyModelName(task, "gpt-5.6-luna", nil)
 	if task.Tier != core.TierLow || task.Model != "" {
 		t.Fatalf("gpt 小型号应当低档：%+v", task)
 	}
 	task = &core.Task{}
-	applyModelName(task, "winwork-snt-5.5")
+	applyModelName(task, "winwork-snt-5.5", nil)
 	if task.Model != "winwork-snt-5.5" {
 		t.Fatalf("其它名字当点名：%+v", task)
+	}
+	// 账号里配了的 gpt-* 是点名，不再当档位提示
+	task = &core.Task{}
+	applyModelName(task, "gpt-6.1-sol", func(m string) bool { return m == "gpt-6.1-sol" })
+	if task.Model != "gpt-6.1-sol" || task.Tier != "" {
+		t.Fatalf("账号里的型号要点名：%+v", task)
+	}
+	task = &core.Task{}
+	applyModelName(task, "codex-auto-review", nil)
+	if task.Tier != core.TierMid || task.Model != "" {
+		t.Fatalf("Codex 自动审批不是真实型号，按中档走：%+v", task)
+	}
+}
+
+// Claude Desktop 菜单里借的名字只对它生效；Claude Code 点同一个名字照旧
+func TestDesktopModelNames(t *testing.T) {
+	for _, c := range []struct {
+		model string
+		tier  core.Tier
+	}{{"claude-sonnet-5", ""}, {"claude-sonnet-5[1m]", ""}, {"claude-opus-5", core.TierHigh}, {"claude-sonnet-4-6", core.TierMid}, {"claude-haiku-5-5", core.TierLow}, {"claude-haiku-4-5", core.TierLow}} {
+		task := &core.Task{Host: "claude_desktop"}
+		applyModelName(task, c.model, nil)
+		if task.Tier != c.tier || task.Model != "" {
+			t.Fatalf("%s：%+v", c.model, task)
+		}
+	}
+	task := &core.Task{Host: "claude_code"}
+	applyModelName(task, "claude-sonnet-5", nil)
+	if task.Tier != core.TierMid {
+		t.Fatalf("Claude Code 的 sonnet 仍是中档：%+v", task)
+	}
+}
+
+// 密钥里的宿主标记优先于 User-Agent：Desktop 内嵌的 CLI 也自称 claude-cli；模型列表只给它借的名字
+func TestDesktopHostAndModelList(t *testing.T) {
+	ts, claude, api := setup(t)
+	get := func(key string) string {
+		req, _ := http.NewRequest("GET", ts.URL+"/v1/models", nil)
+		req.Header.Set("Authorization", "Bearer "+key)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var buf bytes.Buffer
+		buf.ReadFrom(resp.Body)
+		return buf.String()
+	}
+	list := get("k.claude_desktop")
+	if strings.Contains(list, "router-") || strings.Contains(list, "glm-5.3") || !strings.Contains(list, `"id":"claude-sonnet-5"`) || !strings.Contains(list, `"display_name":"自动分档"`) {
+		t.Fatalf("Desktop 只能看到借的名字：%s", list)
+	}
+	if !strings.Contains(get("k.claude_code"), `"id":"router-auto"`) {
+		t.Fatal("别的宿主照旧")
+	}
+	b, _ := json.Marshal(map[string]any{"model": "claude-opus-5", "max_tokens": 10, "messages": []map[string]any{{"role": "user", "content": "你好"}}})
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/messages", bytes.NewReader(b))
+	req.Header.Set("x-api-key", "k.claude_desktop")
+	req.Header.Set("User-Agent", "claude-cli/2.1 (external, cli)")
+	req.Header.Set("X-IMLS-Key-Host", "codex") // 客户端自己带的不算
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	got := api.last
+	if got == nil {
+		got = claude.last // 不带工具的请求可能走订阅
+	}
+	if resp.StatusCode != 200 || got == nil || got.Host != "claude_desktop" || got.Tier != core.TierHigh {
+		t.Fatalf("%d %+v", resp.StatusCode, got)
 	}
 }
 

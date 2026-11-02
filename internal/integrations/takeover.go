@@ -213,8 +213,11 @@ func stripSection(toml, section string) string {
 	return strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
 }
 
-// setCodexTakeover 开：加一个 switchboard 供应商（Responses 协议，密钥放在请求头里，登录文件不碰）并切过去；关：恢复原来的供应商和模型。
+// setCodexTakeover 开：加一个 switchboard 供应商（Responses 协议，密钥放在请求头里，登录文件不碰）并切过去，
+// 再生成模型目录让 /model 列出档位；关：恢复原来的供应商、模型和目录指针。
 func (m *Manager) setCodexTakeover(on bool) error {
+	m.catalogMu.Lock()
+	defer m.catalogMu.Unlock()
 	path := m.codexConfig()
 	b, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -224,7 +227,7 @@ func (m *Manager) setCodexTakeover(on bool) error {
 	save := takeoverSavePath("codex")
 	if on {
 		if _, err := os.Stat(save); err != nil {
-			orig := map[string]string{"model_provider": topLevelValue(toml, "model_provider"), "model": topLevelValue(toml, "model")}
+			orig := map[string]string{"model_provider": topLevelValue(toml, "model_provider"), "model": topLevelValue(toml, "model"), codexCatalogKey: topLevelValue(toml, codexCatalogKey)}
 			ob, _ := json.MarshalIndent(orig, "", "  ")
 			if err := os.WriteFile(save, ob, 0o600); err != nil {
 				return err
@@ -233,6 +236,10 @@ func (m *Manager) setCodexTakeover(on bool) error {
 		toml = stripSection(toml, "model_providers."+codexProviderID)
 		toml = setTopLevel(toml, "model_provider", codexProviderID)
 		toml = setTopLevel(toml, "model", "router-auto")
+		toml = setTopLevel(toml, codexCatalogKey, "")
+		if m.writeCodexCatalog() == nil { // 生成不了也不拦接管，只是 /model 里看不到档位
+			toml = setTopLevel(toml, codexCatalogKey, codexCatalogPath())
+		}
 		toml = strings.TrimRight(toml, "\n") + fmt.Sprintf("\n\n[model_providers.%s]\nname = \"Switchboard\"\nbase_url = %q\nwire_api = \"responses\"\nhttp_headers = { Authorization = %q }\n",
 			codexProviderID, m.facade+"/v1", "Bearer "+m.facadeKey()+".codex")
 	} else {
@@ -243,6 +250,8 @@ func (m *Manager) setCodexTakeover(on bool) error {
 		toml = stripSection(toml, "model_providers."+codexProviderID)
 		toml = setTopLevel(toml, "model_provider", orig["model_provider"])
 		toml = setTopLevel(toml, "model", orig["model"])
+		toml = setTopLevel(toml, codexCatalogKey, orig[codexCatalogKey])
+		removeCodexCatalog()
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err

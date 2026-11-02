@@ -91,10 +91,12 @@ interface Account { id: string; kind: 'subscription' | 'api'; provider: string; 
 | POST /api/jobs/{id}/cancel | 取消 | | `Job` |
 | POST /api/jobs/{id}/retry | 换模型重做 | `{model?}` | `Job` |
 | POST /api/jobs/{id}/revise | 动画：改一句重做 | `{instruction}` | `Job` |
-| GET /api/integrations | 接入 | | `[{id:'claude_code'\|'hermes'\|'workbuddy', status:'connected'\|'disconnected'\|'manual', options:{write_claude_md?,opusplan?}, snippet?}]` |
+| GET /api/integrations | 接入 | | `[{id:'claude_code'\|'hermes'\|'workbuddy', status:'connected'\|'disconnected'\|'manual', options:{write_claude_md?,opusplan?}, snippet?, models_count?}]` |
 | POST /api/integrations/{id}/connect | 接入 | `{options?}` | integration |
 | POST /api/integrations/{id}/disconnect | 断开 | | integration |
 | PUT /api/integrations/{id} | 改选项 | `{options}` | integration |
+| GET /api/integrations/{id}/models | 宿主菜单里的型号表（Codex、WorkBuddy、pi、DeepSeek Harness、OpenClaw）：选中的按顺序排前面，第一个是宿主的默认 | | `{models:[{id,name,group,on,default?}], custom}` |
+| PUT /api/integrations/{id}/models | 保存型号表并立刻写进宿主；空数组回到默认（路由型号加各账号分进档位的型号，新账号自动进表） | `{models:[id]}` | 同上 |
 | GET /api/settings | 设置 | | `Settings` |
 | PUT /api/settings | 保存 | `Partial<Settings>` | `Settings` |
 | GET /api/themes | 主题词表 | | `[{id, name, words: Record<string,string>}]` |
@@ -104,7 +106,7 @@ interface Account { id: string; kind: 'subscription' | 'api'; provider: string; 
 | POST /api/evaluations/{id}/accept | 采纳某条建议 | `{task_type}` | rules |
 | POST /api/quick/preview | 快速面板预览 | `{prompt, image_path?}` | `Decision` + `alternatives[]` |
 | POST /api/quick/run | 快速面板执行 | `{prompt, image_path?, tier?, model?, lane?}` | SSE：`text_delta{text}` / `media{path,kind}` / `job{job}` / `done{call}` / `error{message}` |
-| GET /api/events | 事件流 SSE | | `quota{...}` / `job{job}` / `call{call}` / `notice{title,body,level}` / `status{...}` |
+| GET /api/events | 事件流 SSE | | `quota{...}` / `job{job}` / `call_start{id,host,lane,provider}`（交给某个渠道时发，换候选时同一个 id 再发）/ `call{call}`（做完才发）/ `notice{title,body,level}` / `status{...}` |
 | GET /api/onboarding | 引导状态 | | `{done, steps:{cli_detected, api_added, claude_connected, tried}}` |
 | POST /api/onboarding/done | 完成引导 | | |
 

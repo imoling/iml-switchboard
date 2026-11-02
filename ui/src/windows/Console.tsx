@@ -74,7 +74,7 @@ export function Console() {
 
   useEffect(() => { void desktop.setTitle(t('app.title')); }, [t]);
   const online = status !== null && status !== 'offline';
-  useEffect(() => { if (online) void api.settings().then((s) => { if (s.hotkey) void desktop.setHotkey(s.hotkey); }).catch(() => undefined); }, [online]);
+  useEffect(() => { if (online) void api.settings().then((s) => { if (s.hotkey) void desktop.setHotkey(s.hotkey); void desktop.setNotch(!!s.lab_notch); }).catch(() => undefined); }, [online]);
 
   if (status === null) return <div className="offline"><span className="hint">正在连接后台…</span></div>;
   if (status === 'offline') return <Offline onStarted={boot} />;
@@ -101,7 +101,7 @@ export function Console() {
         <button className="nav" style={{ color: '#6F6A61' }} onClick={() => (inTauri ? desktop.showAbout() : setAbout(true))}><span>关于</span><small>{status.version}</small></button>
       </aside>
       <main className="content">
-        {page === 'overview' && <Overview />}
+        {page === 'overview' && <Overview live={liveCall} onNavigate={setPage} />}
         {page === 'calls' && <Calls live={liveCall} />}
         {page === 'rules' && <Rules />}
         {page === 'eval' && <Evaluation />}

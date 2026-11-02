@@ -3,7 +3,7 @@ import { api, ApiError } from '../api/client';
 import type { Account, Tier } from '../api/types';
 import { Dot, ErrorLine, Modal, toast } from '../components/ui';
 import { MediaSprite, TierSprite } from '../components/Pixel';
-import { VendorLogo } from '../components/Vendor';
+import { accountIcon, ICON_CHOICES, vendorSrc, VendorLogo } from '../components/Vendor';
 import { accountCost } from '../format';
 import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
@@ -18,11 +18,12 @@ const API_PROVIDERS = [
   { id: 'moonshot', label: 'Moonshot', url: 'https://platform.moonshot.cn' },
   { id: 'minimax', label: 'MiniMax', url: 'https://platform.minimaxi.com' },
   { id: 'openrouter', label: 'OpenRouter', url: 'https://openrouter.ai' },
+  { id: 'custom', label: '自定义服务', url: '' }, // 任何 OpenAI 兼容地址，型号从服务拉
 ];
 
 const STATUS: Record<Account['status'], { dot: 'ok' | 'warn' | 'no' | 'err'; text: (a: Account) => string }> = {
   ok: { dot: 'ok', text: () => '可用' },
-  warn: { dot: 'warn', text: (a) => `额度 ${a.quota?.[0]?.pct ?? ''}%` },
+  warn: { dot: 'warn', text: (a) => (a.local ? '没打开' : `额度 ${a.quota?.[0]?.pct ?? ''}%`) },
   missing: { dot: 'no', text: () => '未连接' },
   error: { dot: 'err', text: (a) => (/余额/.test(a.detail) || a.top_up_url ? '余额不足' : '出错') },
   cooldown: { dot: 'warn', text: () => '额度暂时用完' },
@@ -36,8 +37,10 @@ export function Accounts() {
   const [err, setErr] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [tierEdit, setTierEdit] = useState<Account | null>(null);
-  const subs = data?.filter((a) => a.kind === 'subscription') ?? [];
-  const apis = data?.filter((a) => a.kind === 'api') ?? [];
+  const [iconEdit, setIconEdit] = useState<Account | null>(null);
+  // 本机登录的客户端（WinWork）自动出现、不计费，和订阅排在一起
+  const subs = data?.filter((a) => a.kind === 'subscription' || a.local) ?? [];
+  const apis = data?.filter((a) => a.kind === 'api' && !a.local) ?? [];
 
   const act = async (id: string, fn: () => Promise<unknown>) => {
     setBusy(id); setErr(null);
@@ -82,12 +85,14 @@ export function Accounts() {
           <div className="hint mb6">订阅</div>
           {subs.map((a) => (
             <div key={a.id} className={`acct ${a.enabled ? '' : 'dim'}`}>
-              <VendorLogo provider={a.provider} />
+              <VendorLogo provider={accountIcon(a)} />
               <div className="grow"><b>{a.label}</b>{a.plan && <span className="plan">{a.plan}</span>}<div className="hint">{a.detail}</div></div>
               <span><Dot s={STATUS[a.status].dot} />{STATUS[a.status].text(a)}</span>
               {a.status === 'missing'
                 ? <button className="btn sm" onClick={() => a.install_hint && toast(`在终端运行：${a.install_hint}`)}>怎么安装</button>
-                : null}
+                : a.local
+                  ? <button className="btn sm" disabled={busy === a.id} onClick={() => act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled }))}>{a.enabled ? '停用' : '启用'}</button>
+                  : null}
               {((a.tiers && Object.keys(a.tiers).length > 0) || (a.media && a.media.length > 0)) && tierTiles(a)}
               {a.status === 'cooldown' && <span className="hint">{a.detail}</span>}
             </div>
@@ -96,7 +101,7 @@ export function Accounts() {
           {apis.length === 0 && <div className="hint mb12">还没有按量付费账号；杂活会先用订阅额度</div>}
           {apis.map((a) => (
             <div key={a.id} className={`acct ${a.enabled ? '' : 'dim'}`}>
-              <VendorLogo provider={a.provider} />
+              <VendorLogo provider={accountIcon(a)} />
               <div className="grow"><b>{a.label}</b>{a.plan && <span className="plan">{a.plan}</span>}<div className="hint">{a.detail}</div></div>
               <span><Dot s={STATUS[a.status].dot} />{STATUS[a.status].text(a)}</span>
               {a.status === 'error' && a.top_up_url
@@ -105,14 +110,19 @@ export function Accounts() {
                   ? <button className="btn sm" disabled={busy === a.id} onClick={() => act(a.id, async () => { await api.verifyAccount(a.id); toast(`${a.label} 验证通过，密钥可用`); })}>重新验证</button>
                   : <span className="muted">{monthCost(a) && `本月 ${monthCost(a)}`}</span>}
 
-              <select className="sel" value="" onChange={(e) => { const v = e.target.value; if (v === 'toggle') void act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled })); if (v === 'verify') void act(a.id, async () => { await api.verifyAccount(a.id); toast(`${a.label} 验证通过，密钥可用`); }); if (v === 'delete') void act(a.id, () => api.deleteAccount(a.id)); }}>
-                <option value="">操作 ▾</option><option value="verify">重新验证</option><option value="toggle">{a.enabled ? '停用' : '启用'}</option><option value="delete">删除</option>
+              <select className="sel" value="" onChange={(e) => { const v = e.target.value; if (v === 'toggle') void act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled })); if (v === 'icon') setIconEdit(a); if (v === 'verify') void act(a.id, async () => { await api.verifyAccount(a.id); toast(a.provider === 'custom' ? `${a.label} 型号已更新` : `${a.label} 验证通过，密钥可用`); }); if (v === 'delete') void act(a.id, () => api.deleteAccount(a.id)); }}>
+                <option value="">操作 ▾</option><option value="verify">{a.provider === 'custom' ? '刷新型号' : '重新验证'}</option>{a.provider === 'custom' && <option value="icon">换图标</option>}<option value="toggle">{a.enabled ? '停用' : '启用'}</option><option value="delete">删除</option>
               </select>
               {((a.tiers && Object.keys(a.tiers).length > 0) || (a.media && a.media.length > 0)) && tierTiles(a)}
             </div>
           ))}
           <div className="hint mt12">密钥只存在这台电脑上，不会上传</div>
         </>
+      )}
+      {iconEdit && (
+        <Modal title={`${iconEdit.label} 的图标`} onClose={() => setIconEdit(null)} width={420}>
+          <IconPicker value={iconEdit.icon ?? ''} onChange={(v) => { const id = iconEdit.id; setIconEdit(null); void act(id, () => api.updateAccount(id, { icon: v })); }} />
+        </Modal>
       )}
       {adding && <AddAccount onClose={() => setAdding(false)} onAdded={(a) => { setData([...(data ?? []), a]); setAdding(false); }} />}
       {tierEdit && (
@@ -163,13 +173,16 @@ export function AddAccount({ onClose, onAdded, embedded, onSkip }: { onClose?: (
   const [provider, setProvider] = useState('zhipu');
   const [key, setKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
+  const [label, setLabel] = useState('');
+  const [icon, setIcon] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<ApiError | null>(null);
   const p = API_PROVIDERS.find((x) => x.id === provider)!;
+  const custom = provider === 'custom';
   const submit = async () => {
-    if (!key.trim()) return;
+    if (!key.trim() || (custom && !baseUrl.trim())) return;
     setBusy(true); setErr(null);
-    try { onAdded(await api.addAccount({ provider, api_key: key.trim(), base_url: baseUrl.trim() || undefined })); }
+    try { onAdded(await api.addAccount({ provider, api_key: key.trim(), base_url: baseUrl.trim() || undefined, label: label.trim() || undefined, icon: icon || undefined })); }
     catch (e) { setErr(e as ApiError); } finally { setBusy(false); }
   };
   const body = (
@@ -179,10 +192,13 @@ export function AddAccount({ onClose, onAdded, embedded, onSkip }: { onClose?: (
           <button key={x.id} className={`acct ${provider === x.id ? 'pick' : ''}`} style={{ margin: 0 }} onClick={() => setProvider(x.id)}><VendorLogo provider={x.id} /><b>{x.label}</b></button>
         ))}
       </div>
-      <input className="input mb6" placeholder={`粘贴${p.label} API Key`} value={key} onChange={(e) => setKey(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} autoFocus />
+      {custom && <input className="input mb6" placeholder="接口地址，如 http://10.0.0.8:30880/v1" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} autoFocus />}
+      <input className="input mb6" placeholder={custom ? '粘贴 API Key' : `粘贴${p.label} API Key`} value={key} onChange={(e) => setKey(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} autoFocus={!custom} />
+      {custom && <input className="input mb6" placeholder="名称，留空用地址里的主机名" value={label} onChange={(e) => setLabel(e.target.value)} />}
+      {custom && <IconPicker value={icon} onChange={setIcon} />}
       {provider === 'openrouter' && <input className="input mb6" placeholder="自定义地址，留空用官方" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />}
       {err && <div className="hint err-text mb6">{err.message}</div>}
-      <div className="hint">没有账号？<a href={p.url} onClick={(e) => { e.preventDefault(); void desktop.openUrl(p.url); }}>去{p.label}开放平台注册</a>{embedded && <>　也可以跳过，杂活会先用订阅额度</>}</div>
+      {custom ? <div className="hint">型号从服务的型号列表里读；服务那边加了型号，点「刷新型号」</div> : <div className="hint">没有账号？<a href={p.url} onClick={(e) => { e.preventDefault(); void desktop.openUrl(p.url); }}>去{p.label}开放平台注册</a>{embedded && <>　也可以跳过，杂活会先用订阅额度</>}</div>}
     </>
   );
   if (embedded) {
@@ -191,7 +207,7 @@ export function AddAccount({ onClose, onAdded, embedded, onSkip }: { onClose?: (
         {body}
         <div className="nav" style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 18 }}>
           {onSkip && <button className="btn" onClick={onSkip}>跳过</button>}
-          <button className="btn pri" disabled={busy || !key.trim()} onClick={submit}>{busy ? '正在验证…' : '验证并继续'}</button>
+          <button className="btn pri" disabled={busy || !key.trim() || (custom && !baseUrl.trim())} onClick={submit}>{busy ? '正在验证…' : '验证并继续'}</button>
         </div>
       </>
     );
@@ -201,8 +217,20 @@ export function AddAccount({ onClose, onAdded, embedded, onSkip }: { onClose?: (
       {body}
       <div className="row mt12" style={{ justifyContent: 'flex-end' }}>
         <button className="btn" onClick={onClose}>取消</button>
-        <button className="btn pri" disabled={busy || !key.trim()} onClick={submit}>{busy ? '正在验证…' : '验证并添加'}</button>
+        <button className="btn pri" disabled={busy || !key.trim() || (custom && !baseUrl.trim())} onClick={submit}>{busy ? '正在验证…' : '验证并添加'}</button>
       </div>
     </Modal>
+  );
+}
+
+/** 自定义服务的图标：「自动」按型号名认，也可以挑一个厂商的 */
+function IconPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="ipick mb6">
+      <button className={value === '' ? 'on' : ''} onClick={() => onChange('')}>自动</button>
+      {ICON_CHOICES.map((c) => (
+        <button key={c.id} className={value === c.id ? 'on' : ''} title={c.label} onClick={() => onChange(c.id)}><img src={vendorSrc(c.id)} alt={c.label} /></button>
+      ))}
+    </div>
   );
 }

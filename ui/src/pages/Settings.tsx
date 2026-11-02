@@ -1,4 +1,4 @@
-import { hotkeyCaps, normalizeHotkey } from '../hotkey';
+import { hotkeyCaps, isMac, normalizeHotkey } from '../hotkey';
 import { STALE_BACKEND, TRAY_NAME } from '../copy';
 import { restartBackend, useStaleBackend } from '../backend';
 import { useEffect, useRef, useState } from 'react';
@@ -117,6 +117,14 @@ export function Settings() {
           </SetRow>
           <BackendRow />
           <VersionRow />
+          {isMac() && (
+            <>
+              <div className="hint" style={{ marginTop: 14 }}>实验功能</div>
+              <SetRow title="刘海动画" desc="请求经过时刘海两侧亮起；只在带刘海的屏幕显示" last>
+                <Toggle on={!!data.lab_notch} onChange={(v) => { void save({ lab_notch: v }); void desktop.setNotch(v); }} />
+              </SetRow>
+            </>
+          )}
         </>
       )}
     </>

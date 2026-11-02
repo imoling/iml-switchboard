@@ -252,7 +252,7 @@ func (d *AntigravityDriver) Health(ctx context.Context) core.Health {
 	}
 	home, _ := os.UserHomeDir()
 	if !dirExists(filepath.Join(home, "Library", "Application Support", "Antigravity")) {
-		return core.Health{Status: "warn", Detail: "找到 agy 命令，但还没有登录 Google 账号：先在终端运行一次 agy"}
+		return core.Health{Status: "warn", Detail: "找到 agy 命令，但还没有登录 Google 账号：先在终端运行一次 agy", SignedOut: true}
 	}
 	d.mu.Lock()
 	cd := d.cooldown

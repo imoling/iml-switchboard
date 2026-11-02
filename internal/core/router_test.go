@@ -2,11 +2,13 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/imoling/iml-switchboard/internal/config"
 )
@@ -104,6 +106,78 @@ func TestFallbackOnRateLimit(t *testing.T) {
 	d := r.Decide(&Task{Prompt: "这个系统的架构怎么设计"})
 	if d.Candidates[0].Skipped == "" {
 		t.Fatalf("冷却中的候选应被标注：%+v", d.Candidates)
+	}
+}
+
+// 限流换候选时每个候选都报一次开始，ID 相同，界面才知道请求换到了哪个渠道
+func TestAttemptReportedPerCandidate(t *testing.T) {
+	r, claude, _ := newTestRouter(t)
+	claude.fail = &ErrRateLimited{Lane: LaneClaudeSub, Detail: "resets in 1h"}
+	_ = r.cfg.Update(func(c *config.Config) error {
+		c.API[0].Models["high"] = []string{"glm-5.3"}
+		return nil
+	})
+	var lanes []LaneID
+	var ids []string
+	r.OnAttempt(func(task *Task, c Target) { lanes = append(lanes, c.Lane); ids = append(ids, task.ID) })
+	if _, _, err := r.Run(context.Background(), &Task{Prompt: "这个系统的架构怎么设计", Source: "cli"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(lanes) != 2 || lanes[0] != LaneClaudeSub || lanes[1] != LaneAPI || ids[0] == "" || ids[0] != ids[1] {
+		t.Fatalf("开始事件不对：%v %v", lanes, ids)
+	}
+}
+
+// 账号本身有问题（比如 WinWork 没开）：这个账号先歇着，请求换下一个候选，不能整轮失败
+func TestAccountErrorMovesOn(t *testing.T) {
+	r, _, api := newTestRouter(t)
+	api.fail = &ErrProvider{Summary: "WinWork 没打开：打开后重试", Retryable: true, Account: true, Cooldown: 30 * time.Second}
+	call, _, err := r.Run(context.Background(), &Task{Prompt: "你好", Model: "glm-5.3", Source: "cli"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if api.calls == 0 || call.Lane == LaneAPI {
+		t.Fatalf("要换到别的渠道：api=%d %+v", api.calls, call)
+	}
+	acc := r.cfg.Get().API[0]
+	if cooling, _, why := r.quota.Cooling(LaneID("acct:" + acc.ID)); !cooling || why != "WinWork 没打开：打开后重试" {
+		t.Fatalf("账号要歇着：%v %q", cooling, why)
+	}
+}
+
+// 订阅没登录时路由直接跳过，不去试一个必然失败的渠道
+func TestSignedOutSubscriptionSkipped(t *testing.T) {
+	r, claude, _ := newTestRouter(t)
+	claude.health = Health{Status: "warn", Detail: "claude 还没登录过", SignedOut: true}
+	d := r.Decide(&Task{Prompt: "这个系统的架构怎么设计"})
+	for _, c := range d.Candidates {
+		if c.Lane == LaneClaudeSub && c.Skipped == "" {
+			t.Fatalf("没登录的订阅要跳过：%+v", c)
+		}
+	}
+}
+
+// 点名的型号在某个按量付费账号里（自定义服务的 gpt-6.1-sol）：发给那个账号，不能按厂商猜成 ChatGPT 订阅
+func TestPinnedAccountModelBeatsProvider(t *testing.T) {
+	r, _, api := newTestRouter(t)
+	_ = r.cfg.Update(func(c *config.Config) error {
+		c.API = append(c.API, config.APIAccount{ID: "custom-1", Provider: "custom", Enabled: true, Models: map[string][]string{},
+			Discovered: []config.DiscoveredModel{{ID: "gpt-6.1-sol", Name: "GPT-6.1 Sol"}}})
+		return nil
+	})
+	tools := json.RawMessage(`[{"type":"function","function":{"name":"x"}}]`)
+	call, _, err := r.Run(context.Background(), &Task{Prompt: "你好", Model: "gpt-6.1-sol", Tools: tools, Source: "cli"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if call.Lane != LaneAPI || call.Model != "gpt-6.1-sol" || api.calls != 1 {
+		t.Fatalf("要发到账号上：%+v", call)
+	}
+
+	// 账号里没有、按厂商猜成订阅的点名：带工具时跳过，不去调命令行
+	d := r.Decide(&Task{Prompt: "你好", Model: "gpt-6-astra", Tools: tools})
+	if d.Candidates[0].Model != "gpt-6-astra" || d.Candidates[0].Skipped != "带工具" {
+		t.Fatalf("订阅接不了工具要跳过：%+v", d.Candidates[0])
 	}
 }
 

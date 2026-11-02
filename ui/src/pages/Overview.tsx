@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api, subscribeEvents } from '../api/client';
-import type { Quota } from '../api/types';
+import type { Call, Quota } from '../api/types';
 import { Bar, ErrorLine, GroupChip, Seg, TierChip } from '../components/ui';
+import { Topology } from '../components/Topology';
 import { Vendor } from '../components/Vendor';
 import { QUOTA_ESTIMATE_NOTE } from '../copy';
 import { cost, dayLabel, hhmm, pct, usd } from '../format';
@@ -10,7 +11,7 @@ import { useTheme } from '../theme/ThemeContext';
 
 type Range = 'today' | '7d' | '30d';
 
-export function Overview() {
+export function Overview({ live, onNavigate }: { live?: Call | null; onNavigate?: (page: 'integrations' | 'accounts') => void }) {
   const [quotas, setQuotas] = useState<Quota[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   useEffect(() => subscribeEvents((e) => { if (e.type === 'quota') { setQuotas(e.data.quotas); setRefreshing(false); } }), []);
@@ -26,11 +27,12 @@ export function Overview() {
         <Seg value={range} onChange={setRange} options={[{ id: 'today', label: '今天' }, { id: '7d', label: '7 天' }, { id: '30d', label: '30 天' }]} />
       </div>
       {error && <ErrorLine {...errText(error)!} />}
+      <Topology live={live} onNavigate={onNavigate} />
       {data && (
         <>
           <div className="cards">
             <div className="card"><div className="k">{t('dispatch.noun')}次数</div><div className="v">{data.calls}</div>
-              {data.calls_delta_pct !== undefined && <div className="d">比上周 {data.calls_delta_pct >= 0 ? '+' : ''}{data.calls_delta_pct}%</div>}</div>
+              {data.calls_delta_pct !== undefined && <div className="d">比上周 {data.calls_delta_pct >= 0 ? '+' : ''}{Math.round(data.calls_delta_pct)}%</div>}</div>
             <div className="card"><div className="k">按量花费</div><div className="v">{usd(data.api_cost_usd)}</div><div className="d plain">本月上限 {usd(data.budget.limit_usd)}</div></div>
             <div className="card"><div className="k">比全用 Opus 省</div><div className="v ok-text">{usd(data.saved_usd)}</div><div className="d">约省 {Math.round(data.saved_pct)}%</div></div>
             <div className="card"><div className="k">手动升档率</div><div className="v">{pct(data.escalation_rate)}</div>

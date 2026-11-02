@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/imoling/iml-switchboard/internal/config"
+	"github.com/imoling/iml-switchboard/internal/core"
 )
 
 func setup(t *testing.T) (*Manager, string) {
@@ -28,8 +29,19 @@ func setup(t *testing.T) (*Manager, string) {
 	_ = os.MkdirAll(filepath.Join(home, ".workbuddy"), 0o755)
 	_ = os.WriteFile(filepath.Join(home, ".workbuddy", "models.json"), []byte(`[{"id":"deepseek-v4-pro","name":"DeepSeek","vendor":"DeepSeek","url":"https://api.deepseek.com/chat/completions","apiKey":"x","supportsToolCall":true}]`), 0o644)
 	m := New(cs, "/usr/local/bin/imls", "http://127.0.0.1:18081", func() string { return "imls-key" })
+	reg := core.NewRegistry(1.0 / 7.1)
+	m.ModelName, m.Lookup = reg.Display, reg.Lookup
+	m.codexBundled = func() ([]byte, error) { return []byte(fakeCodexCatalog), nil }
+	m.codexCheck = func(string) error { return nil }
+	m.codexStamp = func() string { return "codex 1" }
 	return m, home
 }
+
+// fakeCodexCatalog 仿 Codex 自带的目录：第一行开了代码模式，不能当模板。
+const fakeCodexCatalog = `{"models":[
+{"slug":"gpt-5.6-sol","visibility":"list","tool_mode":"code_mode_only","use_responses_lite":true,"multi_agent_version":"v2","apply_patch_tool_type":"freeform","supports_search_tool":true,"context_window":272000,"max_context_window":272000},
+{"slug":"gpt-5.5","visibility":"list","use_responses_lite":false,"apply_patch_tool_type":"freeform","supports_search_tool":true,"service_tiers":[{"id":"priority"}],"additional_speed_tiers":["fast"],"context_window":272000,"max_context_window":272000,"base_instructions":"模板提示词"},
+{"slug":"codex-auto-review","visibility":"hide","use_responses_lite":false,"apply_patch_tool_type":"freeform","supports_search_tool":true}]}`
 
 func TestClaudeMdAndCommandsAndOpusplan(t *testing.T) {
 	m, home := setup(t)
@@ -105,7 +117,8 @@ func TestWorkBuddy(t *testing.T) {
 	}
 	b, _ := os.ReadFile(filepath.Join(home, ".workbuddy", "models.json"))
 	s := string(b)
-	if !strings.Contains(s, `"router-auto"`) || !strings.Contains(s, `"router-sub"`) || !strings.Contains(s, `"deepseek-v4-pro"`) || strings.Count(s, `"apiKey": "imls-key"`) != 2 {
+	// 没有按量付费账号时写进去的是五个路由型号：自动分档、三个档位、订阅优先
+	if !strings.Contains(s, `"router-auto"`) || !strings.Contains(s, `"router-sub"`) || !strings.Contains(s, `"deepseek-v4-pro"`) || strings.Count(s, `"apiKey": "imls-key"`) != 5 {
 		t.Fatalf("%s", s)
 	}
 	_, _ = m.Connect("workbuddy", nil) // 幂等

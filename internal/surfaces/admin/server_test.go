@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -15,7 +16,10 @@ import (
 	"github.com/imoling/iml-switchboard/internal/core"
 )
 
-type fake struct{ id core.LaneID }
+type fake struct {
+	id     core.LaneID
+	health core.Health
+}
 
 func (f *fake) ID() core.LaneID { return f.id }
 func (f *fake) Run(ctx context.Context, t *core.Task, tg core.Target, emit func(core.Event)) (*core.Result, error) {
@@ -24,7 +28,12 @@ func (f *fake) Run(ctx context.Context, t *core.Task, tg core.Target, emit func(
 	}
 	return &core.Result{Text: "你好，来自 " + tg.Model, Model: tg.Model, Usage: core.Usage{InputTokens: 10, OutputTokens: 5, CostUSD: 0.0001}}, nil
 }
-func (f *fake) Health(ctx context.Context) core.Health { return core.Health{Status: "ok"} }
+func (f *fake) Health(ctx context.Context) core.Health {
+	if f.health.Status == "" {
+		return core.Health{Status: "ok"}
+	}
+	return f.health
+}
 
 type fakeAccounts struct{}
 
@@ -35,7 +44,16 @@ func (fakeAccounts) Verify(ctx context.Context, provider, baseURL, apiKey string
 	return []string{"glm-5.3"}, nil
 }
 func (fakeAccounts) Preset(p string) (string, string, map[string][]string, bool, bool) {
+	if p == "custom" {
+		return "", "USD", map[string][]string{}, false, true // 和真的一样：地址由用户填
+	}
 	return "https://x/v1", "CNY", map[string][]string{"low": {"glm-5.3-flash"}, "mid": {"glm-5.3"}}, false, true
+}
+func (fakeAccounts) ListModels(ctx context.Context, baseURL, apiKey string) ([]config.DiscoveredModel, error) {
+	if apiKey != "good" {
+		return nil, errors.New("密钥不对：服务拒绝了这个密钥")
+	}
+	return []config.DiscoveredModel{{ID: "gpt-6.1-sol", Name: "GPT-6.1 Sol"}, {ID: "gpt-6.1-terra", Name: "GPT-6.1 Terra"}, {ID: "gpt-image-2", Name: "GPT Image 2"}}, nil
 }
 func (fakeAccounts) Providers() []string   { return []string{"zhipu"} }
 func (fakeAccounts) Reload(*config.Config) {}
@@ -44,7 +62,7 @@ func (fakeAccounts) Discover() bool        { return false }
 type fakeIntegr struct{}
 
 func (fakeIntegr) List() []map[string]any {
-	return []map[string]any{{"id": "claude_code", "status": "disconnected"}}
+	return []map[string]any{{"id": "claude_code", "status": "disconnected"}, {"id": "doubao_work", "status": "manual"}}
 }
 func (fakeIntegr) Connect(id string, o map[string]bool) (map[string]any, error) {
 	return map[string]any{"id": id, "status": "connected"}, nil
@@ -52,6 +70,12 @@ func (fakeIntegr) Connect(id string, o map[string]bool) (map[string]any, error) 
 func (fakeIntegr) Disconnect(id string) (map[string]any, error) { return map[string]any{"id": id}, nil }
 func (fakeIntegr) Update(id string, o map[string]bool) (map[string]any, error) {
 	return map[string]any{"id": id}, nil
+}
+func (fakeIntegr) HostModels(id string) (any, error) {
+	return map[string]any{"models": []map[string]any{{"id": "router-auto", "on": true}}, "custom": false}, nil
+}
+func (fakeIntegr) SetHostModels(id string, ids []string) (any, error) {
+	return map[string]any{"models": ids, "custom": len(ids) > 0}, nil
 }
 
 func newServer(t *testing.T) (*httptest.Server, *core.Router) {
@@ -69,11 +93,11 @@ func newServerWith(t *testing.T, tweak func(*Deps)) (*httptest.Server, *core.Rou
 	t.Cleanup(func() { l.Close() })
 	reg := core.NewRegistry(1.0 / 7.1)
 	r := core.NewRouter(cs, l, reg, core.NewQuotaManager(l, func() float64 { return 70 }))
-	r.Register(&fake{core.LaneClaudeSub})
-	r.Register(&fake{core.LaneAPI})
-	r.Register(&fake{core.LaneCodexSub})
+	r.Register(&fake{id: core.LaneClaudeSub})
+	r.Register(&fake{id: core.LaneAPI})
+	r.Register(&fake{id: core.LaneCodexSub})
 	bus := core.NewBus()
-	r.OnCall(func(c *core.Call) { bus.Publish("call", c) })
+	r.OnCall(func(c *core.Call) { bus.PublishCall(c) })
 	d := Deps{Router: r, Jobs: core.NewJobStore(l, nil), Bus: bus, Accounts: fakeAccounts{}, Integr: fakeIntegr{}, Secrets: core.NewSecrets(dir), StartedAt: time.Now()}
 	if tweak != nil {
 		tweak(&d)
@@ -233,5 +257,124 @@ func TestInternalTool(t *testing.T) {
 	_, m, _ := do(t, ts, "POST", "/api/internal/tool", map[string]any{"name": "ask_model", "args": map[string]any{"prompt": "翻译：hi", "tier": "low"}, "host": "claude_code"})
 	if !strings.Contains(m["text"].(string), "你好") || !strings.Contains(m["text"].(string), "·") {
 		t.Fatalf("%v", m)
+	}
+}
+
+// 订阅没登录：没有额度可用，账号列表和额度里都不出现；登录后自动回来
+func TestSignedOutSubscriptionHidden(t *testing.T) {
+	ts, r := newServer(t)
+	r.Register(&fake{id: core.LaneCodexSub, health: core.Health{Status: "warn", Detail: "Codex 还没登录：运行 codex login", SignedOut: true}})
+	_, _, raw := do(t, ts, "GET", "/api/accounts", nil)
+	if strings.Contains(string(raw), `"codex_sub"`) || !strings.Contains(string(raw), `"claude_sub"`) {
+		t.Fatalf("没登录的订阅不该出现：%s", raw)
+	}
+	_, _, raw = do(t, ts, "GET", "/api/overview?range=today", nil)
+	if strings.Contains(string(raw), `"account_id":"codex_sub"`) {
+		t.Fatalf("没登录的订阅不该有额度行：%s", raw)
+	}
+	r.Register(&fake{id: core.LaneCodexSub})
+	if _, _, raw = do(t, ts, "GET", "/api/accounts", nil); !strings.Contains(string(raw), `"codex_sub"`) {
+		t.Fatal("登录后要回来")
+	}
+}
+
+// 自定义服务：填地址和密钥，型号从服务拉；没填名称用主机名；重新验证时型号换新
+func TestAddCustomService(t *testing.T) {
+	ts, r := newServer(t)
+	code, m, raw := do(t, ts, "POST", "/api/accounts", map[string]any{"provider": "custom", "api_key": "good", "base_url": "http://10.0.0.8:30880/v1/"})
+	if code != 200 {
+		t.Fatalf("%d %s", code, raw)
+	}
+	if !strings.Contains(string(raw), "服务有 3 个型号，还没分到档位") {
+		t.Fatalf("没分档位时要说清：%s", raw)
+	}
+	if m["label"] != "10.0.0.8:30880" || !strings.Contains(string(raw), `"gpt-6.1-sol"`) || !strings.Contains(string(raw), `"GPT-6.1 Sol"`) {
+		t.Fatalf("要用主机名当名称、列出服务报的型号：%s", raw)
+	}
+	acc := r.Config().Get().API[len(r.Config().Get().API)-1]
+	if acc.BaseURL != "http://10.0.0.8:30880/v1" || len(acc.Discovered) != 3 {
+		t.Fatalf("地址要去掉末尾斜杠、型号要存下：%+v", acc)
+	}
+	// 出图型号进媒体选项、不进文本档位
+	var view struct {
+		Models       []string            `json:"models"`
+		MediaOptions map[string][]string `json:"media_options"`
+	}
+	_ = json.Unmarshal(raw, &view)
+	if len(view.MediaOptions["image"]) != 1 || view.MediaOptions["image"][0] != "gpt-image-2" {
+		t.Fatalf("出图型号要能选：%+v", view.MediaOptions)
+	}
+	for _, m := range view.Models {
+		if m == "gpt-image-2" {
+			t.Fatalf("出图型号不该进文本档位：%v", view.Models)
+		}
+	}
+	// 图标：添加时没选就按型号名自动认（界面认），可以随时换
+	id, _ := m["id"].(string)
+	if _, m2, raw2 := do(t, ts, "PUT", "/api/accounts/"+id, map[string]any{"icon": "openai"}); m2["icon"] != "openai" {
+		t.Fatalf("要能换图标：%s", raw2)
+	}
+	if _, m2, raw2 := do(t, ts, "PUT", "/api/accounts/"+id, map[string]any{"icon": ""}); m2["icon"] != nil {
+		t.Fatalf("空串表示回到自动：%s", raw2)
+	}
+	if code, _, raw := do(t, ts, "POST", "/api/accounts", map[string]any{"provider": "custom", "api_key": "good"}); code == 200 || !strings.Contains(string(raw), "接口地址") {
+		t.Fatalf("没填地址要拦下：%d %s", code, raw)
+	}
+	if code, _, raw := do(t, ts, "POST", "/api/accounts", map[string]any{"provider": "custom", "api_key": "bad", "base_url": "http://10.0.0.8/v1"}); code == 200 || !strings.Contains(string(raw), "密钥不对") {
+		t.Fatalf("密钥不对要说清：%d %s", code, raw)
+	}
+}
+
+// winworkSecrets 仿生产里的做法：WinWork 的令牌不在凭据库里，没打开时报「不在这里」
+type winworkSecrets struct{ core.Secrets }
+
+func (w winworkSecrets) Get(name string) (string, error) {
+	if name == "winwork" {
+		return "", &core.ErrKeyNotHere{Reason: "WinWork 没打开，有请求时会自动启动"}
+	}
+	return w.Secrets.Get(name)
+}
+
+// WinWork 是本机登录的客户端：自动出现、不计费，界面上和订阅排在一起；没打开时提示会自动启动
+func TestWinWorkAccountLocal(t *testing.T) {
+	ts, r := newServerWith(t, func(d *Deps) { d.Secrets = winworkSecrets{d.Secrets} })
+	_ = r.Config().Update(func(c *config.Config) error {
+		c.API = append(c.API, config.APIAccount{ID: "winwork", Provider: "winwork", Label: "WinWork", Enabled: true, Models: map[string][]string{"high": {"winwork-snt-5.5"}}})
+		return nil
+	})
+	_, _, raw := do(t, ts, "GET", "/api/accounts", nil)
+	var list []map[string]any
+	_ = json.Unmarshal(raw, &list)
+	var ww map[string]any
+	for _, a := range list {
+		if a["id"] == "winwork" {
+			ww = a
+		}
+	}
+	if ww == nil || ww["local"] != true || ww["plan"] != "不计费" || ww["kind"] != "api" {
+		t.Fatalf("WinWork 应标成本机登录、不计费：%v", ww)
+	}
+	if ww["status"] != "warn" || !strings.Contains(ww["detail"].(string), "自动启动") {
+		t.Fatalf("没打开时应提示会自动启动：%v %v", ww["status"], ww["detail"])
+	}
+}
+
+// 豆包工作的连接器在它自己的账号里，本机看不到：派过活就算接上了，别的宿主不受影响
+func TestDoubaoWorkConnectedByActivity(t *testing.T) {
+	ts, r := newServer(t)
+	_, _, raw := do(t, ts, "GET", "/api/integrations", nil)
+	if !strings.Contains(string(raw), `"id":"doubao_work","status":"manual"`) {
+		t.Fatalf("没派过活时是手动：%s", raw)
+	}
+	_ = r.Ledger().Insert(&core.Call{ID: "c1", TS: time.Now(), Source: "mcp", Host: "doubao_work", Kind: "text", Lane: core.LaneAPI, OK: true})
+	_, _, raw = do(t, ts, "GET", "/api/integrations", nil)
+	var list []map[string]any
+	_ = json.Unmarshal(raw, &list)
+	got := map[string]any{}
+	for _, it := range list {
+		got[it["id"].(string)] = it["status"]
+	}
+	if got["doubao_work"] != "connected" || got["claude_code"] != "disconnected" {
+		t.Fatalf("派过活的豆包工作应算接入：%v", got)
 	}
 }

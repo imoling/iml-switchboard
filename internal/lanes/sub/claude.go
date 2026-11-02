@@ -497,7 +497,7 @@ func (d *ClaudeDriver) Health(ctx context.Context) core.Health {
 		return core.Health{Status: "error", Detail: "claude --version 运行失败"}
 	}
 	if !dirExists(filepath.Join(d.home(), ".claude")) {
-		return core.Health{Status: "warn", Detail: "claude 还没登录过：运行一次 claude 完成登录"}
+		return core.Health{Status: "warn", Detail: "claude 还没登录过：运行一次 claude 完成登录", SignedOut: true}
 	}
 	if keys := thirdPartyIn(d.claudeSettingsFiles("")...); len(keys) > 0 {
 		return core.Health{Status: "warn", Detail: thirdPartyHint}

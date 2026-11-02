@@ -42,6 +42,8 @@ type Account struct {
 	Models   map[string]ModelPrice
 	// NeedsProxy 标记该供应商在国内需要代理。
 	NeedsProxy bool
+	// BeforeRequest 在真正发请求前调用（WinWork 要先把客户端拉起来）。健康检查只看密钥，不走这里。
+	BeforeRequest func(context.Context) error
 	// Headers 是额外请求头（例如 OpenRouter 的 HTTP-Referer）。
 	Headers map[string]string
 }
@@ -340,6 +342,11 @@ func endpoint(base, path string) string {
 
 // newRequest 构造带认证头的请求。
 func (a Account) newRequest(ctx context.Context, method, url string, body []byte) (*http.Request, error) {
+	if a.BeforeRequest != nil {
+		if err := a.BeforeRequest(ctx); err != nil {
+			return nil, err
+		}
+	}
 	key, err := a.APIKey()
 	if err != nil {
 		return nil, err
@@ -444,7 +451,8 @@ func (d *APIDriver) readStream(r io.Reader, emit func(core.Event)) (*core.Result
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	res := &core.Result{}
 	var text strings.Builder
-	calls := map[int]*toolCall{}
+	var calls []*toolCall         // 按到达顺序
+	latest := map[int]*toolCall{} // 每个 index 上最新的那个调用，续传的参数接在它后面
 	var finish string
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
@@ -473,10 +481,13 @@ func (d *APIDriver) readStream(r io.Reader, emit func(core.Event)) (*core.Result
 				}
 			}
 			for _, tc := range ch.Delta.ToolCalls {
-				cur, ok := calls[tc.Index]
-				if !ok {
+				// index 靠不住：WinWork 网关并发调用时会给两个不同的调用报同一个 index，
+				// 只认 index 就会把参数拼成 {...}{...}。带新 id 的块一律是新调用
+				cur, ok := latest[tc.Index]
+				if !ok || (tc.ID != "" && cur.ID != "" && tc.ID != cur.ID) {
 					c := tc
-					calls[tc.Index] = &c
+					calls = append(calls, &c)
+					latest[tc.Index] = &c
 					continue
 				}
 				if tc.ID != "" {
@@ -503,10 +514,8 @@ func (d *APIDriver) readStream(r io.Reader, emit func(core.Event)) (*core.Result
 	res.Text = text.String()
 	// 把拼好的消息放进 Raw，门面层需要 tool_calls 时从这里取。
 	var tcs []toolCall
-	for i := 0; i < len(calls); i++ {
-		if c, ok := calls[i]; ok {
-			tcs = append(tcs, *c)
-		}
+	for _, c := range calls {
+		tcs = append(tcs, *c)
 	}
 	rawMsg := map[string]interface{}{"role": "assistant", "content": res.Text, "finish_reason": finish}
 	if len(tcs) > 0 {

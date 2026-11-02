@@ -4,9 +4,9 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-export function windowLabel(): 'main' | 'popover' | 'quick' | 'about' {
+export function windowLabel(): 'main' | 'popover' | 'quick' | 'about' | 'notch' {
   const q = new URLSearchParams(location.search).get('win');
-  if (q === 'popover' || q === 'quick' || q === 'about') return q;
+  if (q === 'popover' || q === 'quick' || q === 'about' || q === 'notch') return q;
   return 'main';
 }
 
@@ -22,16 +22,16 @@ export const desktop = {
   setHotkey: (hotkey: string) => call('set_hotkey', { hotkey: toAccelerator(hotkey) }),
   setTrayStatus: (status: 'ok' | 'warn' | 'error' | 'off', tooltip?: string) => call('set_tray_status', { status, tooltip }),
   startBackend: () => call('start_backend'),
+  /** 刘海动画（实验功能）的开关；非 macOS 上什么也不做 */
+  setNotch: (on: boolean) => call('set_notch', { on }),
+  /** 接外接屏、合盖后刘海屏可能变了，两耳伸出来之前重新对位 */
+  placeNotch: () => call('place_notch'),
   /** 安装包里附带的后台的构建号；浏览器里和开发时都是 undefined */
   bundledBuild: () => call<string | null>('bundled_backend_build'),
   showAbout: () => call('show_about'),
   version: async () => (await call<string>('app_version')) ?? '1.0.0',
-  /** 让当前窗口的高度跟着内容走（菜单栏弹窗用）；浏览器里不做事 */
-  resizeSelf: async (width: number, height: number) => {
-    if (!inTauri) return;
-    const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
-    await getCurrentWindow().setSize(new LogicalSize(width, height));
-  },
+  /** 让当前窗口的高度跟着内容走（菜单栏弹窗用），改完后端会把顶边摆回托盘下面；浏览器里不做事 */
+  resizeSelf: (width: number, height: number) => call('resize_self', { width, height }),
   async setTitle(title: string) {
     if (!inTauri) { document.title = title; return; }
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -47,6 +47,11 @@ export const desktop = {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     const un = await getCurrentWindow().listen('imls://shown', cb);
     return un;
+  },
+  async onNotchSize(cb: (width: number, height: number) => void): Promise<() => void> {
+    if (!inTauri) return () => {};
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    return getCurrentWindow().listen<[number, number]>('imls://notch-size', (e) => cb(e.payload[0], e.payload[1]));
   },
   async copyText(text: string) {
     if (inTauri) {

@@ -8,7 +8,6 @@ use tauri::{
     AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
-use tauri_plugin_positioner::{Position, WindowExt};
 use tauri_plugin_shell::ShellExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -19,13 +18,141 @@ const TRAY_ID: &str = "main";
 /// 弹窗与快速面板「失焦即隐藏」的状态。
 /// armed：显示后真正拿到过焦点才算数；macOS 上应用没被激活时窗口会先收到一次失焦，不能据此藏掉。
 /// blurred_at：刚因失焦藏起来的时刻；点托盘图标本身会先让弹窗失焦，紧接着的那次点击应当是「关」而不是「再开」。
+/// anchor：最近一次摆放的左上角；前端按内容改高度后用它把顶边摆回去（macOS 改大小时固定的是左下角，顶边会漂）。
 struct Flyout {
     armed: AtomicBool,
     blurred_at: Mutex<Option<Instant>>,
+    anchor: Mutex<Option<tauri::Position>>,
 }
 
-static POPOVER: Flyout = Flyout { armed: AtomicBool::new(false), blurred_at: Mutex::new(None) };
-static QUICK: Flyout = Flyout { armed: AtomicBool::new(false), blurred_at: Mutex::new(None) };
+static POPOVER: Flyout = Flyout { armed: AtomicBool::new(false), blurred_at: Mutex::new(None), anchor: Mutex::new(None) };
+static QUICK: Flyout = Flyout { armed: AtomicBool::new(false), blurred_at: Mutex::new(None), anchor: Mutex::new(None) };
+
+/// 刘海动画（实验功能）：贴在刘海上的透明窗口。普通窗口上不了菜单栏，要把层级抬到状态栏之上；
+/// 鼠标穿透，两耳下面的菜单照常能点；不抢焦点，跟着切桌面和全屏。
+#[cfg(target_os = "macos")]
+mod notch {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSScreen, NSWindow, NSWindowCollectionBehavior};
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+    const EAR: f64 = 44.0; // 一只耳朵的宽度，右耳不挡到紧挨刘海的状态栏图标
+    const MARGIN: f64 = 36.0; // 两侧留给内圆角和外发光的余量
+    const DROP: f64 = 54.0; // 刘海下方留给能量带和外发光的高度；都是透明的，而且鼠标穿透
+    const LEVEL: isize = 26; // 菜单栏 24、状态栏 25；系统弹出菜单 101 仍在它上面
+
+    pub struct Geometry {
+        frame: NSRect,
+        pub width: f64,
+        pub height: f64,
+    }
+
+    /// 带刘海的屏幕；外接屏没有刘海，合盖时就返回 None
+    pub fn geometry() -> Option<Geometry> {
+        let mtm = MainThreadMarker::new()?;
+        for s in NSScreen::screens(mtm).iter() {
+            let height = s.safeAreaInsets().top;
+            if height <= 0.0 {
+                continue;
+            }
+            let (f, l, r) = (s.frame(), s.auxiliaryTopLeftArea(), s.auxiliaryTopRightArea());
+            // 刘海就是菜单栏两块可用区域中间的缺口，永远居中
+            let width = f.size.width - l.size.width - r.size.width;
+            let (ww, wh) = (width + 2.0 * (EAR + MARGIN), height + DROP);
+            let origin = NSPoint::new(f.origin.x + (f.size.width - ww) / 2.0, f.origin.y + f.size.height - wh);
+            return Some(Geometry { frame: NSRect::new(origin, NSSize::new(ww, wh)), width, height });
+        }
+        None
+    }
+
+    pub fn place(window: &tauri::WebviewWindow, g: &Geometry) {
+        let Ok(ns) = window.ns_window() else { return };
+        // SAFETY: Tauri 给的就是这个窗口的 NSWindow 指针，命令在主线程上跑
+        let win: &NSWindow = unsafe { &*ns.cast() };
+        win.setLevel(LEVEL);
+        win.setIgnoresMouseEvents(true);
+        win.setCollectionBehavior(
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::Stationary
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+                | NSWindowCollectionBehavior::IgnoresCycle,
+        );
+        win.setFrame_display(g.frame, true);
+        win.orderFrontRegardless(); // 不用 show()：那会让它变成键盘焦点窗口
+    }
+}
+
+/// 打开或关掉刘海动画；这块屏没有刘海时什么也不做
+#[tauri::command]
+fn set_notch(app: AppHandle, on: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let current = app.get_webview_window("notch");
+        if !on {
+            if let Some(w) = current {
+                let _ = w.close();
+            }
+            return Ok(());
+        }
+        let Some(g) = notch::geometry() else { return Ok(()) };
+        let w = match current {
+            Some(w) => w,
+            None => WebviewWindowBuilder::new(&app, "notch", WebviewUrl::App(format!("index.html?win=notch&w={}&h={}", g.width, g.height).into()))
+                .title("")
+                .decorations(false)
+                .transparent(true)
+                .shadow(false)
+                .resizable(false)
+                .skip_taskbar(true)
+                .focused(false)
+                .visible(false)
+                .build()
+                .map_err(|e| e.to_string())?,
+        };
+        notch::place(&w, &g);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, on);
+    Ok(())
+}
+
+/// 两耳伸出来之前重新对位：换了屏幕或合盖后刘海可能不在原处，也可能没有了
+#[tauri::command]
+fn place_notch(app: AppHandle) {
+    #[cfg(target_os = "macos")]
+    if let Some(w) = app.get_webview_window("notch") {
+        match notch::geometry() {
+            Some(g) => {
+                notch::place(&w, &g);
+                let _ = w.emit("imls://notch-size", (g.width, g.height)); // 改了显示缩放，刘海的点数会变
+            }
+            None => {
+                let _ = w.hide();
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
+/// 托盘图标在屏幕上的矩形（物理像素），每次托盘事件都更新；弹窗按它摆位
+#[derive(Clone, Copy, Debug)]
+struct TrayRect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+}
+
+static TRAY_RECT: Mutex<Option<TrayRect>> = Mutex::new(None);
+
+/// 弹出窗口摆在哪
+enum Place {
+    /// 贴着托盘图标；没点过托盘（快捷键、界面里唤起）时放到鼠标所在屏幕的顶部
+    Tray,
+    /// 屏幕正中
+    Center,
+}
 
 fn flyout(label: &str) -> Option<&'static Flyout> {
     match label {
@@ -45,7 +172,7 @@ fn tray_icon(status: &str) -> (Image<'static>, bool) {
     }
 }
 
-fn toggle_window(app: &AppHandle, label: &str, position: Option<Position>) {
+fn toggle_window(app: &AppHandle, label: &str, place: Place) {
     if let Some(w) = app.get_webview_window(label) {
         let f = flyout(label);
         if let Some(f) = f {
@@ -64,37 +191,85 @@ fn toggle_window(app: &AppHandle, label: &str, position: Option<Position>) {
         if let Some(f) = f {
             f.armed.store(false, Ordering::SeqCst);
         }
-        if let Some(p) = position {
-            let _ = w.move_window(p);
-            keep_on_screen(app, &w);
-        } else {
-            let _ = w.center();
+        let anchor = match place {
+            Place::Tray => tray_anchor(app, &w),
+            Place::Center => None,
+        };
+        match anchor {
+            Some(p) => {
+                let _ = w.set_position(p);
+            }
+            None => {
+                let _ = w.center();
+            }
+        }
+        if let Some(f) = f {
+            *f.anchor.lock().unwrap() = anchor;
         }
         let _ = w.show();
         let _ = w.set_focus();
         let _ = w.emit("imls://shown", ());
-        trace(app, &format!("show {label} at {:?} visible={:?} focused={:?}", w.outer_position().ok(), w.is_visible().ok(), w.is_focused().ok()));
+        // 位置不在这里读：macOS 上移窗、显示都是排进主线程队列异步做的，此刻读到的还是旧坐标，以上面 anchor 那行为准
+        trace(app, &format!("show {label} visible={:?} focused={:?}", w.is_visible().ok(), w.is_focused().ok()));
     }
 }
 
-/// 弹窗按托盘位置摆好后，若落在所有屏幕之外（多显示器、副屏在负坐标时会发生），改放到鼠标所在屏幕的顶部居中
-fn keep_on_screen(app: &AppHandle, w: &tauri::WebviewWindow) {
-    let (Ok(pos), Ok(size), Ok(monitors)) = (w.outer_position(), w.outer_size(), w.available_monitors()) else { return };
-    let inside = |x: i32, y: i32| monitors.iter().any(|m| {
-        let (mp, ms) = (m.position(), m.size());
-        x >= mp.x && y >= mp.y && x < mp.x + ms.width as i32 && y < mp.y + ms.height as i32
-    });
-    if inside(pos.x + size.width as i32 / 2, pos.y + 1) {
-        return;
-    }
-    let Ok(cur) = app.cursor_position() else { return };
-    let (cx, cy) = (cur.x as i32, cur.y as i32);
-    let Some(m) = monitors.iter().find(|m| { let (mp, ms) = (m.position(), m.size()); cx >= mp.x && cy >= mp.y && cx < mp.x + ms.width as i32 && cy < mp.y + ms.height as i32 }) else { return };
+/// 弹窗的左上角：横向对准托盘图标中心，纵向贴在菜单栏下沿（托盘在屏幕下半部时放到图标上面），
+/// 整个窗口留在那块显示器的工作区里。没点过托盘就按鼠标所在的屏幕放到顶部。
+/// 不问窗口自己在哪块显示器：从没显示过的窗口答不出来，定位插件就是栽在这，启动后第一次弹出总落在屏幕正中。
+fn tray_anchor(app: &AppHandle, w: &tauri::WebviewWindow) -> Option<tauri::Position> {
+    let monitors = w.available_monitors().ok()?;
+    let contains = |m: &tauri::Monitor, x: i32, y: i32| {
+        let (p, s) = (m.position(), m.size());
+        x >= p.x && y >= p.y && x < p.x + s.width as i32 && y < p.y + s.height as i32
+    };
+    // 图标被挤进菜单栏的溢出区时矩形可能是空的，那就按鼠标位置摆
+    let tray = (*TRAY_RECT.lock().unwrap()).filter(|t| t.w > 0 && t.h > 0);
+    let cursor = app.cursor_position().ok().map(|c| (c.x as i32, c.y as i32));
+    let (ax, ay) = match (tray, cursor) {
+        (Some(t), _) => (t.x + t.w / 2, t.y + t.h / 2),
+        (None, Some(c)) => c,
+        (None, None) => return None,
+    };
+    let m = monitors
+        .iter()
+        .find(|m| contains(m, ax, ay))
+        .or_else(|| cursor.and_then(|(cx, cy)| monitors.iter().find(|m| contains(m, cx, cy))))
+        .or_else(|| monitors.first())?;
+    let scale = m.scale_factor();
+    // 窗口尺寸按目标显示器的缩放换算：两块屏缩放不同时，窗口自己报的物理尺寸是按它当前那块屏算的
+    let size = w.outer_size().ok()?;
+    let wsf = w.scale_factor().unwrap_or(scale);
+    let (ww, wh) = ((size.width as f64 / wsf * scale).round() as i32, (size.height as f64 / wsf * scale).round() as i32);
     let (mp, ms) = (m.position(), m.size());
-    let x = (cx - size.width as i32 / 2).clamp(mp.x, mp.x + ms.width as i32 - size.width as i32);
-    let y = mp.y + (30.0 * m.scale_factor()) as i32;
-    trace(app, &format!("popover off-screen at {:?}, moved to ({x},{y}) on {:?}", pos, m.name()));
-    let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+    let area = m.work_area();
+    let (area_x, area_y, area_w, area_h) = if area.size.width > 0 && area.size.height > 0 {
+        (area.position.x, area.position.y, area.size.width as i32, area.size.height as i32)
+    } else {
+        (mp.x, mp.y, ms.width as i32, ms.height as i32)
+    };
+    let x = (ax - ww / 2).clamp(area_x, (area_x + area_w - ww).max(area_x));
+    let y = match tray {
+        Some(t) if ay >= mp.y + ms.height as i32 / 2 => (t.y.min(area_y + area_h) - wh).max(area_y),
+        Some(t) => (t.y + t.h).max(area_y),
+        None => area_y,
+    };
+    trace(app, &format!("anchor ({x},{y}) tray={tray:?} window={ww}x{wh} monitor={:?} area=({area_x},{area_y} {area_w}x{area_h}) scale={scale}", m.name()));
+    // macOS 的窗口坐标按点算，物理像素除以这块屏的缩放才准；其它平台直接用物理像素
+    Some(if cfg!(target_os = "macos") {
+        tauri::Position::Logical(tauri::LogicalPosition::new(x as f64 / scale, y as f64 / scale))
+    } else {
+        tauri::Position::Physical(tauri::PhysicalPosition::new(x, y))
+    })
+}
+
+/// 弹窗按内容改高度。macOS 改窗口大小固定的是左下角，顶边会跟着漂；改完把左上角摆回原处
+#[tauri::command]
+fn resize_self(window: tauri::WebviewWindow, width: f64, height: f64) {
+    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    if let Some(p) = flyout(window.label()).and_then(|f| *f.anchor.lock().unwrap()) {
+        let _ = window.set_position(p);
+    }
 }
 
 /// 托盘与弹窗的动作记一行到数据目录的 logs/app.log：面板「不见了」时看这里
@@ -127,12 +302,12 @@ fn show_main(app: AppHandle) {
 
 #[tauri::command]
 fn toggle_quick(app: AppHandle) {
-    toggle_window(&app, "quick", None);
+    toggle_window(&app, "quick", Place::Center);
 }
 
 #[tauri::command]
 fn toggle_popover(app: AppHandle) {
-    toggle_window(&app, "popover", Some(Position::TrayCenter));
+    toggle_window(&app, "popover", Place::Tray);
 }
 
 #[tauri::command]
@@ -257,7 +432,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -265,7 +439,7 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
                     if event.state() == ShortcutState::Pressed {
-                        toggle_window(app, "quick", None);
+                        toggle_window(app, "quick", Place::Center);
                     }
                 })
                 .build(),
@@ -275,6 +449,9 @@ pub fn run() {
             toggle_quick,
             toggle_popover,
             hide_window,
+            resize_self,
+            set_notch,
+            place_notch,
             set_hotkey,
             set_tray_status,
             start_backend,
@@ -309,10 +486,14 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
+                    // 图标的矩形每次事件都带着，记下来给弹窗摆位用（tray-icon 给的就是物理像素）
+                    if let TrayIconEvent::Click { rect, .. } | TrayIconEvent::Enter { rect, .. } | TrayIconEvent::Move { rect, .. } | TrayIconEvent::Leave { rect, .. } = &event {
+                        let (p, s) = (rect.position.to_physical::<i32>(1.0), rect.size.to_physical::<u32>(1.0));
+                        *TRAY_RECT.lock().unwrap() = Some(TrayRect { x: p.x, y: p.y, w: s.width as i32, h: s.height as i32 });
+                    }
                     if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, position, rect, .. } = event {
                         trace(tray.app_handle(), &format!("tray click at {:?} rect={:?}", position, rect.position));
-                        toggle_window(tray.app_handle(), "popover", Some(Position::TrayCenter));
+                        toggle_window(tray.app_handle(), "popover", Place::Tray);
                     }
                 })
                 .build(app)?;

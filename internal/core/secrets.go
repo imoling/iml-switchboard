@@ -27,6 +27,11 @@ type secretStore interface {
 
 var errNoSecret = errors.New("没有找到密钥")
 
+// ErrKeyNotHere 表示密钥不归本应用管，是别的原因暂时拿不到（比如 WinWork 没开）。界面不能让用户「重新填写」。
+type ErrKeyNotHere struct{ Reason string }
+
+func (e *ErrKeyNotHere) Error() string { return e.Reason }
+
 // NewSecrets 创建密钥存取。设了 IMLS_SECRETS_FILE（测试用）时一律走文件。
 func NewSecrets(dataDir string) *KeychainSecrets {
 	s := &KeychainSecrets{service: "iML Switchboard"}

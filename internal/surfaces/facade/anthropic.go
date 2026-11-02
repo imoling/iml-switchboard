@@ -161,6 +161,7 @@ func (s *Server) toTask(req anthReq, r *http.Request) (*core.Task, error) {
 		default: // user：文字和图片合成一条，每个工具结果单独一条 tool 消息
 			var text strings.Builder
 			var imgs []string
+			userImage := false
 			for _, b := range blocks {
 				switch b.Type {
 				case "tool_result":
@@ -178,10 +179,11 @@ func (s *Server) toTask(req anthReq, r *http.Request) (*core.Task, error) {
 				case "image":
 					_, more := blocksText(json.RawMessage(mustJSON([]anthBlock{b})))
 					imgs = append(imgs, more...)
+					userImage = true
 				}
 			}
 			if text.Len() > 0 || len(imgs) > 0 {
-				t.Messages = append(t.Messages, core.Message{Role: "user", Content: text.String(), Images: imgs})
+				t.Messages = append(t.Messages, core.Message{Role: "user", Content: text.String(), Images: imgs, ToolImage: text.Len() == 0 && !userImage})
 			}
 		}
 	}
@@ -203,7 +205,7 @@ func (s *Server) toTask(req anthReq, r *http.Request) (*core.Task, error) {
 	if t.SessionID == "" && len(t.Messages) > 1 {
 		t.SessionID = "facade:" + hash(t.Messages[0].Content)
 	}
-	applyModelName(t, req.Model)
+	applyModelName(t, req.Model, s.accountModel)
 	return t, nil
 }
 
@@ -211,7 +213,15 @@ func mustJSON(v any) []byte { b, _ := json.Marshal(v); return b }
 
 // applyModelName 把宿主选的模型名落到任务上：router-auto 自动分档，router-high/mid/low 指定档位，
 // Claude 自家的 opus/sonnet/haiku 名字按高/中/低档理解（接管后没有订阅可走），其余当成点名某个型号。
-func applyModelName(t *core.Task, model string) {
+func applyModelName(t *core.Task, model string, known func(string) bool) {
+	if t.Host == "claude_desktop" {
+		model = core.DesktopRoute(model) // 它的菜单里全是借的名字，只有它按这张表理解
+	}
+	// 账号里配了的型号就是点名，哪怕名字像 gpt-* / claude-*：自定义服务的 gpt-6.1-sol 要真的发到那个服务
+	if known != nil && known(model) {
+		t.Model = model
+		return
+	}
 	m := strings.ToLower(model)
 	switch {
 	case m == "" || m == "router-auto":
@@ -232,6 +242,8 @@ func applyModelName(t *core.Task, model string) {
 		default:
 			t.Tier = core.TierHigh
 		}
+	case m == "codex-auto-review":
+		t.Tier = core.TierMid // Codex 的自动审批点名这个，它不是真实型号
 	case strings.HasPrefix(m, "gpt-") || strings.HasPrefix(m, "o1") || strings.HasPrefix(m, "o3") || strings.HasPrefix(m, "o4"):
 		// Codex 接管后，它内部那些小请求点名的 OpenAI 型号也按档位走，别去起订阅命令行
 		switch {
@@ -315,6 +327,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 			anthErr(w, 502, "api_error", err.Error())
 			return
 		}
+		res.Text = s.replyText(call, res)
 		content := []map[string]any{}
 		if res.Text != "" {
 			content = append(content, map[string]any{"type": "text", "text": res.Text})
@@ -362,6 +375,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 		send("error", map[string]any{"type": "error", "error": map[string]any{"type": "api_error", "message": err.Error()}})
 		return
 	}
+	res.Text = s.replyText(call, res)
 	if !textOpen && res.Text != "" {
 		index++
 		textOpen = true

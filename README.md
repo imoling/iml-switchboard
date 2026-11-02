@@ -19,7 +19,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 
 - **派活**：Claude Code、Codex、Gemini CLI 保留自己的主力模型，把翻译、第二意见、生图这些子任务交给 Switchboard（MCP 工具）。主力的上下文和缓存不受影响。
 - **当主力模型**：WorkBuddy、pi、OpenClaw、DeepSeek Harness 直接把 Switchboard 当成一个模型（OpenAI 兼容接口）。每次请求带着完整对话，Switchboard 按难易挑模型，一个失败就换下一个接着答。
-- **接管 Claude Code 和 Codex**：接入页打开「接管模型」，它们自己的对话就改走 Switchboard（Claude Code 用 Anthropic 协议，Codex 用 Responses 协议，流式、工具调用、提示缓存都是原生的），`/model` 里能选「自动分档」「高档 / 中档 / 低档」或任何一个按量付费型号；关掉开关原样恢复。订阅额度用完、或想用 WinWork 网关的模型接着写代码时用它。
+- **接管 Claude Code、Claude Desktop 和 Codex**：接入页打开「接管模型」，它们自己的对话就改走 Switchboard（Claude Code 和 Claude Desktop 用 Anthropic 协议，Codex 用 Responses 协议，流式、工具调用、提示缓存都是原生的）。Claude Code 和 Codex 的 `/model` 里能选「自动分档」「高档 / 中档 / 低档」或任何一个按量付费型号，Claude Desktop 的模型菜单里是这四档；关掉开关原样恢复。订阅额度用完、或想用 WinWork 网关的模型接着写代码时用它。
 
 配一个菜单栏（Windows 上是托盘）应用：看额度、看花费、看省了多少、改规则。
 
@@ -73,7 +73,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 
 **渠道**
 - 订阅：Claude（`claude -p`）、ChatGPT（`codex exec`）、Antigravity（`agy -p`）。常驻时会提前启动好下一个进程，实测 Claude 从 7.5 秒降到约 4 秒，Antigravity 从 32 秒降到约 5 秒。
-- 按量付费：智谱、阿里云百炼、DeepSeek、Moonshot、MiniMax、火山方舟、OpenRouter、Anthropic、Agnes AI、302.ai、WinWork（讯飞；装了就自动出现，用它网关里的 Sonnet 5.5、DeepSeek、Qwen、Kimi 等型号，额度算在 WinWork 账上，不计费）。密钥存在系统自带的凭据库里：macOS 钥匙串、Windows 凭据管理器。
+- 按量付费：智谱、阿里云百炼、DeepSeek、Moonshot、MiniMax、火山方舟、OpenRouter、Anthropic、Agnes AI、302.ai。WinWork（讯飞）装了就自动出现在订阅那组，用它网关里的 Sonnet 5.5、DeepSeek、Qwen、Kimi 等型号，额度算在 WinWork 账上，不计费。密钥存在系统自带的凭据库里：macOS 钥匙串、Windows 凭据管理器。
 - 媒体：生图、生视频分便宜档、默认档、最好档；动画由模型写 Remotion 代码，在本机渲染成视频。
 
 **接入的宿主**
@@ -81,7 +81,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 | 宿主 | 接入方式 | 实测 |
 |---|---|---|
 | Claude Code | MCP 工具 + `CLAUDE.md` 调用约定 + 斜杠命令 | 已在本机日常使用 |
-| Codex CLI | MCP 工具 + `AGENTS.md` 调用约定 | 已注册；派活流程用模拟宿主验证 |
+| Codex | MCP 工具 + `AGENTS.md` 调用约定 | 已注册；派活流程用模拟宿主验证 |
 | Gemini CLI | MCP 工具 + `GEMINI.md` 调用约定 | 已注册；个人账号已被 Google 迁到 Antigravity，需 API 密钥或企业账号 |
 | pi | 兼容入口（OpenAI 格式） | 带工具的智能体回合实测通过 |
 | OpenClaw | 兼容入口 | 带工具的智能体回合实测通过 |
@@ -109,6 +109,14 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 - 检查更新：每天到 GitHub Releases 查一次，连不上就查 Gitee 镜像；有新版本通知一声，设置里一键下载本平台的安装包。
 
 ## 安装
+
+**macOS 用安装脚本**（推荐）：安装包还没有苹果公证，浏览器下载的 dmg 打开时要去「隐私与安全性」点「仍要打开」。用脚本装就不用：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/imoling/iml-switchboard/main/scripts/install-mac.sh | bash
+```
+
+脚本下载本机芯片对应的最新 dmg（GitHub 连不上换 Gitee），装到「应用程序」，清掉下载来源标记；后台服务没在干活时顺手换成新版本。已经下载好的 dmg 可以传给它：`bash install-mac.sh ~/Downloads/Switchboard_0.3.0_aarch64.dmg`。
 
 **用安装包**：在 [Releases](https://github.com/imoling/iml-switchboard/releases) 页下载对应系统的安装包（macOS 是 dmg，Windows 是 msi 或 exe）。安装包里已经带了后台程序 `imls`。
 
@@ -167,7 +175,7 @@ imls golden                                           # 导出「判低了」的
 
 ## 已知限制
 
-- Windows 版还没有在真实电脑上手工用过；安装包暂未签名，macOS 会提示「无法验证开发者」，Windows 会出现 SmartScreen 提示。
+- Windows 版还没有在真实电脑上手工用过；安装包暂未签名，macOS 直接打开 dmg 会提示「无法验证开发者」（用上面的安装脚本可以避开），Windows 会出现 SmartScreen 提示。
 - 带系统提示的 Claude 请求不预热（兼容入口转来的请求多半带系统提示）。
 - Codex 订阅渠道的派活流程、Hermes 的带工具回合还没有在真实环境完整跑过。
 - 不会替宿主压缩对话：只返回标准错误，由宿主自己压缩。

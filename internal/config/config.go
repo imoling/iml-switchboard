@@ -36,6 +36,7 @@ type Settings struct {
 	OnboardingDone       bool          `yaml:"onboarding_done" json:"onboarding_done"`
 	USDPerCNY            float64       `yaml:"usd_per_cny" json:"usd_per_cny"`
 	RulesOnly            bool          `yaml:"rules_only,omitempty" json:"rules_only"` // 只按规则判档，拿不准时也不问低档模型
+	LabNotch             bool          `yaml:"lab_notch,omitempty" json:"lab_notch"`   // 实验功能：请求经过时刘海两侧亮起，默认关
 	Currency             string        `yaml:"currency,omitempty" json:"currency"`     // 费用显示用的币种：CNY 或 USD；账本始终按美元记
 }
 
@@ -100,6 +101,16 @@ type APIAccount struct {
 	AllowPaid bool `yaml:"allow_paid,omitempty" json:"allow_paid,omitempty"`
 	// Media 是这个账号出图 / 出视频各用哪个型号：image / video → 型号；值为空表示不用；没有这个键表示用默认
 	Media map[string]string `yaml:"media,omitempty" json:"media,omitempty"`
+	// Icon 是自定义服务用哪个厂商的图标（openai、claude…），空表示按型号名自动认
+	Icon string `yaml:"icon,omitempty" json:"icon,omitempty"`
+	// Discovered 是自定义服务从 /models 拉到的型号，档位从这里选；重新验证时整表换新
+	Discovered []DiscoveredModel `yaml:"discovered,omitempty" json:"discovered,omitempty"`
+}
+
+// DiscoveredModel 是服务自己报的一个型号。
+type DiscoveredModel struct {
+	ID   string `yaml:"id" json:"id"`
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
 }
 
 // MediaModel 返回账号在某种媒体上选的型号；没选过就用默认值 def，明确选了「不用」返回空。
@@ -191,6 +202,8 @@ type Routing struct {
 type Integration struct {
 	Connected bool            `yaml:"connected" json:"connected"`
 	Options   map[string]bool `yaml:"options,omitempty" json:"options,omitempty"`
+	// Models 是用户给这个宿主排好的型号表，第一个是默认；空表示跟着默认走（路由型号加各账号分进档位的型号）
+	Models []string `yaml:"models,omitempty" json:"models,omitempty"`
 }
 
 // Config 是整份配置。

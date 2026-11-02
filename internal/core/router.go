@@ -17,20 +17,21 @@ import (
 
 // Router 是调度核心：决策、执行、回退、记账。
 type Router struct {
-	cfg      *config.Store
-	ledger   *Ledger
-	reg      *Registry
-	quota    *QuotaManager
-	sticky   *Sticky
-	drivers  map[LaneID]Driver
-	mu       sync.RWMutex
-	mode     Mode
-	paused   bool
-	onCall   func(*Call)
-	onNotice func(title, body, level string)
-	loc      *time.Location
-	clsCache classifyCache
-	inflight atomic.Int64
+	cfg       *config.Store
+	ledger    *Ledger
+	reg       *Registry
+	quota     *QuotaManager
+	sticky    *Sticky
+	drivers   map[LaneID]Driver
+	mu        sync.RWMutex
+	mode      Mode
+	paused    bool
+	onCall    func(*Call)
+	onAttempt func(*Task, Target)
+	onNotice  func(title, body, level string)
+	loc       *time.Location
+	clsCache  classifyCache
+	inflight  atomic.Int64
 }
 
 // NewRouter 创建调度器。
@@ -47,7 +48,10 @@ func (r *Router) Register(d Driver) { r.drivers[d.ID()] = d }
 func (r *Router) Driver(id LaneID) (Driver, bool) { d, ok := r.drivers[id]; return d, ok }
 
 // OnCall / OnNotice 设置回调（事件流、通知）。
-func (r *Router) OnCall(fn func(*Call))                       { r.onCall = fn }
+func (r *Router) OnCall(fn func(*Call)) { r.onCall = fn }
+
+// OnAttempt 在把请求交给某个候选之前调用；换候选时会再调一次，OnCall 要等做完才调。
+func (r *Router) OnAttempt(fn func(*Task, Target))            { r.onAttempt = fn }
 func (r *Router) OnNotice(fn func(title, body, level string)) { r.onNotice = fn }
 
 // Mode / SetMode / Paused / SetPaused 是菜单栏的两个开关。
@@ -309,11 +313,44 @@ func (r *Router) Decide(t *Task) *Decision {
 		}
 	}
 	r.pinChoice(t, d)
+	if len(live(d.Candidates)) == 0 && t.dropToolImages() {
+		d = r.Decide(t)
+		d.Reason = append(d.Reason, "工具返回的图片没有能看图的模型，改成文字提示")
+	}
 	return d
+}
+
+// dropToolImages 去掉工具返回的图片，换成一句话告诉模型，免得它以为工具坏了。返回有没有去掉。
+func (t *Task) dropToolImages() bool {
+	dropped := false
+	for i := range t.Messages {
+		if t.Messages[i].ToolImage {
+			t.Messages[i].ToolImage, t.Messages[i].Images = false, nil
+			t.Messages[i].Content = "工具返回了图片，但当前模型看不了图；工具本身是正常的"
+			dropped = true
+		}
+	}
+	return dropped
 }
 
 // accountWithModel 找配了这个型号的按量付费账号；档位里没配的，按型号的供应商匹配。找不到返回 nil。
 func (r *Router) accountWithModel(model string) *config.APIAccount {
+	if acc := r.accountListing(model); acc != nil {
+		return acc
+	}
+	cfg := r.cfg.Get()
+	if info, ok := r.reg.Lookup(model); ok {
+		for i := range cfg.API {
+			if cfg.API[i].Enabled && cfg.API[i].Provider == info.Provider {
+				return &cfg.API[i]
+			}
+		}
+	}
+	return nil
+}
+
+// accountListing 找档位里配了、或自定义服务报了这个型号的账号；只认名字完全相同的。
+func (r *Router) accountListing(model string) *config.APIAccount {
 	cfg := r.cfg.Get()
 	for i := range cfg.API {
 		acc := &cfg.API[i]
@@ -327,11 +364,9 @@ func (r *Router) accountWithModel(model string) *config.APIAccount {
 				}
 			}
 		}
-	}
-	if info, ok := r.reg.Lookup(model); ok {
-		for i := range cfg.API {
-			if cfg.API[i].Enabled && cfg.API[i].Provider == info.Provider {
-				return &cfg.API[i]
+		for _, d := range acc.Discovered {
+			if d.ID == model {
+				return acc
 			}
 		}
 	}
@@ -356,7 +391,10 @@ func (r *Router) pinChoice(t *Task, d *Decision) {
 	}
 	if len(pinned) == 0 && t.Model != "" {
 		lane := t.Lane
-		if lane == "" {
+		if lane == "" && r.accountListing(t.Model) != nil {
+			// 账号里有这个型号就发给账号：自定义服务的 gpt-6.1-sol 和 ChatGPT 订阅里的同名，不能按厂商猜成订阅
+			lane = LaneAPI
+		} else if lane == "" {
 			lane = LaneAPI
 			if info, ok := r.reg.Lookup(t.Model); ok {
 				switch info.Provider {
@@ -370,6 +408,9 @@ func (r *Router) pinChoice(t *Task, d *Decision) {
 			}
 		}
 		tgt := Target{Lane: lane, Provider: providerOf(lane), Model: t.Model, EstCostUSD: r.reg.EstimateText(t.Model, t.EstTokens)}
+		if lane != LaneAPI && lane != LaneMedia && t.HasTools() {
+			tgt.Skipped = "带工具" // 订阅渠道接不了工具；不跳过的话会去调命令行，一直等到超时
+		}
 		if lane == LaneAPI {
 			// 找哪个账号有这个型号：先看档位里配没配，再看型号的供应商和账号对不对得上
 			if acc := r.accountWithModel(t.Model); acc != nil {
@@ -433,7 +474,7 @@ func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer [
 			} else {
 				h := r.drivers[lid].Health(context.Background())
 				r.quota.Observe(lid, h.Quota)
-				if h.Status == "missing" || h.Status == "error" || h.Status == "disabled" {
+				if h.Status == "missing" || h.Status == "error" || h.Status == "disabled" || h.SignedOut {
 					tgt.Skipped = h.Detail
 				} else if ok, why := r.quota.Healthy(lid, tier, sl.Models); !ok {
 					tgt.Skipped = why
@@ -759,6 +800,9 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 			continue
 		}
 		tried++
+		if r.onAttempt != nil {
+			r.onAttempt(t, *c)
+		}
 		res, err := drv.Run(ctx, t, *c, emit)
 		if err == nil {
 			r.finish(call, t, *c, res, start, fallbackFrom)

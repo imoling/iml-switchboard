@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +28,8 @@ var Version = "dev"
 // AccountOps 由按量付费渠道提供：验证密钥、列模型、默认模型表。
 type AccountOps interface {
 	Verify(ctx context.Context, provider, baseURL, apiKey string) (models []string, err error)
+	// ListModels 拉自定义服务的型号列表；同时就验证了地址和密钥
+	ListModels(ctx context.Context, baseURL, apiKey string) ([]config.DiscoveredModel, error)
 	Preset(provider string) (baseURL, currency string, tiers map[string][]string, needsProxy bool, ok bool)
 	Providers() []string
 	Reload(cfg *config.Config)
@@ -46,6 +50,9 @@ type IntegrationOps interface {
 	Connect(id string, opts map[string]bool) (map[string]any, error)
 	Disconnect(id string) (map[string]any, error)
 	Update(id string, opts map[string]bool) (map[string]any, error)
+	// HostModels 和 SetHostModels 管宿主菜单里列出的型号表（Codex、WorkBuddy、pi 等）；ids 为空表示回到默认
+	HostModels(id string) (any, error)
+	SetHostModels(id string, ids []string) (any, error)
 }
 
 // Deps 是接口层需要的全部依赖。
@@ -137,7 +144,10 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	h("POST /api/rules/suggestions/{task}", s.applySuggestion)
 	h("GET /api/rules/export", s.exportRules)
 	h("POST /api/rules/import", s.importRules)
-	h("GET /api/accounts", s.accounts)
+	h("GET /api/accounts", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		s.d.Accounts.Discover() // 只看几个文件在不在：WinWork 后装、后登录的，打开账号页就出现
+		return s.accountViews(), nil
+	})
 	h("GET /api/providers", s.providers)
 	h("POST /api/accounts", s.addAccount)
 	h("POST /api/accounts/detect", func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -158,6 +168,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	h("POST /api/integrations/{id}/connect", s.integrationConnect)
 	h("POST /api/integrations/{id}/disconnect", s.integrationDisconnect)
 	h("PUT /api/integrations/{id}", s.integrationUpdate)
+	h("GET /api/integrations/{id}/models", s.integrationModels)
+	h("PUT /api/integrations/{id}/models", s.integrationSetModels)
 	h("GET /api/settings", s.settings)
 	h("PUT /api/settings", s.putSettings)
 	h("GET /api/themes", func(w http.ResponseWriter, r *http.Request) (any, error) { return themes.All(), nil })
@@ -378,7 +390,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	delta := 0.0
 	if ov.PrevCalls > 0 {
-		delta = float64(ov.Calls-ov.PrevCalls) / float64(ov.PrevCalls) * 100
+		delta = math.Round(float64(ov.Calls-ov.PrevCalls) / float64(ov.PrevCalls) * 100) // 整数就够，小数点后十几位没人看
 	}
 	return map[string]any{
 		"calls": ov.Calls, "prev_calls": ov.PrevCalls, "calls_delta_pct": delta, "api_cost_usd": ov.APICostUSD, "baseline_cost_usd": ov.BaselineCostUSD,
@@ -426,8 +438,8 @@ func (s *Server) quotas(cfg *config.Config) []quotaRow {
 		if !ok {
 			continue
 		}
-		if h := d.Health(context.Background()); h.Status == "missing" {
-			continue
+		if h := d.Health(context.Background()); h.Status == "missing" || h.SignedOut {
+			continue // 没装或没登录：没有额度可看
 		} else {
 			s.d.Router.Quota().Observe(lane, h.Quota)
 		}
@@ -848,10 +860,12 @@ type accountView struct {
 	ID              string              `json:"id"`
 	Kind            string              `json:"kind"`
 	Provider        string              `json:"provider"`
+	Icon            string              `json:"icon,omitempty"` // 自定义服务手动选的图标；空表示界面按型号名认
 	Label           string              `json:"label"`
 	Status          string              `json:"status"`
 	Detail          string              `json:"detail"`
 	Plan            string              `json:"plan,omitempty"`
+	Local           bool                `json:"local,omitempty"` // 本机登录的客户端（WinWork）：自动出现、不计费，界面上和订阅排在一起
 	PlanOptions     []string            `json:"plan_options,omitempty"`
 	PlanManual      bool                `json:"plan_manual,omitempty"`
 	MonthCostUSD    float64             `json:"month_cost_usd"`
@@ -907,6 +921,9 @@ func (s *Server) accountViews() []accountView {
 		v.Tiers = tiers
 		if d, ok := s.d.Router.Driver(sb.lane); ok {
 			h := d.Health(context.Background())
+			if h.SignedOut {
+				continue // 没登录就没有额度可用，不占一行
+			}
 			s.d.Router.Quota().Observe(sb.lane, h.Quota)
 			v.Status = h.Status
 			if h.Plan != "" {
@@ -947,7 +964,11 @@ func (s *Server) accountViews() []accountView {
 		out = append(out, v)
 	}
 	for _, a := range cfg.API {
-		v := accountView{ID: a.ID, Kind: "api", Provider: a.Provider, Label: labelOr(a.Label, core.ProviderLabel(a.Provider)), Enabled: a.Enabled, Currency: a.Currency, NeedsProxy: a.NeedsProxy, Status: "ok", Detail: "", Plan: "按量付费"}
+		v := accountView{ID: a.ID, Kind: "api", Provider: a.Provider, Icon: a.Icon, Label: labelOr(a.Label, core.ProviderLabel(a.Provider)), Enabled: a.Enabled, Currency: a.Currency, NeedsProxy: a.NeedsProxy, Status: "ok", Detail: "", Plan: "按量付费"}
+		if a.Provider == "winwork" {
+			// 走的是它网关的接口，所以在按量付费这条通路上；但它是本机登录的客户端，不计费，界面上和订阅排在一起
+			v.Local, v.Plan = true, "不计费"
+		}
 		tiers := map[string]any{}
 		v.TierOptions = map[string][]string{}
 		v.Labels = map[string]string{}
@@ -970,7 +991,17 @@ func (s *Server) accountViews() []accountView {
 				}
 			}
 		}
-		// 预设里有但还没分到任何档位的型号也列出来，方便在档位里选
+		// 预设里有但还没分到任何档位的型号也列出来，方便在档位里选；自定义服务用它自己报的型号
+		for _, d := range a.Discovered {
+			if core.GuessMediaKind(d.ID) != "" {
+				continue // 出图、出视频型号放在媒体那里选，不进文本档位
+			}
+			if !seen[d.ID] {
+				seen[d.ID] = true
+				v.Models = append(v.Models, d.ID)
+				v.Labels[d.ID] = labelOr(d.Name, d.ID)
+			}
+		}
 		if p, ok := presetModels(s.d.Accounts, a.Provider); ok {
 			for _, m := range p {
 				if !seen[m] {
@@ -981,7 +1012,7 @@ func (s *Server) accountViews() []accountView {
 			}
 		}
 		v.Tiers = tiers
-		v.Media = s.mediaItems(a.Provider)
+		v.Media = s.mediaItemsFor(a)
 		if len(v.Media) > 0 {
 			v.MediaChoice = map[string]string{}
 			v.MediaOptions = map[string][]string{}
@@ -995,7 +1026,8 @@ func (s *Server) accountViews() []accountView {
 				}
 			}
 		}
-		if fm := s.d.Router.Registry().FreeModels(a.Provider); len(fm) > 0 {
+		// 本机登录的客户端整个不计费，不再逐个标「免费」，也没有「只用免费型号」可选
+		if fm := s.d.Router.Registry().FreeModels(a.Provider); len(fm) > 0 && !v.Local {
 			v.FreeModels = fm
 			ap := a.AllowPaid
 			v.AllowPaid = &ap
@@ -1009,8 +1041,18 @@ func (s *Server) accountViews() []accountView {
 			v.Status = "error"
 			v.Detail = why
 		} else if _, err := s.d.Secrets.Get(a.ID); err != nil {
-			v.Status = "error"
-			v.Detail = "没有找到密钥，重新填写"
+			var notHere *core.ErrKeyNotHere
+			if errors.As(err, &notHere) {
+				v.Status, v.Detail = "warn", notHere.Reason
+			} else {
+				v.Status, v.Detail = "error", "没有找到密钥，重新填写"
+			}
+		}
+		if v.Detail == "" && v.Local {
+			v.Detail = "用本机 WinWork 的登录"
+		}
+		if v.Detail == "" && len(displays) == 0 && len(a.Discovered) > 0 {
+			v.Detail = fmt.Sprintf("服务有 %d 个型号，还没分到档位", len(a.Discovered))
 		}
 		if v.Detail == "" {
 			v.Detail = strings.Join(displays, "、")
@@ -1055,6 +1097,20 @@ func (s *Server) mediaItems(provider string) []mediaItem {
 	return out
 }
 
+// mediaItemsFor 是账号能选的出图、出视频型号：预设厂商从型号表里找，自定义服务从它报的型号里按名字认。
+func (s *Server) mediaItemsFor(a config.APIAccount) []mediaItem {
+	if a.Provider != "custom" {
+		return s.mediaItems(a.Provider)
+	}
+	var out []mediaItem
+	for _, d := range a.Discovered {
+		if k := core.GuessMediaKind(d.ID); k != "" {
+			out = append(out, mediaItem{Kind: k, Model: d.ID, Display: labelOr(d.Name, d.ID)})
+		}
+	}
+	return out
+}
+
 func labelOr(a, b string) string {
 	if a != "" {
 		return a
@@ -1081,6 +1137,7 @@ func (s *Server) addAccount(w http.ResponseWriter, r *http.Request) (any, error)
 		APIKey   string `json:"api_key"`
 		BaseURL  string `json:"base_url"`
 		Label    string `json:"label"`
+		Icon     string `json:"icon"`
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
@@ -1094,18 +1151,31 @@ func (s *Server) addAccount(w http.ResponseWriter, r *http.Request) (any, error)
 		return nil, errors.New("不认识的供应商：" + in.Provider)
 	}
 	if in.BaseURL != "" {
-		baseURL = in.BaseURL
+		baseURL = strings.TrimRight(strings.TrimSpace(in.BaseURL), "/")
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	if _, err := s.d.Accounts.Verify(ctx, in.Provider, baseURL, in.APIKey); err != nil {
+	var discovered []config.DiscoveredModel
+	if in.Provider == "custom" {
+		if baseURL == "" {
+			return nil, errors.New("自定义服务要填接口地址")
+		}
+		ms, err := s.d.Accounts.ListModels(ctx, baseURL, in.APIKey)
+		if err != nil {
+			return nil, err
+		}
+		discovered = ms
+		if strings.TrimSpace(in.Label) == "" {
+			in.Label = hostOf(baseURL)
+		}
+	} else if _, err := s.d.Accounts.Verify(ctx, in.Provider, baseURL, in.APIKey); err != nil {
 		return nil, err
 	}
 	id := in.Provider + "-" + core.NewID("")[1:7]
 	if err := s.d.Secrets.Set(id, in.APIKey); err != nil {
 		return nil, err
 	}
-	acc := config.APIAccount{ID: id, Provider: in.Provider, Label: in.Label, BaseURL: baseURL, Currency: currency, Enabled: true, Models: tiers, NeedsProxy: needsProxy}
+	acc := config.APIAccount{ID: id, Provider: in.Provider, Label: strings.TrimSpace(in.Label), BaseURL: baseURL, Currency: currency, Enabled: true, Models: tiers, NeedsProxy: needsProxy, Discovered: discovered, Icon: in.Icon}
 	if err := s.d.Router.Config().Update(func(c *config.Config) error { c.API = append(c.API, acc); return nil }); err != nil {
 		return nil, err
 	}
@@ -1126,6 +1196,7 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 		Plan      *string           `json:"plan"`       // 订阅：手填套餐名
 		AllowPaid *bool             `json:"allow_paid"` // 按量付费：是否允许用收费型号
 		Media     map[string]string `json:"media"`      // 按量付费：image / video → 型号，空串表示不用
+		Icon      *string           `json:"icon"`       // 自定义服务：换图标，空串表示按型号名自动认
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
@@ -1160,6 +1231,9 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 				if in.AllowPaid != nil {
 					c.API[i].AllowPaid = *in.AllowPaid
 					config.ApplyFreeOnly(&c.API[i], s.d.Router.Registry().IsFree)
+				}
+				if in.Icon != nil {
+					c.API[i].Icon = *in.Icon
 				}
 				if in.Media != nil {
 					if c.API[i].Media == nil {
@@ -1243,12 +1317,32 @@ func (s *Server) verifyAccount(w http.ResponseWriter, r *http.Request) (any, err
 			continue
 		}
 		key, err := s.d.Secrets.Get(id)
+		var notHere *core.ErrKeyNotHere
+		if errors.As(err, &notHere) {
+			return nil, notHere
+		}
 		if err != nil {
 			return nil, errors.New("没有找到密钥，重新填写")
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 		defer cancel()
-		if _, err := s.d.Accounts.Verify(ctx, a.Provider, a.BaseURL, key); err != nil {
+		if a.Provider == "custom" {
+			// 自定义服务重新验证顺便把型号列表换新：服务那边加了型号，这里点一下就有
+			ms, err := s.d.Accounts.ListModels(ctx, a.BaseURL, key)
+			if err != nil {
+				s.d.Router.Quota().MarkCooldown(core.LaneID("acct:"+id), time.Hour, err.Error())
+				return nil, err
+			}
+			_ = s.d.Router.Config().Update(func(c *config.Config) error {
+				for i := range c.API {
+					if c.API[i].ID == id {
+						c.API[i].Discovered = ms
+					}
+				}
+				return nil
+			})
+			s.d.Accounts.Reload(s.d.Router.Config().Get())
+		} else if _, err := s.d.Accounts.Verify(ctx, a.Provider, a.BaseURL, key); err != nil {
 			s.d.Router.Quota().MarkCooldown(core.LaneID("acct:"+id), time.Hour, err.Error())
 			return nil, err
 		}
@@ -1345,7 +1439,7 @@ func (s *Server) jobRevise(w http.ResponseWriter, r *http.Request) (any, error) 
 
 // hostTagged 是请求里带宿主标记的接入：MCP 靠 IMLS_HOST，兼容入口靠请求头或密钥后缀。
 // pi、OpenClaw、DeepSeek Harness 早先接入时写的密钥没有后缀，重新接入一次才计得上。
-var hostTagged = map[string]bool{"claude_code": true, "codex": true, "gemini_cli": true, "workbuddy": true, "hermes": true, "doubao_work": true,
+var hostTagged = map[string]bool{"claude_code": true, "claude_desktop": true, "codex": true, "gemini_cli": true, "workbuddy": true, "hermes": true, "doubao_work": true,
 	"pi": true, "openclaw": true, "deepseek_harness": true}
 
 func (s *Server) integrations(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -1354,6 +1448,8 @@ func (s *Server) integrations(w http.ResponseWriter, r *http.Request) (any, erro
 	if err != nil {
 		return list, nil
 	}
+	// 豆包工作的连接器在它自己的账号里，本机看不到配置；它派过活就算接上了
+	ever, _ := s.d.Router.Ledger().HostActivity(time.Time{})
 	for _, it := range list {
 		id, _ := it["id"].(string)
 		if !hostTagged[id] {
@@ -1363,6 +1459,9 @@ func (s *Server) integrations(w http.ResponseWriter, r *http.Request) (any, erro
 		it["calls_7d"] = a.Calls
 		if !a.Last.IsZero() {
 			it["last_call"] = a.Last
+		}
+		if id == "doubao_work" && ever[id].Calls > 0 {
+			it["status"] = "connected"
 		}
 	}
 	return list, nil
@@ -1388,6 +1487,21 @@ func (s *Server) integrationUpdate(w http.ResponseWriter, r *http.Request) (any,
 		return nil, err
 	}
 	return s.d.Integr.Update(r.PathValue("id"), in.Options)
+}
+
+func (s *Server) integrationModels(w http.ResponseWriter, r *http.Request) (any, error) {
+	return s.d.Integr.HostModels(r.PathValue("id"))
+}
+
+// integrationSetModels 保存型号表。写进宿主失败时表已经存下，连同错误一起告诉界面
+func (s *Server) integrationSetModels(w http.ResponseWriter, r *http.Request) (any, error) {
+	var in struct {
+		Models []string `json:"models"`
+	}
+	if err := decode(r, &in); err != nil {
+		return nil, err
+	}
+	return s.d.Integr.SetHostModels(r.PathValue("id"), in.Models)
 }
 
 // --- 设置 ---
@@ -1707,4 +1821,12 @@ func (s *Server) internalTool(w http.ResponseWriter, r *http.Request) (any, erro
 		return map[string]any{"text": err.Error(), "is_error": true}, nil
 	}
 	return map[string]any{"text": text}, nil
+}
+
+// hostOf 取地址里的主机名，自定义服务没填名称时用它当名称。
+func hostOf(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return raw
 }

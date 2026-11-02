@@ -11,6 +11,7 @@ import (
 	"github.com/imoling/iml-switchboard/internal/config"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -54,8 +55,9 @@ func (s *Server) auth(fn http.HandlerFunc) http.HandlerFunc {
 			oaiErr(w, 401, "invalid_api_key", "密钥不对：到设置里复制门面密钥")
 			return
 		}
-		if host != "" && r.Header.Get("X-IMLS-Host") == "" {
-			r.Header.Set("X-IMLS-Host", host) // 接入时写进密钥的宿主标记
+		r.Header.Del(keyHostHeader) // 只信密钥里的标记，客户端自己带的不算
+		if host != "" {
+			r.Header.Set(keyHostHeader, host)
 		}
 		fn(w, r)
 	}
@@ -102,13 +104,20 @@ func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 		// OpenAI 和 Anthropic 两种列表格式的字段都给，宿主各取所需
 		return map[string]any{"id": id, "object": "model", "type": "model", "created": now, "created_at": time.Unix(now, 0).UTC().Format(time.RFC3339), "owned_by": owner, "display_name": name}
 	}
-	data := []map[string]any{
-		item("router-auto", "Switchboard 自动分档", "iml-switchboard"),
-		item("router-high", "Switchboard 高档", "iml-switchboard"),
-		item("router-mid", "Switchboard 中档", "iml-switchboard"),
-		item("router-low", "Switchboard 低档", "iml-switchboard"),
-		item("router-sub", "Switchboard 订阅优先", "iml-switchboard"),
+	// Claude Desktop 只收 Claude 家的型号名，有一个不合规整张表都作废，只给它借的名字
+	if hostOf(r) == "claude_desktop" {
+		var data []map[string]any
+		for _, m := range core.DesktopModels {
+			data = append(data, item(m.ID, m.Label, "iml-switchboard"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data, "has_more": false})
+		return
 	}
+	var data []map[string]any
+	for _, m := range core.RouterModels {
+		data = append(data, item(m.ID, m.Name, "iml-switchboard"))
+	}
+	data = append(data, item("router-sub", "Switchboard 订阅优先", "iml-switchboard"))
 	// 按量付费账号里配好的型号也列出来，宿主能直接点名
 	seen := map[string]bool{}
 	for _, acc := range s.router.Config().Get().API {
@@ -190,7 +199,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		t.Lane = core.LaneClaudeSub
 	}
 	if req.Model != "router-sub" {
-		applyModelName(t, req.Model) // 宿主在自己的模型列表里选了什么，就按什么来
+		applyModelName(t, req.Model, s.accountModel) // 宿主在自己的模型列表里选了什么，就按什么来
 	}
 	// 带工具的智能体回合照样认一句直接的出图请求：宿主自带的出图工具往往另外收费，用户配好的渠道在这儿
 	for _, m := range req.Messages {
@@ -307,13 +316,29 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// replyText 是回给宿主的正文：文字照回；媒体产物没有正文，回路径，能对外提供的再加一行 Markdown 图片
+// replyText 是回给宿主的正文：文字照回；媒体产物没有正文，回路径，能对外提供的再加一行 Markdown 图片；
+// 视频、动画没等到结果时回任务号。三种协议都要过这里，否则媒体结果到宿主那边是一条空回复。
 func (s *Server) replyText(call *core.Call, res *core.Result) string {
 	if res == nil {
 		return ""
 	}
-	if res.Text != "" || res.Path == "" {
+	if res.Text != "" {
 		return res.Text
+	}
+	if res.Path == "" {
+		if res.JobID != "" {
+			return fmt.Sprintf("已提交，任务号 %s；完成后到媒体库查看", res.JobID)
+		}
+		return ""
+	}
+	if call.Host == "codex" {
+		// Codex 桌面应用的安全策略不让加载 http 图片，写本机文件地址它会自己读进来显示；路径只放进链接，不露明文
+		u := (&url.URL{Scheme: "file", Path: res.Path}).String()
+		label := "打开文件"
+		if call.Kind == core.KindImage {
+			label = "打开原图"
+		}
+		return "![](" + u + ")\n\n[" + label + "](" + u + ")"
 	}
 	line := fmt.Sprintf("已生成 %s（%s）", res.Path, s.router.Registry().Display(call.Model))
 	if s.MediaURL != nil {
@@ -322,6 +347,31 @@ func (s *Server) replyText(call *core.Call, res *core.Result) string {
 		}
 	}
 	return line
+}
+
+// accountModel 判断这个名字是不是某个在用的按量付费账号里的型号（档位里配的，或自定义服务报的）。
+func (s *Server) accountModel(model string) bool {
+	if model == "" {
+		return false
+	}
+	for _, acc := range s.router.Config().Get().API {
+		if !acc.Enabled {
+			continue
+		}
+		for _, ms := range acc.Models {
+			for _, m := range ms {
+				if m == model {
+					return true
+				}
+			}
+		}
+		for _, d := range acc.Discovered {
+			if d.ID == model {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func hash(s string) string {
@@ -333,7 +383,13 @@ func hash(s string) string {
 	return fmt.Sprintf("%08x", h)
 }
 
+// keyHostHeader 放接入时写进密钥的宿主标记。它优先于 User-Agent：Claude Desktop 内嵌的 CLI 也自称 claude-cli。
+const keyHostHeader = "X-IMLS-Key-Host"
+
 func hostOf(r *http.Request) string {
+	if h := r.Header.Get(keyHostHeader); h != "" {
+		return h
+	}
 	ua := strings.ToLower(r.Header.Get("User-Agent"))
 	switch {
 	case strings.Contains(ua, "workbuddy"):

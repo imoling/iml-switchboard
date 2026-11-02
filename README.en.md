@@ -18,7 +18,7 @@ Switchboard brings your subscription models (Claude, ChatGPT, Antigravity), your
 Two ways to use it:
 
 - **Delegate**: Claude Code, Codex and Gemini CLI keep their own main model and hand sub-tasks (translation, a second opinion, images) to Switchboard as MCP tools. The main conversation and its prompt cache are untouched.
-- **Take over Claude Code and Codex**: flip "Take over model" on the Integrations page and their own conversations go through Switchboard (Anthropic Messages for Claude Code, OpenAI Responses for Codex; streaming, tool calls and prompt caching are native). `/model` lists "auto", "high / mid / low" and every pay-as-you-go model; switch it off and the original config is restored.
+- **Take over Claude Code, Claude Desktop and Codex**: flip "Take over model" on the Integrations page and their own conversations go through Switchboard (Anthropic Messages for Claude Code and Claude Desktop, OpenAI Responses for Codex; streaming, tool calls and prompt caching are native). `/model` in Claude Code and Codex lists "auto", "high / mid / low" and every pay-as-you-go model; Claude Desktop's model menu shows the four tiers. Switch it off and the original config is restored.
 - **Be the main model**: WorkBuddy, pi, OpenClaw and DeepSeek Harness use Switchboard as a model through an OpenAI-compatible endpoint. Every request carries the full conversation; Switchboard picks a model by difficulty and falls over to the next one if it fails.
 
 It comes with a menu bar app (system tray on Windows) for quotas, spend, savings, and routing rules.
@@ -83,7 +83,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 | Agent | How it connects | Tested |
 |---|---|---|
 | Claude Code | MCP tools, usage notes in `CLAUDE.md`, slash commands | Used daily |
-| Codex CLI | MCP tools, usage notes in `AGENTS.md` | Registered; hand-off flow verified with a simulated host |
+| Codex | MCP tools, usage notes in `AGENTS.md` | Registered; hand-off flow verified with a simulated host |
 | Gemini CLI | MCP tools, usage notes in `GEMINI.md` | Registered; personal Google accounts have moved to Antigravity, so an API key or enterprise account is needed |
 | pi | OpenAI-compatible endpoint | Agent turns with tool calls verified |
 | OpenClaw | OpenAI-compatible endpoint | Agent turns with tool calls verified |
@@ -111,6 +111,14 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 - Update check: once a day Switchboard looks at GitHub Releases (falling back to the Gitee mirror), notifies you of a new version, and offers the installer for your platform from Settings.
 
 ## Install
+
+**macOS install script** (recommended): the installer is not notarized yet, so a dmg downloaded in a browser makes you click "Open Anyway" in Privacy & Security. The script avoids that:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/imoling/iml-switchboard/main/scripts/install-mac.sh | bash
+```
+
+It downloads the latest dmg for your chip (GitHub first, then the Gitee mirror), installs it into Applications and clears the download quarantine flag; if the backend is idle it switches it to the new version. You can also pass a dmg you already have: `bash install-mac.sh ~/Downloads/Switchboard_0.3.0_aarch64.dmg`.
 
 **Installers**: download the installer for your system from the [Releases](https://github.com/imoling/iml-switchboard/releases) page (a dmg on macOS; an msi or exe on Windows). The installer already includes the `imls` backend.
 

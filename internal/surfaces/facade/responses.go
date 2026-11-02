@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -111,6 +112,7 @@ func (s *Server) respToTask(req respReq, r *http.Request) (*core.Task, error) {
 		}
 	}
 	// input：一段字符串就是一条用户消息；数组按条转换
+	imageOnly := map[int]bool{}
 	var text string
 	if json.Unmarshal(req.Input, &text) == nil {
 		t.Messages = append(t.Messages, core.Message{Role: "user", Content: text})
@@ -119,18 +121,35 @@ func (s *Server) respToTask(req respReq, r *http.Request) (*core.Task, error) {
 		if err := json.Unmarshal(req.Input, &items); err != nil {
 			return nil, errors.New("input 不是预期的格式")
 		}
+		// 工具消息只能放文字，工具返回的图片（Codex 的 view_image）放进紧跟的一条用户消息。
+		// 要等这一批工具结果都排完再放，否则工具调用和结果就隔开了
+		var toolImages []string
+		flushImages := func() {
+			if len(toolImages) > 0 {
+				imageOnly[len(t.Messages)] = true
+				t.Messages = append(t.Messages, core.Message{Role: "user", Images: toolImages, ToolImage: true})
+				toolImages = nil
+			}
+		}
 		for _, it := range items {
+			if it.Type != "function_call_output" {
+				flushImages()
+			}
 			switch {
 			case it.Type == "function_call":
-				call, _ := json.Marshal([]map[string]any{{"id": it.CallID, "type": "function", "function": map[string]string{"name": it.Name, "arguments": it.Arguments}}})
-				// 紧跟在助手消息后面的调用合并进去，否则单独一条助手消息
-				if n := len(t.Messages); n > 0 && t.Messages[n-1].Role == "assistant" && len(t.Messages[n-1].ToolCalls) == 0 {
-					t.Messages[n-1].ToolCalls = call
-				} else {
-					t.Messages = append(t.Messages, core.Message{Role: "assistant", ToolCalls: call})
-				}
+				t.Messages = appendToolCall(t.Messages, map[string]any{"id": it.CallID, "type": "function", "function": map[string]string{"name": it.Name, "arguments": it.Arguments}})
 			case it.Type == "function_call_output":
-				out, _ := partsText(it.Output)
+				out, imgs := partsText(it.Output)
+				// 并发调用的结果顺序不一定和调用顺序相同，图片又是一起放的：写明哪张归哪个调用，模型才不会对错号
+				if len(imgs) > 0 {
+					from := len(toolImages) + 1
+					note := fmt.Sprintf("这个调用返回的图片是下一条消息里的第 %d 张", from)
+					if len(imgs) > 1 {
+						note = fmt.Sprintf("这个调用返回的图片是下一条消息里的第 %d 到 %d 张", from, from+len(imgs)-1)
+					}
+					out = strings.TrimSpace(out + "\n" + note)
+				}
+				toolImages = append(toolImages, imgs...)
 				t.Messages = append(t.Messages, core.Message{Role: "tool", Content: out, ToolCallID: it.CallID})
 			case it.Type == "message" || it.Type == "":
 				content, imgs := partsText(it.Content)
@@ -148,9 +167,10 @@ func (s *Server) respToTask(req respReq, r *http.Request) (*core.Task, error) {
 				t.Messages = append(t.Messages, core.Message{Role: role, Content: content, Images: imgs})
 			}
 		}
+		flushImages()
 	}
 	for i := len(t.Messages) - 1; i >= 0; i-- {
-		if t.Messages[i].Role == "user" {
+		if t.Messages[i].Role == "user" && !imageOnly[i] { // 判档看用户说的话，工具回的图不算；要不要能看图由图片数决定
 			t.Prompt = t.Messages[i].Content
 			if len(t.Messages[i].Images) > 0 {
 				t.ImagePath = t.Messages[i].Images[0]
@@ -167,8 +187,21 @@ func (s *Server) respToTask(req respReq, r *http.Request) (*core.Task, error) {
 	if t.SessionID == "" && len(t.Messages) > 1 {
 		t.SessionID = "facade:" + hash(t.Messages[0].Content)
 	}
-	applyModelName(t, req.Model)
+	applyModelName(t, req.Model, s.accountModel)
 	return t, nil
+}
+
+// appendToolCall 把一个工具调用接到历史上：同一轮的并发调用要在同一条助手消息里，
+// 拆成两条的话 Claude 协议下工具调用和结果就对不上了。
+func appendToolCall(msgs []core.Message, call map[string]any) []core.Message {
+	if n := len(msgs); n > 0 && msgs[n-1].Role == "assistant" {
+		var calls []map[string]any
+		_ = json.Unmarshal(msgs[n-1].ToolCalls, &calls)
+		msgs[n-1].ToolCalls, _ = json.Marshal(append(calls, call))
+		return msgs
+	}
+	b, _ := json.Marshal([]map[string]any{call})
+	return append(msgs, core.Message{Role: "assistant", ToolCalls: b})
 }
 
 // respOutput 把结果变成 Responses 的 output 数组。
@@ -246,6 +279,7 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 			oaiErr(w, 502, "upstream_error", err.Error())
 			return
 		}
+		res.Text = s.replyText(call, res)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-IMLS-Call-Id", call.ID)
 		w.Header().Set("X-IMLS-Model", call.Model)
@@ -290,6 +324,7 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 		send("response.failed", map[string]any{"response": map[string]any{"id": id, "object": "response", "status": "failed", "error": map[string]any{"code": "upstream_error", "message": err.Error()}}})
 		return
 	}
+	res.Text = s.replyText(call, res)
 	if msgID == "" && res.Text != "" {
 		outIndex++
 		msgID = "msg_" + core.NewID("")[1:]
@@ -320,5 +355,14 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 		send("response.output_item.done", map[string]any{"output_index": outIndex, "item": fc})
 		output = append(output, fc)
 	}
+	logLostTools(t, call, res)
 	send("response.completed", map[string]any{"response": respObject(id, call.Model, "completed", output, call)})
+}
+
+// logLostTools 记下疑似丢了工具调用的回合：带工具的请求没有回工具调用，输出的 token 却远多于正文。
+// 宿主看到的只是「说完一句话就停了」，没有这条记录事后查不出来。
+func logLostTools(t *core.Task, call *core.Call, res *core.Result) {
+	if t.HasTools() && len(res.ToolCalls) == 0 && call.OutputTokens > 80+3*core.EstimateTokens(res.Text) {
+		log.Printf("疑似丢了工具调用：%s 模型 %s 结束原因 %q 输出 %d 个 token，正文约 %d 个", call.ID, call.Model, res.FinishReason, call.OutputTokens, core.EstimateTokens(res.Text))
+	}
 }

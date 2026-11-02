@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -43,6 +45,8 @@ var Presets = []Preset{
 	{ID: "agnes", Name: "Agnes AI", BaseURL: "https://api.agnes-ai.cn/v1", Currency: "CNY", ProbeModel: "agnes-2.5-flash",
 		Models: map[string]ModelPrice{"agnes-3.0-flash": {}, "agnes-2.5-flash": {},
 			"agnes-2.5-pro-beta": {InputPerM: 0.7, OutputPerM: 2.1, CachedPerM: 0.07}, "agnes-2.5-pro": {InputPerM: 3, OutputPerM: 6, CachedPerM: 0.3}, "agnes-3.0-pro": {InputPerM: 3, OutputPerM: 6, CachedPerM: 0.3}}},
+	// 自定义服务：任何 OpenAI 兼容的地址，型号从它的 /models 拉，不写死
+	{ID: "custom", Name: "自定义服务", Currency: "USD", Models: map[string]ModelPrice{}},
 	{ID: "ark", Name: "火山方舟", BaseURL: "https://ark.cn-beijing.volces.com/api/v3", Currency: "CNY", Models: map[string]ModelPrice{}}, // 只用于 Seedream / Seedance 出图出视频
 	{ID: "302ai", Name: "302.AI", BaseURL: "https://api.302.ai/v1", Currency: "USD", ProbeModel: "gpt-5.4-mini", Models: map[string]ModelPrice{}},
 }
@@ -117,4 +121,50 @@ func (p Preset) Verify(ctx context.Context, client *http.Client, key string) err
 		return nil
 	}
 	return ClassifyHTTPError(p.Name, resp.StatusCode, b)
+}
+
+// ListedModel 是 /models 返回的一个型号。
+type ListedModel struct{ ID, Name string }
+
+// ListModels 拉 OpenAI 兼容服务的型号列表，自定义服务靠它知道有哪些型号。
+func ListModels(ctx context.Context, client *http.Client, baseURL, key string) ([]ListedModel, error) {
+	acct := Account{Provider: "custom", BaseURL: baseURL, APIKeyGetter: func() (string, error) { return key, nil }}
+	req, err := acct.newRequest(ctx, http.MethodGet, endpoint(baseURL, "/models"), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("连不上 %s：%s", baseURL, firstLine(err.Error()))
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, errors.New("密钥不对：服务拒绝了这个密钥")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("拉不到型号列表：%s 返回 %d", endpoint(baseURL, "/models"), resp.StatusCode)
+	}
+	var d struct {
+		Data []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"display_name"`
+			Name        string `json:"name"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &d) != nil || len(d.Data) == 0 {
+		return nil, errors.New("拉不到型号列表：返回的不是 OpenAI 兼容格式")
+	}
+	out := make([]ListedModel, 0, len(d.Data))
+	for _, m := range d.Data {
+		if m.ID == "" {
+			continue
+		}
+		name := m.DisplayName
+		if name == "" {
+			name = m.Name
+		}
+		out = append(out, ListedModel{ID: m.ID, Name: name})
+	}
+	return out, nil
 }

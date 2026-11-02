@@ -91,7 +91,7 @@ func New(version string) (*App, error) {
 	quota := core.NewQuotaManager(ledger, func() float64 { return cfg.Get().Settings.SubscriptionYieldPct })
 	a.Router = core.NewRouter(cfg, ledger, reg, quota)
 	a.Jobs = core.NewJobStore(ledger, func(j *core.Job) {
-		a.Bus.Publish("job", j)
+		a.Bus.PublishJob(j)
 		if j.Status == "done" || j.Status == "failed" || j.Status == "timeout" {
 			_ = ledger.UpdateResult(j.CallID, j.ResultPath, j.CostUSD, j.Status == "done", j.Error)
 			if cfg.Get().Settings.Notifications.Media {
@@ -119,7 +119,10 @@ func New(version string) (*App, error) {
 	a.Router.Register(a.Agy)
 	a.Router.Register(a.API)
 	a.Router.Register(a.Media)
-	a.Router.OnCall(func(c *core.Call) { a.Bus.Publish("call", a.Router.Decorate(c)); a.checkBudget(c) })
+	a.Router.OnCall(func(c *core.Call) { a.Bus.PublishCall(a.Router.Decorate(c)); a.checkBudget(c) })
+	a.Router.OnAttempt(func(t *core.Task, c core.Target) {
+		a.Bus.PublishCallStart(core.CallStart{ID: t.ID, Host: t.Host, Lane: c.Lane, Provider: c.Provider})
+	})
 	a.Router.OnNotice(func(title, body, level string) {
 		if cfg.Get().Settings.Notifications.Quota {
 			a.Bus.Publish("notice", core.Notice{Title: title, Body: body, Level: level})
@@ -147,6 +150,12 @@ func New(version string) (*App, error) {
 		return nil
 	})
 	a.Integr = integrations.New(cfg, a.exe, BaseURL, func() string { return cfg.Get().Settings.FacadeKey })
+	a.Integr.ModelName = a.Router.Registry().Display
+	a.Integr.Lookup = a.Router.Registry().Lookup
+	a.Integr.ModelContext = func(id string) int {
+		info, _ := a.Router.Registry().Lookup(id)
+		return info.Context
+	}
 	a.Admin = admin.New(admin.Deps{Router: a.Router, Jobs: a.Jobs, Bus: a.Bus, Accounts: &accountOps{a: a}, Media: &mediaOps{a: a}, Integr: a.Integr, Secrets: secretsWithWinWork{a.Secrets}, StartedAt: time.Now(),
 		NodeAvailable: func() bool { _, err := exec.LookPath("node"); return err == nil },
 		Build:         BuildID(), Quit: a.Quit,
@@ -211,6 +220,15 @@ func (a *App) apiAccounts(c *config.Config) []api.Account {
 		if !acc.Enabled {
 			continue
 		}
+		// 自定义服务的型号注册表里没有：用它自己报的名字登记，价格不知道就记 0。
+		// 默认当能看图：现在的兼容服务大多能看，真不能看时上游报错，请求会换下一个候选
+		for _, d := range acc.Discovered {
+			if !a.Router.Registry().Has(d.ID) {
+				info := core.ModelInfo{ID: d.ID, Provider: acc.Provider, Display: labelOrID(d.Name, d.ID), Vision: true, Tools: true}
+				info.MediaKind = core.GuessMediaKind(d.ID)
+				a.Router.Registry().Upsert(info)
+			}
+		}
 		p, ok := api.PresetByID(acc.Provider)
 		if !ok {
 			p = api.Preset{ID: acc.Provider, BaseURL: acc.BaseURL, Currency: acc.Currency, Models: map[string]api.ModelPrice{}}
@@ -219,10 +237,11 @@ func (a *App) apiAccounts(c *config.Config) []api.Account {
 		ac := p.Account(id, func() (string, error) { return a.Secrets.Get(id) })
 		if acc.Provider == "winwork" {
 			// 网关地址和令牌都在 WinWork 自己的配置里，现读；不进钥匙串
-			if base, _, err := api.WinWorkGateway(); err == nil {
+			if base, _, _ := api.WinWorkGateway(); base != "" {
 				ac.BaseURL = base
 			}
 			ac.APIKeyGetter = func() (string, error) { _, tok, err := api.WinWorkGateway(); return tok, err }
+			ac.BeforeRequest = api.EnsureWinWork
 		}
 		if acc.BaseURL != "" {
 			ac.BaseURL = acc.BaseURL
@@ -317,6 +336,7 @@ func (a *App) Serve(ctx context.Context) error {
 	a.startSelfCheck(ctx)
 	a.startHousekeeping(ctx)
 	a.startUpdateCheck(ctx)
+	go a.Integr.SyncCodexCatalog()
 	err = srv.Serve(ln)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
@@ -490,6 +510,18 @@ func (o *accountOps) Preset(provider string) (string, string, map[string][]strin
 	return p.BaseURL, p.Currency, tiers, p.NeedsProxy, true
 }
 
+func (o *accountOps) ListModels(ctx context.Context, baseURL, apiKey string) ([]config.DiscoveredModel, error) {
+	ms, err := api.ListModels(ctx, o.a.httpClient(), baseURL, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]config.DiscoveredModel, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, config.DiscoveredModel{ID: m.ID, Name: m.Name})
+	}
+	return out, nil
+}
+
 func (o *accountOps) Providers() []string {
 	var out []string
 	for _, p := range api.Presets {
@@ -587,4 +619,11 @@ func (o *mediaOps) Revise(ctx context.Context, id, instruction string) (*core.Jo
 		return nil, errors.New("任务不存在")
 	}
 	return j, nil
+}
+
+func labelOrID(name, id string) string {
+	if name != "" {
+		return name
+	}
+	return id
 }

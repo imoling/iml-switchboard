@@ -154,6 +154,14 @@ func (r *Registry) Upsert(m ModelInfo) {
 	r.models[m.ID] = m
 }
 
+// Has 判断注册表里有没有这个型号，只认完全相同的名字（Lookup 会模糊匹配，gpt-6-luna 能配上 gpt-6）。
+func (r *Registry) Has(id string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.models[id]
+	return ok
+}
+
 // Display 返回展示名。
 func (r *Registry) Display(id string) string {
 	if m, ok := r.Lookup(id); ok && m.Display != "" {
@@ -238,8 +246,8 @@ var WinWorkModels = []struct {
 	Context  int
 }{
 	{"winwork-snt-5.5", "Sonnet 5.5", true, 200000},
-	{"winwork-os-5.5", "OS 5.5", false, 0},
-	{"winwork-os-5", "OS 5", false, 0},
+	{"winwork-os-5.5", "OS 5.5", true, 0},
+	{"winwork-os-5", "OS 5", true, 0},
 	{"winwork-gk-4.6", "GK 4.6", false, 0},
 	{"winwork-ds-v4-pro-0813", "DeepSeek V4 Pro", false, 0},
 	{"winwork-ds-v4.1-flash", "DeepSeek V4.1 Flash", false, 0},

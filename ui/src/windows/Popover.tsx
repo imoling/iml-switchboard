@@ -76,7 +76,7 @@ export function Popover() {
   useEffect(() => subscribeEvents((e) => {
     if (e.type === 'quota') setOv((o) => (o ? { ...o, quotas: e.data.quotas } : o));
     if (e.type === 'status') { setStatus(e.data); setMoney(e.data.currency, e.data.usd_per_cny); setThemeId(e.data.theme); setProjection(e.data.projection); }
-    if (e.type === 'call') { setRecent((r) => [e.data.call, ...r].slice(0, 3)); setOv((o) => (o ? { ...o, calls: o.calls + 1 } : o)); }
+    if (e.type === 'call' && e.data.call) { const c = e.data.call; setRecent((r) => [c, ...r].slice(0, 3)); if (!c.ok) setError(true); setOv((o) => (o ? { ...o, calls: o.calls + 1 } : o)); }
   }, (open) => { if (!open) setStatus('offline'); }), [setThemeId, setProjection]);
   useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') void desktop.hide('popover'); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, []);
 
@@ -107,7 +107,7 @@ export function Popover() {
   const yieldPct = settings?.subscription_yield_pct ?? 80;
   const hot = ov?.quotas.some((q) => !q.sub && q.pct >= yieldPct);
   const dot = status === 'offline' ? 'no' : error ? 'err' : hot ? 'warn' : 'ok';
-  const dotText = { no: '未运行', err: '出错', warn: '额度紧张', ok: '正常' }[dot];
+  const dotText = { no: '未运行', err: '最近有失败', warn: '额度紧张', ok: '正常' }[dot];
   const warning = ov ? quotaWarning(ov.quotas, yieldPct) : null;
 
   const setMode = async (m: Mode) => { if (status && status !== 'offline') setStatus({ ...status, mode: m }); try { setStatus(await api.mode(m)); } catch { /* 下次刷新纠正 */ } };
@@ -132,7 +132,8 @@ export function Popover() {
             <div key={g.id}>
               <div className="qline qtoggle" role="button" tabIndex={0} onClick={() => setExpanded(expanded === g.id ? null : g.id)} onKeyDown={(e) => { if (e.key === 'Enter') setExpanded(expanded === g.id ? null : g.id); }}>
                 <span style={{ whiteSpace: 'nowrap' }}><Vendor provider={g.provider} />{g.label}</span>
-                <em style={{ textAlign: 'right' }}>{expanded === g.id ? '收起' : g.parts.join(' · ')} <span className="chev">{expanded === g.id ? '▴' : '▾'}</span></em>
+                {/* 小箭头和最后一段绑在一起：行太长要折行时整段一起下去，箭头不会单独掉到下一行 */}
+                <em style={{ textAlign: 'right' }}>{expanded === g.id ? '' : g.parts.slice(0, -1).map((p) => `${p} · `).join('')}<span style={{ whiteSpace: 'nowrap' }}>{expanded === g.id ? '收起' : g.parts[g.parts.length - 1]} <span className="chev">{expanded === g.id ? '▴' : '▾'}</span></span></em>
               </div>
               <Bar pct={g.max} tone={g.max >= yieldPct ? 'amber' : undefined} />
               {expanded === g.id && (

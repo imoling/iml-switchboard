@@ -41,7 +41,9 @@ export interface Job {
 
 export type AccountStatus = 'ok' | 'warn' | 'missing' | 'error' | 'cooldown' | 'disabled';
 export interface Account {
-  id: string; kind: 'subscription' | 'api'; provider: string; label: string; status: AccountStatus; detail: string;
+  id: string; kind: 'subscription' | 'api'; provider: string; icon?: string; label: string; status: AccountStatus; detail: string;
+  /** 本机登录的客户端（WinWork）：自动出现，不计费，和订阅排在一起 */
+  local?: boolean;
   month_cost_usd?: number; month_cost_native?: number; currency?: string;
   quota?: { window: string; pct: number; resets_at?: string }[];
   plan?: string; plan_options?: string[]; plan_manual?: boolean; free_models?: string[]; allow_paid?: boolean; media_choice?: Record<string, string>; media_options?: Record<string, string[]>;
@@ -76,17 +78,24 @@ export interface ContextRule { id: string; title: string; off_effect: string; en
 export interface Rules { task_table: TaskRule[]; explicit: ExplicitRule[]; context_rules: ContextRule[]; classifier?: Record<string, unknown> }
 export interface Suggestion { task_type: string; name?: string; escalations: number; from_tier: Tier; to_tier: Tier; weekly_delta_usd: number }
 
-export type IntegrationId = 'claude_code' | 'codex' | 'gemini_cli' | 'doubao_work' | 'pi' | 'deepseek_harness' | 'openclaw' | 'hermes' | 'workbuddy' | 'winwork';
+export type IntegrationId = 'claude_code' | 'claude_desktop' | 'codex' | 'gemini_cli' | 'doubao_work' | 'pi' | 'deepseek_harness' | 'openclaw' | 'hermes' | 'workbuddy' | 'winwork';
 export interface Integration {
   id: IntegrationId; status: 'connected' | 'disconnected' | 'manual';
   options: { write_claude_md?: boolean; opusplan?: boolean; commands?: boolean; takeover?: boolean }; snippet?: string; available?: boolean; detail?: string;
   calls_7d?: number; last_call?: string;
+  /** 写进宿主菜单的型号数；只有带型号表的宿主有 */
+  models_count?: number;
 }
+
+/** 宿主型号表里的一个候选；on 是现在写进宿主的，default 是跟着默认走时会选上的 */
+export interface HostModel { id: string; name: string; group: string; icon?: string; on: boolean; default?: boolean }
+/** 选中的按顺序排前面，其余候选跟在后面；custom 为假时新账号的型号会自动加进来 */
+export interface HostModelList { models: HostModel[]; custom: boolean }
 
 export interface Settings {
   monthly_api_limit_usd: number; subscription_yield_pct: number; default_mode: Mode; theme: ThemeId;
   hotkey: string; proxy: string; save_prompts: boolean; launch_at_login: boolean; data_dir: string; facade_key: string;
-  auto_evaluate_monthly: boolean; rules_only: boolean; currency: 'USD' | 'CNY'; usd_per_cny: number; notifications: { quota: boolean; budget: boolean; media: boolean; suggestions: boolean };
+  auto_evaluate_monthly: boolean; rules_only: boolean; lab_notch?: boolean; currency: 'USD' | 'CNY'; usd_per_cny: number; notifications: { quota: boolean; budget: boolean; media: boolean; suggestions: boolean };
 }
 
 export interface Theme { id: ThemeId; name: string; words: Record<string, string> }
@@ -112,9 +121,13 @@ export type QuickEvent =
   | { type: 'done'; call: Call }
   | { type: 'error'; message: string };
 
+/** 一次请求开始交给某个渠道；换候选时用同一个 id 再发一次 */
+export interface CallStart { id: string; host?: string; lane: Lane; provider: string }
+
 export type StreamEvent =
   | { type: 'quota'; data: { quotas: Quota[] } }
   | { type: 'job'; data: { job: Job } }
   | { type: 'call'; data: { call: Call } }
+  | { type: 'call_start'; data: CallStart }
   | { type: 'notice'; data: { title: string; body: string; level?: 'info' | 'warn' | 'error' } }
   | { type: 'status'; data: Status };

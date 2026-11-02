@@ -221,11 +221,11 @@ func TestImagesGenerations(t *testing.T) {
 }
 
 func TestPresetsAndVerify(t *testing.T) {
-	if len(Presets) != 11 {
-		t.Errorf("应有 11 个预设，得到 %d", len(Presets))
+	if len(Presets) != 12 {
+		t.Errorf("应有 12 个预设，得到 %d", len(Presets))
 	}
 	for _, p := range Presets {
-		if p.BaseURL == "" || p.Currency == "" || p.Name == "" {
+		if (p.BaseURL == "" && p.ID != "custom") || p.Currency == "" || p.Name == "" { // 自定义服务的地址由用户填
 			t.Errorf("预设字段不全：%+v", p)
 		}
 	}
@@ -305,5 +305,49 @@ func TestClassifyBusyAndMessage(t *testing.T) {
 	err = ClassifyHTTPError("zhipu", 500, []byte(`{"error":{"message":"internal error"}}`))
 	if !errors.As(err, &pe) || pe.Busy || pe.Summary != "zhipu 服务端出错：internal error" {
 		t.Fatalf("普通 5xx 不算正忙，但也要取 message：%+v", err)
+	}
+}
+
+// WinWork 网关并发调用时会给不同的调用报同一个 index，序号也不一定从 0 开始：按 id 分，一个都不能丢、不能粘
+func TestStreamToolCallsUnreliableIndex(t *testing.T) {
+	chunk := func(s string) string {
+		return `data: {"choices":[{"delta":{"tool_calls":[` + s + `]}}]}` + "\n\n"
+	}
+	stream := func(lines ...string) string {
+		return strings.Join(lines, "") + `data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}` + "\n\ndata: [DONE]\n\n"
+	}
+	parse := func(body string) []struct {
+		ID       string `json:"id"`
+		Function struct {
+			Arguments string `json:"arguments"`
+		} `json:"function"`
+	} {
+		res, err := (&APIDriver{}).readStream(strings.NewReader(body), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var calls []struct {
+			ID       string `json:"id"`
+			Function struct {
+				Arguments string `json:"arguments"`
+			} `json:"function"`
+		}
+		_ = json.Unmarshal(res.ToolCalls, &calls)
+		return calls
+	}
+	got := parse(stream(
+		chunk(`{"index":0,"id":"A","function":{"name":"view_image","arguments":""}}`), chunk(`{"index":0,"function":{"arguments":"{\"p\":1}"}}`),
+		chunk(`{"index":0,"id":"B","function":{"name":"view_image","arguments":""}}`), chunk(`{"index":0,"function":{"arguments":"{\"p\":2}"}}`),
+		chunk(`{"index":1,"id":"C","function":{"name":"view_image","arguments":""}}`), chunk(`{"index":1,"function":{"arguments":"{\"p\":3}"}}`)))
+	if len(got) != 3 || got[0].ID != "A" || got[0].Function.Arguments != `{"p":1}` || got[1].ID != "B" || got[1].Function.Arguments != `{"p":2}` || got[2].ID != "C" || got[2].Function.Arguments != `{"p":3}` {
+		t.Fatalf("同一 index 的不同调用不能粘在一起：%+v", got)
+	}
+	got = parse(stream(chunk(`{"index":1,"id":"A","function":{"name":"exec","arguments":"{}"}}`)))
+	if len(got) != 1 || got[0].ID != "A" {
+		t.Fatalf("index 不从 0 开始也不能丢：%+v", got)
+	}
+	got = parse(stream(chunk(`{"index":0,"id":"A","function":{"name":"exec","arguments":"{\"a\""}}`), chunk(`{"index":0,"id":"A","function":{"arguments":":1}"}}`)))
+	if len(got) != 1 || got[0].Function.Arguments != `{"a":1}` {
+		t.Fatalf("每块都带同一个 id 的要接起来：%+v", got)
 	}
 }

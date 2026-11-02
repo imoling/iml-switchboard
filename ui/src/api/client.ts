@@ -1,5 +1,5 @@
 import type { Quota,
-  Account, Call, Decision, Evaluation, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview,
+  Account, Call, Decision, Evaluation, HostModelList, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview,
   QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier, UpdateInfo } from './types';
 
 export const BASE = 'http://127.0.0.1:18081';
@@ -67,8 +67,8 @@ export const api = {
   exportRules: () => get<string>('/api/rules/export'),
   importRules: (yaml: string) => request<Rules>('POST', '/api/rules/import', undefined, { contentType: 'text/yaml', text: yaml }),
   accounts: () => get<Account[]>('/api/accounts'),
-  addAccount: (b: { provider: string; api_key: string; base_url?: string }) => post<Account>('/api/accounts', b),
-  updateAccount: (id: string, b: { enabled?: boolean; tiers?: Record<string, string>; plan?: string; allow_paid?: boolean; media?: Record<string, string> }) => put<Account>(`/api/accounts/${id}`, b),
+  addAccount: (b: { provider: string; api_key: string; base_url?: string; label?: string; icon?: string }) => post<Account>('/api/accounts', b),
+  updateAccount: (id: string, b: { icon?: string; enabled?: boolean; tiers?: Record<string, string>; plan?: string; allow_paid?: boolean; media?: Record<string, string> }) => put<Account>(`/api/accounts/${id}`, b),
   deleteAccount: (id: string) => del<{ ok: boolean }>(`/api/accounts/${id}`),
   verifyAccount: (id: string) => post<Account>(`/api/accounts/${id}/verify`),
   detectAccounts: () => post<Account[]>('/api/accounts/detect'),
@@ -83,6 +83,9 @@ export const api = {
   connect: (id: IntegrationId, options?: Integration['options']) => post<Integration>(`/api/integrations/${id}/connect`, { options }),
   disconnect: (id: IntegrationId) => post<Integration>(`/api/integrations/${id}/disconnect`),
   setIntegration: (id: IntegrationId, options: Integration['options']) => put<Integration>(`/api/integrations/${id}`, { options }),
+  hostModels: (id: IntegrationId) => get<HostModelList>(`/api/integrations/${id}/models`),
+  /** 空数组表示回到默认 */
+  setHostModels: (id: IntegrationId, models: string[]) => put<HostModelList>(`/api/integrations/${id}/models`, { models }),
   settings: () => get<Settings>('/api/settings'),
   saveSettings: (s: Partial<Settings>) => put<Settings>('/api/settings', s),
   themes: () => get<Theme[]>('/api/themes'),
@@ -137,10 +140,15 @@ function parseSse(chunk: string): { event: string; data: Record<string, unknown>
 /** /api/events 事件流；返回取消函数。断线由 EventSource 自己重连 */
 export function subscribeEvents(onEvent: (e: StreamEvent) => void, onState?: (open: boolean) => void): () => void {
   const es = new EventSource(`${BASE}/api/events?client=ui`);
-  const types: StreamEvent['type'][] = ['quota', 'job', 'call', 'notice', 'status'];
+  const types: StreamEvent['type'][] = ['quota', 'job', 'call', 'call_start', 'notice', 'status'];
   for (const t of types) {
     es.addEventListener(t, (ev) => {
-      try { onEvent({ type: t, data: JSON.parse((ev as MessageEvent).data) } as StreamEvent); } catch { /* 坏包丢弃 */ }
+      try {
+        const data = JSON.parse((ev as MessageEvent).data);
+        // 后台是独立进程，界面升级后可能还连着旧版：旧版的 call、job 没有外层包装
+        const bare = (t === 'call' || t === 'job') && data && data.id && !data[t];
+        onEvent({ type: t, data: bare ? { [t]: data } : data } as StreamEvent);
+      } catch { /* 坏包丢弃 */ }
     });
   }
   es.onopen = () => onState?.(true);

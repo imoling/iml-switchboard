@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Account, Decision, Onboarding as Ob } from '../api/types';
 import { Dot, GroupChip, TierChip } from '../components/ui';
-import { Vendor, VendorLogo } from '../components/Vendor';
+import { accountIcon, Vendor, VendorLogo } from '../components/Vendor';
 import { useTheme } from '../theme/ThemeContext';
 import { AddAccount } from './Accounts';
 
@@ -44,7 +44,7 @@ function StepCli({ onNext }: { onNext: () => void }) {
       {!accounts && !err && <div className="hint">正在检测…</div>}
       {err && <div className="hint err-text">{err}</div>}
       {accounts?.map((a) => (
-        <div key={a.id} className="acct"><VendorLogo provider={a.provider} /><div className="grow"><b>{a.label}</b><div className="hint">{a.detail}</div></div><span><Dot s={a.status === 'ok' ? 'ok' : a.status === 'warn' ? 'warn' : 'no'} />{a.status === 'ok' ? '可用' : a.status === 'warn' ? '可用' : '未连接'}</span></div>
+        <div key={a.id} className="acct"><VendorLogo provider={accountIcon(a)} /><div className="grow"><b>{a.label}</b><div className="hint">{a.detail}</div></div><span><Dot s={a.status === 'ok' ? 'ok' : a.status === 'warn' ? 'warn' : 'no'} />{a.status === 'ok' ? '可用' : a.status === 'warn' ? '可用' : '未连接'}</span></div>
       ))}
       <div className="nav"><span /><span><button className="btn" style={{ marginRight: 6 }} onClick={detect}>重新检测</button><button className="btn pri" onClick={onNext}>继续</button></span></div>
     </>

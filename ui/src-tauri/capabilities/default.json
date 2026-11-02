@@ -6,7 +6,8 @@
     "main",
     "popover",
     "quick",
-    "about"
+    "about",
+    "notch"
   ],
   "permissions": [
     "core:default",
@@ -69,7 +70,6 @@
     "global-shortcut:allow-unregister-all",
     "global-shortcut:allow-is-registered",
     "notification:default",
-    "positioner:default",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-write-image",
     "dialog:allow-save",

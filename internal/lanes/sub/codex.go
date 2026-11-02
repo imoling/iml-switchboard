@@ -464,7 +464,7 @@ func (d *CodexDriver) Health(ctx context.Context) core.Health {
 	}
 	// 文件名拆开拼接：只 stat 存在性，绝不读内容；也避免被扫源码的红线测试误判。
 	if !fileExists(filepath.Join(d.codexHome(), "auth"+".json")) {
-		return core.Health{Status: "warn", Detail: "Codex 还没登录：运行 codex login"}
+		return core.Health{Status: "warn", Detail: "Codex 还没登录：运行 codex login", SignedOut: true}
 	}
 	d.mu.Lock()
 	cd := d.cooldown

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -37,12 +38,23 @@ type Manager struct {
 	facade    string // http://127.0.0.1:18081
 	home      string
 	facadeKey func() string
+	// ModelName 和 ModelContext 查型号的展示名和上下文窗口，写 Codex 模型目录时用；没设就用型号名和模板的窗口
+	ModelName    func(id string) string
+	ModelContext func(id string) int
+	// Lookup 查型号能不能用工具、看图，写宿主的型号表时用；没设就当都能
+	Lookup       func(id string) (core.ModelInfo, bool)
+	codexBundled func() ([]byte, error)
+	codexCheck   func(path string) error
+	codexStamp   func() string
+
+	catalogMu     sync.Mutex // Codex 模型目录：接入页和启动时的同步可能同时走到
+	catalogFailed string     // 上一次生成失败时的 Codex 版本和型号
 }
 
 // New 创建管理器。
 func New(cfg *config.Store, exe, facadeURL string, facadeKey func() string) *Manager {
 	home, _ := os.UserHomeDir()
-	return &Manager{cfg: cfg, exe: exe, facade: facadeURL, home: home, facadeKey: facadeKey}
+	return &Manager{cfg: cfg, exe: exe, facade: facadeURL, home: home, facadeKey: facadeKey, codexBundled: codexBundledCatalog, codexCheck: codexCheckCatalog, codexStamp: codexVersionStamp}
 }
 
 func (m *Manager) claudeDir() string       { return filepath.Join(m.home, ".claude") }
@@ -62,7 +74,7 @@ func (m *Manager) dshEnv() string      { return filepath.Join(m.dshHome(), ".env
 
 // List 返回三个宿主的状态。
 func (m *Manager) List() []map[string]any {
-	return []map[string]any{m.view("claude_code"), m.view("codex"), m.view("gemini_cli"), m.view("workbuddy"), m.view("winwork"), m.view("doubao_work"), m.view("deepseek_harness"), m.view("pi"), m.view("openclaw"), m.view("hermes")}
+	return []map[string]any{m.view("claude_code"), m.view("claude_desktop"), m.view("codex"), m.view("gemini_cli"), m.view("workbuddy"), m.view("winwork"), m.view("doubao_work"), m.view("deepseek_harness"), m.view("pi"), m.view("openclaw"), m.view("hermes")}
 }
 
 func (m *Manager) view(id string) map[string]any {
@@ -82,6 +94,16 @@ func (m *Manager) view(id string) map[string]any {
 		}
 		opts := map[string]bool{"write_claude_md": m.claudeMdHasBlock(), "opusplan": m.claudeModelIs("opusplan"), "commands": m.commandsInstalled(), "takeover": m.claudeTakenOver()}
 		v["options"] = opts
+	case "claude_desktop":
+		if !m.desktopInstalled() {
+			v["available"] = false
+			v["detail"] = "本机没有安装 Claude Desktop"
+		}
+		on := m.desktopTakenOver()
+		if on {
+			v["status"] = "connected"
+		}
+		v["options"] = map[string]bool{"takeover": on}
 	case "codex":
 		if _, err := exec.LookPath("codex"); err != nil {
 			v["available"] = false
@@ -90,6 +112,7 @@ func (m *Manager) view(id string) map[string]any {
 		if m.codexRegistered() {
 			v["status"] = "connected"
 		}
+		m.SyncCodexCatalog()
 		v["options"] = map[string]bool{"takeover": m.codexTakenOver()}
 	case "gemini_cli":
 		if _, err := exec.LookPath("gemini"); err != nil {
@@ -132,10 +155,9 @@ func (m *Manager) view(id string) map[string]any {
 			v["detail"] = "本机没有安装豆包工作"
 		}
 		v["snippet"] = m.doubaoWorkSnippet()
+	// 下面三个只认装没装命令：配置目录是接入时自己建的，不能当装了的证据
 	case "pi":
-		_, errBin := exec.LookPath("pi")
-		_, errDir := os.Stat(filepath.Dir(m.piModels()))
-		if errBin != nil && errDir != nil {
+		if _, err := exec.LookPath("pi"); err != nil {
 			v["available"] = false
 			v["detail"] = "本机没有找到 pi 命令"
 		} else if m.piHas() {
@@ -143,9 +165,7 @@ func (m *Manager) view(id string) map[string]any {
 		}
 		v["snippet"] = m.piSnippet()
 	case "deepseek_harness":
-		_, errBin := exec.LookPath("dsh")
-		_, errDir := os.Stat(m.dshHome())
-		if errBin != nil && errDir != nil {
+		if _, err := exec.LookPath("dsh"); err != nil {
 			v["available"] = false
 			v["detail"] = "本机没有找到 dsh 命令"
 		} else if m.dshHas() {
@@ -153,15 +173,16 @@ func (m *Manager) view(id string) map[string]any {
 		}
 		v["snippet"] = m.dshSnippet()
 	case "openclaw":
-		_, errBin := exec.LookPath("openclaw")
-		_, errDir := os.Stat(filepath.Dir(m.openclawCfg()))
-		if errBin != nil && errDir != nil {
+		if _, err := exec.LookPath("openclaw"); err != nil {
 			v["available"] = false
 			v["detail"] = "本机没有找到 openclaw 命令"
 		} else if m.openclawHas() {
 			v["status"] = "connected"
 		}
 		v["snippet"] = m.openclawSnippet()
+	}
+	if modelListHosts[id] {
+		v["models_count"] = len(m.selectedHostModels(id))
 	}
 	return v
 }
@@ -268,6 +289,14 @@ func (m *Manager) Update(id string, opts map[string]bool) (map[string]any, error
 	if id == "codex" {
 		if v, ok := opts["takeover"]; ok {
 			if err := m.setCodexTakeover(v); err != nil {
+				return nil, err
+			}
+		}
+		return m.view(id), nil
+	}
+	if id == "claude_desktop" {
+		if v, ok := opts["takeover"]; ok {
+			if err := m.setDesktopTakeover(v); err != nil {
 				return nil, err
 			}
 		}
@@ -736,32 +765,16 @@ type wbModel struct {
 	SupportsReasoning bool   `json:"supportsReasoning"`
 }
 
+// wbEntries 是写进 WorkBuddy 模型表的条目。它的表里各家混在一起，账号型号的名字前面带上 Switchboard，用户才知道走的是谁；
+// 厂商统一写 Switchboard，断开时靠它认出我们写的全部条目。
 func (m *Manager) wbEntries() []wbModel {
-	out := []wbModel{
-		{ID: "router-auto", Name: "Switchboard 自动", Vendor: "Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: true, SupportsImages: true},
-		{ID: "router-sub", Name: "Switchboard 订阅优先", Vendor: "Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: false, SupportsImages: false},
-	}
-	// 装了 WinWork：它网关里配进档位的型号也单列出来，在 WorkBuddy 里能直接选
-	for _, acc := range m.cfg.Get().API {
-		if acc.Provider != "winwork" || !acc.Enabled {
-			continue
+	var out []wbModel
+	for _, h := range m.selectedHostModels("workbuddy") {
+		name := h.Name
+		if h.Group != "Switchboard" {
+			name = "Switchboard · " + h.Name
 		}
-		seen := map[string]bool{}
-		for _, tier := range []string{"high", "mid", "low"} {
-			for _, id := range acc.Models[tier] {
-				if seen[id] {
-					continue
-				}
-				seen[id] = true
-				name, vision := id, false
-				for _, w := range core.WinWorkModels {
-					if w.ID == id {
-						name, vision = w.Name, w.Vision
-					}
-				}
-				out = append(out, wbModel{ID: id, Name: "Switchboard · WinWork " + name, Vendor: "Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: true, SupportsImages: vision})
-			}
-		}
+		out = append(out, wbModel{ID: h.ID, Name: name, Vendor: "Switchboard", URL: m.facade + "/v1/chat/completions", APIKey: m.facadeKey(), SupportsToolCall: h.Tools, SupportsImages: h.Vision})
 	}
 	return out
 }
@@ -868,11 +881,20 @@ type piProvider struct {
 	Models  []piModel `json:"models"`
 }
 
+// inputKinds 是宿主配置里「能收什么」的写法：能看图就多一个 image。
+func inputKinds(h HostModel) []string {
+	if h.Vision {
+		return []string{"text", "image"}
+	}
+	return []string{"text"}
+}
+
 func (m *Manager) piProvider() piProvider {
-	return piProvider{BaseURL: m.facade + "/v1", API: "openai-completions", APIKey: m.hostKey("pi"), Models: []piModel{
-		{ID: "router-auto", Name: "Switchboard 自动", Input: []string{"text", "image"}, ContextWindow: 200000, MaxTokens: 32000},
-		{ID: "router-sub", Name: "Switchboard 订阅优先", Input: []string{"text"}, ContextWindow: 200000, MaxTokens: 32000},
-	}}
+	p := piProvider{BaseURL: m.facade + "/v1", API: "openai-completions", APIKey: m.hostKey("pi")}
+	for _, h := range m.selectedHostModels("pi") {
+		p.Models = append(p.Models, piModel{ID: h.ID, Name: h.Name, Input: inputKinds(h), ContextWindow: contextOr(h.Context, 200000), MaxTokens: 32000})
+	}
+	return p
 }
 
 func (m *Manager) piSnippet() string {
@@ -934,15 +956,16 @@ func (m *Manager) disconnectPi() error {
 const dshKeyRef = "SWITCHBOARD_API_KEY"
 
 func (m *Manager) dshRoute() map[string]any {
+	models := []map[string]any{}
+	for _, h := range m.selectedHostModels("deepseek_harness") {
+		models = append(models, map[string]any{"id": h.ID, "name": h.Name, "contextWindow": contextOr(h.Context, 200000), "maxTokens": 32000})
+	}
 	return map[string]any{
 		"displayName": "Switchboard",
 		"apiKeyEnv":   dshKeyRef,
 		"api":         "openai-completions",
 		"baseURL":     m.facade + "/v1",
-		"models": []map[string]any{
-			{"id": "router-auto", "name": "Switchboard 自动", "contextWindow": 200000, "maxTokens": 32000},
-			{"id": "router-sub", "name": "Switchboard 订阅优先", "contextWindow": 200000, "maxTokens": 32000},
-		},
+		"models":      models,
 	}
 }
 
@@ -1071,14 +1094,15 @@ func (m *Manager) setEnvLine(path, key, val string) error {
 // ---------- OpenClaw ----------
 
 func (m *Manager) openclawProvider() map[string]any {
+	models := []map[string]any{}
+	for _, h := range m.selectedHostModels("openclaw") {
+		models = append(models, map[string]any{"id": h.ID, "name": h.Name, "reasoning": false, "input": inputKinds(h), "contextWindow": contextOr(h.Context, 200000), "maxTokens": 32000})
+	}
 	return map[string]any{
 		"baseUrl": m.facade + "/v1",
 		"apiKey":  m.hostKey("openclaw"),
 		"api":     "openai-completions",
-		"models": []map[string]any{
-			{"id": "router-auto", "name": "Switchboard 自动", "reasoning": false, "input": []string{"text", "image"}, "contextWindow": 200000, "maxTokens": 32000},
-			{"id": "router-sub", "name": "Switchboard 订阅优先", "reasoning": false, "input": []string{"text"}, "contextWindow": 200000, "maxTokens": 32000},
-		},
+		"models":  models,
 	}
 }
 

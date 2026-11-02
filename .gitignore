@@ -24,3 +24,4 @@
 /.playwright-cli/
 # 发社交平台用的配图，不进仓库
 /assets/x/
+/ui/.playwright-cli/
