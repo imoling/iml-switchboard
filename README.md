@@ -117,7 +117,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 curl -fsSL https://raw.githubusercontent.com/imoling/iml-switchboard/main/scripts/install-mac.sh | bash
 ```
 
-脚本下载本机芯片对应的最新 dmg（GitHub 连不上换 Gitee），装到「应用程序」，清掉下载来源标记；后台服务没在干活时顺手换成新版本。已经下载好的 dmg 可以传给它：`bash install-mac.sh ~/Downloads/Switchboard_0.4.2_aarch64.dmg`。
+脚本下载本机芯片对应的最新 dmg（GitHub 连不上换 Gitee），装到「应用程序」，清掉下载来源标记；后台服务没在干活时顺手换成新版本。已经下载好的 dmg 可以传给它：`bash install-mac.sh ~/Downloads/Switchboard_0.4.3_aarch64.dmg`。
 
 **用安装包**：在 [Releases](https://github.com/imoling/iml-switchboard/releases) 页下载对应系统的安装包（macOS 是 dmg，Windows 是 msi 或 exe）。安装包里已经带了后台程序 `imls`。
 
