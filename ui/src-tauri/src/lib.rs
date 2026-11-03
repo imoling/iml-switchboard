@@ -162,13 +162,56 @@ fn flyout(label: &str) -> Option<&'static Flyout> {
     }
 }
 
-fn tray_icon(status: &str) -> (Image<'static>, bool) {
-    // 模板图只能单色，所以「额度紧张 / 出错 / 未运行」三种带色状态用非模板图
-    match status {
-        "warn" => (Image::from_bytes(include_bytes!("../icons/tray-warn.png")).expect("tray-warn"), false),
-        "error" => (Image::from_bytes(include_bytes!("../icons/tray-err.png")).expect("tray-err"), false),
-        "off" => (Image::from_bytes(include_bytes!("../icons/tray-off.png")).expect("tray-off"), false),
-        _ => (Image::from_bytes(include_bytes!("../icons/tray.png")).expect("tray"), true),
+/// 菜单栏图标的样式和状态，由界面按设置和后台状态告诉我们；样式见 icons/tray/ 下的目录
+static TRAY: Mutex<(String, String)> = Mutex::new((String::new(), String::new()));
+
+/// 一种样式四个状态的 2x 位图：正常、告警、出错、暂停
+macro_rules! tray_set {
+    ($dir:literal) => {
+        [
+            include_bytes!(concat!("../icons/tray/", $dir, "/tray@2x.png")) as &[u8],
+            include_bytes!(concat!("../icons/tray/", $dir, "/tray-warn@2x.png")),
+            include_bytes!(concat!("../icons/tray/", $dir, "/tray-err@2x.png")),
+            include_bytes!(concat!("../icons/tray/", $dir, "/tray-off@2x.png")),
+        ]
+    };
+}
+
+fn tray_bytes(style: &str, status: &str) -> &'static [u8] {
+    let set: [&'static [u8]; 4] = match style {
+        "frame" => tray_set!("frame"),
+        "fork" => tray_set!("fork"),
+        "patchbay" => tray_set!("patchbay"),
+        "lever" => tray_set!("lever"),
+        "breakout" => tray_set!("breakout"),
+        "pixel" => tray_set!("pixel"),
+        "ladder" => tray_set!("ladder"),
+        _ => tray_set!("tile"),
+    };
+    set[match status {
+        "warn" => 1,
+        "error" => 2,
+        "off" => 3,
+        _ => 0,
+    }]
+}
+
+fn tray_icon(style: &str, status: &str) -> (Image<'static>, bool) {
+    // 模板图只能单色，所以「额度紧张 / 出错 / 未运行」三种带色状态用非模板图。
+    // 一律给 2x 位图：tray-icon 在 macOS 上总把图设成 18 pt 高，给 18 px 的图在 Retina 上会被拉糊
+    (Image::from_bytes(tray_bytes(style, status)).expect("tray icon"), !matches!(status, "warn" | "error" | "off"))
+}
+
+fn apply_tray(app: &AppHandle) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let (style, status) = TRAY.lock().map(|t| t.clone()).unwrap_or_default();
+        let (icon, template) = tray_icon(&style, &status);
+        // tray-icon 的 set_icon 会把新图设成非模板，先设模板标记再换图等于没设：模板图会被画成黑底。
+        // macOS 用原子接口一次设好；其它平台没有模板图这回事
+        #[cfg(target_os = "macos")]
+        let _ = tray.set_icon_with_as_template(Some(icon), template);
+        #[cfg(not(target_os = "macos"))]
+        let _ = tray.set_icon(Some(icon));
     }
 }
 
@@ -331,14 +374,22 @@ fn register_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
 
 #[tauri::command]
 fn set_tray_status(app: AppHandle, status: String, tooltip: Option<String>) {
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let (icon, template) = tray_icon(&status);
-        let _ = tray.set_icon_as_template(template && cfg!(target_os = "macos"));
-        let _ = tray.set_icon(Some(icon));
-        if let Some(t) = tooltip {
-            let _ = tray.set_tooltip(Some(t));
-        }
+    if let Ok(mut t) = TRAY.lock() {
+        t.1 = status;
     }
+    apply_tray(&app);
+    if let (Some(tray), Some(t)) = (app.tray_by_id(TRAY_ID), tooltip) {
+        let _ = tray.set_tooltip(Some(t));
+    }
+}
+
+/// 换菜单栏图标的样式（设置里的实验功能）；状态照旧
+#[tauri::command]
+fn set_tray_style(app: AppHandle, style: String) {
+    if let Ok(mut t) = TRAY.lock() {
+        t.0 = style;
+    }
+    apply_tray(&app);
 }
 
 /// 后台没起来时由界面点「启动」：等价于在终端里跑 `imls serve --background`，进程交给系统，不随应用退出。
@@ -454,6 +505,7 @@ pub fn run() {
             place_notch,
             set_hotkey,
             set_tray_status,
+            set_tray_style,
             start_backend,
             bundled_backend_build,
             show_about,
@@ -464,7 +516,7 @@ pub fn run() {
             let handle = app.handle().clone();
 
             // 托盘：左键开合弹窗，右键给一个最小菜单
-            let (icon, _) = tray_icon("ok");
+            let (icon, _) = tray_icon("", "ok");
             let menu = MenuBuilder::new(app)
                 .item(&MenuItemBuilder::with_id("open", "打开主窗口").build(app)?)
                 .item(&MenuItemBuilder::with_id("about", "关于").build(app)?)

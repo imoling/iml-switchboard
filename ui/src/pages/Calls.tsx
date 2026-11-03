@@ -7,7 +7,15 @@ import { cost, hhmm, hostLabel, secs, tokens, usd } from '../format';
 import { errText, useDebounced, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
 
-export function Calls({ live }: { live?: Call | null }) {
+/** 把路由层的长错误压成一眼能看懂的一句：去掉「没有可用的模型：最后一个错误是」这种前缀 */
+function shortError(e?: string): string {
+  if (!e) return '';
+  const t = e.replace(/^没有可用的模型[：:]\s*(最后一个错误是\s*)?/, '').replace(/\s+/g, ' ');
+  return t.length > 40 ? t.slice(0, 40) + '…' : t;
+}
+
+/** 记录表；embedded 时作为总览的一段，没有页标题 */
+export function Calls({ live, embedded }: { live?: Call | null; embedded?: boolean }) {
   const { t } = useTheme();
   const [q, setQ] = useState('');
   const [source, setSource] = useState('');
@@ -15,6 +23,8 @@ export function Calls({ live }: { live?: Call | null }) {
   const dq = useDebounced(q, 250);
   const { data, setData, error } = useLoad(() => api.calls({ q: dq, source, lane, limit: 200 }), [dq, source, lane]);
   const [sel, setSel] = useState<Call | null>(null);
+  const [failedOnly, setFailedOnly] = useState(false);
+  const rows = failedOnly ? data?.filter((c) => !c.ok) : data;
 
   // 事件流里来的新记录直接插到顶上
   useEffect(() => {
@@ -26,8 +36,8 @@ export function Calls({ live }: { live?: Call | null }) {
 
   return (
     <>
-      <div className="ct">
-        <h4>{t('records')}</h4>
+      <div className={embedded ? 'sect' : 'ct'} data-tauri-drag-region>
+        {embedded ? <h5>{t('records')}</h5> : <h4 data-tauri-drag-region>{t('records')}</h4>}
         <div className="tools">
           <input className="input sm" style={{ width: 180 }} placeholder="搜索内容或模型" value={q} onChange={(e) => setQ(e.target.value)} />
           <select className="sel" value={source} onChange={(e) => setSource(e.target.value)}>
@@ -36,25 +46,29 @@ export function Calls({ live }: { live?: Call | null }) {
           <select className="sel" value={lane} onChange={(e) => setLane(e.target.value)}>
             <option value="">全部渠道</option><option value="sub">订阅</option><option value="api">按量付费</option><option value="media">媒体</option>
           </select>
+          <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={failedOnly} onChange={(e) => setFailedOnly(e.target.checked)} /> 只看失败</label>
         </div>
       </div>
       {error && <ErrorLine {...errText(error)!} />}
-      <div className="split" style={{ margin: '0 -22px 0 0', height: 'calc(100vh - 90px)' }}>
+      <div className={`split ${embedded ? 'embedded' : ''}`} style={embedded ? undefined : { margin: '0 -22px 0 0', height: 'calc(100vh - 90px)' }}>
         <div className="grow" style={{ overflow: 'auto', paddingRight: 12 }}>
-          {data && data.length === 0 && <Empty>还没有请求；在 Claude Code 里让它画张图试试</Empty>}
-          {data && data.length > 0 && (
+          {rows && rows.length === 0 && <Empty>{failedOnly ? '这段时间没有失败的请求' : '还没有请求；在 Claude Code 里让它画张图试试'}</Empty>}
+          {rows && rows.length > 0 && (
             <table className="t">
               <thead><tr><th>时间</th><th>来源</th><th>任务</th><th>档位</th><th>{t('model')}</th><th className="right">费用</th></tr></thead>
               <tbody>
-                {data.map((c) => {
+                {rows.map((c) => {
                   const m = cost(c);
+                  const free = c.ok && c.lane === 'api' && c.cost_usd === 0;
                   return (
                     <tr key={c.id} className={`clickable ${sel?.id === c.id ? 'sel' : ''}`} onClick={() => setSel(c)}>
                       <td>{hhmm(c.ts)}</td><td>{hostLabel(c)}</td>
-                      <td>{c.task_type}{c.tier === 'top' && c.source !== 'redo' ? ' · 仔细想' : ''}</td>
+                      <td>{c.task_name ?? c.task_type}{c.tier === 'top' && c.source !== 'redo' ? ' · 仔细想' : ''}</td>
                       <td><TierChip tier={c.tier} /></td>
-                      <td><Model provider={c.provider} name={c.model} />{c.fallback_from && <> <span className="chip c-warn">已降级</span></>}{!c.ok && <> <span className="chip c-hi">失败</span></>}</td>
-                      <td className={`right ${m.muted ? 'muted' : ''}`}>{m.text}</td>
+                      <td>{c.ok
+                        ? <><Model provider={c.provider} name={c.model_display ?? c.model} />{c.fallback_from && <> <span className="chip c-warn">已降级</span></>}</>
+                        : <><span className="chip c-hi">失败</span> <span className="muted">{shortError(c.error)}</span></>}</td>
+                      <td className={`right ${m.muted || free || !c.ok ? 'muted' : ''}`}>{!c.ok ? '—' : free ? '免费' : m.text}</td>
                     </tr>
                   );
                 })}

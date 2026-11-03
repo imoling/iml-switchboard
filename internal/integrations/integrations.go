@@ -20,6 +20,7 @@ import (
 
 	"github.com/imoling/iml-switchboard/internal/config"
 	"github.com/imoling/iml-switchboard/internal/core"
+	"github.com/imoling/iml-switchboard/internal/lanes/sub"
 )
 
 //go:embed assets
@@ -74,14 +75,18 @@ func (m *Manager) dshEnv() string      { return filepath.Join(m.dshHome(), ".env
 
 // List 返回三个宿主的状态。
 func (m *Manager) List() []map[string]any {
-	return []map[string]any{m.view("claude_code"), m.view("claude_desktop"), m.view("codex"), m.view("gemini_cli"), m.view("workbuddy"), m.view("winwork"), m.view("doubao_work"), m.view("deepseek_harness"), m.view("pi"), m.view("openclaw"), m.view("hermes")}
+	var out []map[string]any
+	for _, id := range config.HostIDs {
+		out = append(out, m.view(id))
+	}
+	return out
 }
 
 func (m *Manager) view(id string) map[string]any {
 	st := m.cfg.Get().Integrations[id]
 	v := map[string]any{"id": id, "status": "disconnected", "options": st.Options, "available": true}
-	if v["options"] == nil {
-		v["options"] = map[string]bool{}
+	if st.Options == nil {
+		v["options"] = map[string]bool{} // 空 map 放进 any 后不等于 nil，不单独判会把 null 发给界面
 	}
 	switch id {
 	case "claude_code":
@@ -105,9 +110,9 @@ func (m *Manager) view(id string) map[string]any {
 		}
 		v["options"] = map[string]bool{"takeover": on}
 	case "codex":
-		if _, err := exec.LookPath("codex"); err != nil {
+		if sub.CodexBin() == "" {
 			v["available"] = false
-			v["detail"] = "本机没有找到 codex 命令"
+			v["detail"] = sub.CodexMissing
 		}
 		if m.codexRegistered() {
 			v["status"] = "connected"
@@ -183,6 +188,9 @@ func (m *Manager) view(id string) map[string]any {
 	}
 	if modelListHosts[id] {
 		v["models_count"] = len(m.selectedHostModels(id))
+	}
+	if n := len(st.Tiers); n > 0 {
+		v["tiers_custom"] = n
 	}
 	return v
 }

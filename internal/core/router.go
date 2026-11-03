@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -236,13 +237,14 @@ func (r *Router) Decide(t *Task) *Decision {
 	}
 	d.Tier = tier
 
-	// 6. 会话粘性
+	// 6. 会话粘性：粘住的目标排在候选最前，后面仍接这一档的正常候选，它出错时能顺序回退
 	stickyOn := false
 	for _, cr := range cfg.Routing.ContextRules {
 		if cr.ID == "sticky_session" && cr.Enabled {
 			stickyOn = true
 		}
 	}
+	var stickyTgt *Target
 	if (stickyOn || keepCurrent) && t.SessionID != "" && explicitTier == "" {
 		if tgt, prevTier, ok := r.sticky.Get(t.SessionID); ok {
 			subLane := tgt.Lane != LaneAPI && tgt.Lane != LaneMedia
@@ -251,12 +253,17 @@ func (r *Router) Decide(t *Task) *Decision {
 				usable = false // 对话越来越长，原来的模型装不下了：重新选
 				d.Reason = append(d.Reason, "对话变长，原模型装不下，重新选")
 			}
+			if cooling, _, why := r.quota.Cooling(cooldownKey(tgt)); usable && cooling {
+				usable = false // 上一轮刚被限流或额度用完：不再粘它，交给正常排序
+				r.sticky.Forget(t.SessionID)
+				d.Reason = append(d.Reason, "原模型"+why+"，重新选")
+			}
 			if usable && (tierRank(prevTier) >= tierRank(tier) || keepCurrent) {
 				d.Sticky = true
 				d.Tier = prevTier
-				d.Candidates = []Target{tgt}
+				tier = prevTier
+				stickyTgt = &tgt
 				d.Reason = append(d.Reason, "会话粘性：沿用当前模型")
-				return d
 			}
 		}
 	}
@@ -312,12 +319,35 @@ func (r *Router) Decide(t *Task) *Decision {
 			}
 		}
 	}
+	if stickyTgt != nil {
+		d.Candidates = withStickyFirst(*stickyTgt, d.Candidates)
+	}
 	r.pinChoice(t, d)
 	if len(live(d.Candidates)) == 0 && t.dropToolImages() {
 		d = r.Decide(t)
 		d.Reason = append(d.Reason, "工具返回的图片没有能看图的模型，改成文字提示")
 	}
 	return d
+}
+
+// cooldownKey 是目标对应的冷却键：按量付费按账号记，订阅按渠道记。
+func cooldownKey(tgt Target) LaneID {
+	if tgt.Lane == LaneAPI {
+		return LaneID("acct:" + tgt.AccountID)
+	}
+	return tgt.Lane
+}
+
+// withStickyFirst 把粘住的目标放到候选最前面，正常排序里的同一条去掉。
+func withStickyFirst(st Target, cands []Target) []Target {
+	out := []Target{st}
+	for _, c := range cands {
+		if c.Lane == st.Lane && c.AccountID == st.AccountID && c.Model == st.Model {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // dropToolImages 去掉工具返回的图片，换成一句话告诉模型，免得它以为工具坏了。返回有没有去掉。
@@ -445,70 +475,21 @@ func kindLabel(k Kind) string {
 }
 
 // textCandidates 把档位和渠道偏好展开成具体候选，并标注跳过原因。
+// 这一档有手排的候选表就完全照表；表里的条目都失效了（账号删了、渠道关了）再按内置规则排。
 func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer []string, needVision bool, reason *[]string) []Target {
 	var out []Target
 	subAllowed := !t.HasTools()
 	if !subAllowed {
 		*reason = append(*reason, "请求带工具，跳过订阅渠道")
 	}
-	for _, lane := range prefer {
-		switch lane {
-		case "claude_sub", "codex_sub", "agy_sub":
-			lid := LaneID(lane)
-			sl, ok := cfg.Sub[lane]
-			if !ok || !sl.Enabled {
-				continue
-			}
-			model := sl.Models[string(tier)]
-			if model == "" {
-				if tier == TierTop {
-					continue // 其它订阅没有顶配
-				}
-				continue
-			}
-			tgt := Target{Lane: lid, Provider: providerOf(lid), Model: model, EstCostUSD: 0}
-			if !subAllowed {
-				tgt.Skipped = "带工具"
-			} else if _, ok := r.drivers[lid]; !ok {
-				tgt.Skipped = "未接入"
-			} else {
-				h := r.drivers[lid].Health(context.Background())
-				r.quota.Observe(lid, h.Quota)
-				if h.Status == "missing" || h.Status == "error" || h.Status == "disabled" || h.SignedOut {
-					tgt.Skipped = h.Detail
-				} else if ok, why := r.quota.Healthy(lid, tier, sl.Models); !ok {
-					tgt.Skipped = why
-				}
-			}
-			out = append(out, tgt)
-		case "api":
-			// 免费型号排在收费型号前面：同档位里先用不花钱的
-			apiStart := len(out)
-			for _, acc := range cfg.API {
-				if !acc.Enabled {
-					continue
-				}
-				for _, m := range acc.Models[string(tier)] {
-					info, _ := r.reg.Lookup(m)
-					tgt := Target{Lane: LaneAPI, Provider: acc.Provider, Model: m, AccountID: acc.ID, EstCostUSD: r.reg.EstimateText(m, t.EstTokens)}
-					if needVision && !info.Vision {
-						tgt.Skipped = "不能看图"
-					}
-					if !acc.AllowPaid && len(r.reg.FreeModels(acc.Provider)) > 0 && !info.Free {
-						tgt.Skipped = "只用免费型号"
-					}
-					if cooling, _, why := r.quota.Cooling(LaneID("acct:" + acc.ID)); cooling {
-						tgt.Skipped = why
-					}
-					out = append(out, tgt)
-				}
-			}
-			sort.SliceStable(out[apiStart:], func(i, j int) bool {
-				fi := r.reg.IsFree(out[apiStart+i].Model)
-				fj := r.reg.IsFree(out[apiStart+j].Model)
-				return fi && !fj
-			})
+	if picks, scope := tierPicks(cfg, t.Host, tier); len(picks) > 0 {
+		out = r.pickedCandidates(cfg, t, tier, picks, needVision, subAllowed, slices.Contains(prefer, "api"))
+		if len(out) > 0 {
+			*reason = append(*reason, TierLabel(tier)+"按"+scope+"手排的候选表")
 		}
+	}
+	if len(out) == 0 {
+		out = r.preferCandidates(cfg, t, tier, prefer, needVision, subAllowed)
 	}
 	tooLong := 0
 	for i := range out {
@@ -532,6 +513,152 @@ func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer [
 		return r.textCandidates(cfg, t, up, prefer, needVision, reason)
 	}
 	return out
+}
+
+// pickedCandidates 按用户手排的候选表展开：只认渠道现在在这一档还提供的条目，顺序完全照表，不再把免费型号往前挪。
+func (r *Router) pickedCandidates(cfg *config.Config, t *Task, tier Tier, picks []config.TierPick, needVision, subAllowed, allowAPI bool) []Target {
+	var out []Target
+	for _, p := range picks {
+		if p.Lane == "api" {
+			if !allowAPI {
+				continue
+			}
+			for _, acc := range cfg.API {
+				if acc.ID == p.Account && acc.Enabled && slices.Contains(acc.Models[string(tier)], p.Model) {
+					out = append(out, r.apiTarget(t, acc, p.Model, needVision))
+				}
+			}
+			continue
+		}
+		if tgt, ok := r.subTarget(cfg, p.Lane, tier, subAllowed); ok {
+			out = append(out, tgt)
+		}
+	}
+	return out
+}
+
+// preferCandidates 按渠道偏好顺序展开内置排法：订阅渠道各出这一档的型号，按量付费账号各出这一档的型号列表，免费的排前面。
+func (r *Router) preferCandidates(cfg *config.Config, t *Task, tier Tier, prefer []string, needVision, subAllowed bool) []Target {
+	var out []Target
+	for _, lane := range prefer {
+		switch lane {
+		case "claude_sub", "codex_sub", "agy_sub":
+			if tgt, ok := r.subTarget(cfg, lane, tier, subAllowed); ok {
+				out = append(out, tgt)
+			}
+		case "api":
+			// 免费型号排在收费型号前面：同档位里先用不花钱的
+			apiStart := len(out)
+			for _, acc := range cfg.API {
+				if !acc.Enabled {
+					continue
+				}
+				for _, m := range acc.Models[string(tier)] {
+					out = append(out, r.apiTarget(t, acc, m, needVision))
+				}
+			}
+			sort.SliceStable(out[apiStart:], func(i, j int) bool {
+				fi := r.reg.IsFree(out[apiStart+i].Model)
+				fj := r.reg.IsFree(out[apiStart+j].Model)
+				return fi && !fj
+			})
+		}
+	}
+	return out
+}
+
+// subTarget 把一条订阅渠道展开成这一档的候选并标好跳过原因；渠道没开或这一档没配型号时返回 false。
+func (r *Router) subTarget(cfg *config.Config, lane string, tier Tier, subAllowed bool) (Target, bool) {
+	lid := LaneID(lane)
+	sl, ok := cfg.Sub[lane]
+	if !ok || !sl.Enabled {
+		return Target{}, false
+	}
+	model := sl.Models[string(tier)]
+	if model == "" {
+		return Target{}, false // 顶配只有 Claude 订阅有
+	}
+	tgt := Target{Lane: lid, Provider: providerOf(lid), Model: model, EstCostUSD: 0}
+	if !subAllowed {
+		tgt.Skipped = "带工具"
+	} else if _, ok := r.drivers[lid]; !ok {
+		tgt.Skipped = "未接入"
+	} else {
+		h := r.drivers[lid].Health(context.Background())
+		r.quota.Observe(lid, h.Quota)
+		if h.Status == "missing" || h.Status == "error" || h.Status == "disabled" || h.SignedOut {
+			tgt.Skipped = h.Detail
+		} else if ok, why := r.quota.Healthy(lid, tier, sl.Models); !ok {
+			tgt.Skipped = why
+		}
+	}
+	return tgt, true
+}
+
+// apiTarget 把按量付费账号的一个型号展开成候选并标好跳过原因。
+func (r *Router) apiTarget(t *Task, acc config.APIAccount, m string, needVision bool) Target {
+	info, _ := r.reg.Lookup(m)
+	tgt := Target{Lane: LaneAPI, Provider: acc.Provider, Model: m, AccountID: acc.ID, EstCostUSD: r.reg.EstimateText(m, t.EstTokens)}
+	if needVision && !info.Vision {
+		tgt.Skipped = "不能看图"
+	}
+	if !acc.AllowPaid && len(r.reg.FreeModels(acc.Provider)) > 0 && !info.Free {
+		tgt.Skipped = "只用免费型号"
+	}
+	if cooling, _, why := r.quota.Cooling(LaneID("acct:" + acc.ID)); cooling {
+		tgt.Skipped = why
+	}
+	return tgt
+}
+
+// defaultPrefer 是没有任务表偏好时的渠道顺序：低档先按量付费，中高档先 Claude 订阅。
+func defaultPrefer(tier Tier) []string {
+	if tier == TierLow {
+		return []string{"api", "codex_sub", "agy_sub", "claude_sub"}
+	}
+	return []string{"claude_sub", "api", "codex_sub", "agy_sub"}
+}
+
+// tierPicks 找一档该用哪张候选表：宿主自己的优先，其次全局的；都没有返回空。scope 是给原因看的「宿主」「全局」。
+func tierPicks(cfg *config.Config, host string, tier Tier) ([]config.TierPick, string) {
+	if host != "" {
+		if picks := cfg.Integrations[host].Tiers[string(tier)]; len(picks) > 0 {
+			return picks, "宿主"
+		}
+	}
+	if picks := cfg.Routing.Tiers[string(tier)]; len(picks) > 0 {
+		return picks, "全局"
+	}
+	return nil, ""
+}
+
+// TierTable 给界面看某个宿主（host 为空是全局）一档的候选：chosen 是现在生效的顺序，avail 是这一档所有渠道提供的全部候选（内置排法的顺序），
+// inherited 是这个宿主不手排时会用的顺序（全局的表或内置排法）。custom 表示 host 这一层自己排过。
+// 按不带工具、不带附件的普通请求算，跳过原因（未接入、冷却中）照标，界面上作提示。
+func (r *Router) TierTable(host string, tier Tier) (chosen, avail, inherited []Target, custom bool) {
+	cfg := r.cfg.Get()
+	t := &Task{Kind: KindText}
+	avail = r.preferCandidates(cfg, t, tier, defaultPrefer(tier), false, true)
+	inherited = avail
+	if host != "" {
+		if picks := cfg.Routing.Tiers[string(tier)]; len(picks) > 0 {
+			if g := r.pickedCandidates(cfg, t, tier, picks, false, true, true); len(g) > 0 {
+				inherited = g
+			}
+		}
+	}
+	var own []config.TierPick
+	if host != "" {
+		own = cfg.Integrations[host].Tiers[string(tier)]
+	} else {
+		own = cfg.Routing.Tiers[string(tier)]
+	}
+	if len(own) > 0 {
+		if chosen = r.pickedCandidates(cfg, t, tier, own, false, true, true); len(chosen) > 0 {
+			return chosen, avail, inherited, true
+		}
+	}
+	return inherited, avail, inherited, false
 }
 
 // contextHeadroom 是只用上下文窗口的多少：估算有误差，还要给回答留地方。
@@ -813,15 +940,14 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 		}
 		lastErr = err
 		c.Skipped = oneLine(err)
+		if d.Sticky {
+			r.sticky.Forget(t.SessionID) // 粘住的目标出错了：下一轮重新选，成功的那条会重新记上
+		}
 		var rl *ErrRateLimited
 		var pe *ErrProvider
 		switch {
 		case errors.As(err, &rl):
-			lane := c.Lane
-			if c.Lane == LaneAPI {
-				lane = LaneID("acct:" + c.AccountID)
-			}
-			r.quota.MarkCooldown(lane, rl.RetryAfter, rl.Detail)
+			r.quota.MarkCooldown(cooldownKey(*c), rl.RetryAfter, rl.Detail)
 			if c.Lane != LaneAPI && c.Lane != LaneMedia {
 				r.notify("额度用完", providerLabel(c.Provider)+" 订阅额度暂时用完，同档任务改走按量付费", "warn")
 			}

@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client';
-import type { Decision, ExplicitRule, Rules as RulesT, Tier } from '../api/types';
-import { ErrorLine, GroupChip, Seg, SetRow, TierChip, Toggle } from '../components/ui';
+import type { Decision, ExplicitRule, PickTier, Rules as RulesT, Tier, TierPick } from '../api/types';
+import { ErrorLine, GroupChip, Seg, SetRow, TierChip, Toggle, toast } from '../components/ui';
+import { TierSprite } from '../components/Pixel';
+import { TierList } from '../components/TierList';
 import { Vendor } from '../components/Vendor';
+import { sameList } from '../hostModels';
 import { usd } from '../format';
 import { errText, useDebounced, useLoad } from '../hooks';
+import { desktop } from '../tauri';
+import { Evaluation } from './Evaluation';
 import { useTheme } from '../theme/ThemeContext';
 
-type Tab = 'task' | 'explicit' | 'context';
+type Tab = 'task' | 'explicit' | 'context' | 'tiers' | 'eval';
+const PICK_TIERS: PickTier[] = ['low', 'mid', 'high'];
 const TIERS: Tier[] = ['low', 'mid', 'high'];
 
 export function Rules() {
@@ -16,6 +22,19 @@ export function Rules() {
   const rules = useLoad(() => api.rules());
   const sugg = useLoad(() => api.suggestions());
   const [err, setErr] = useState<ApiError | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const exportRules = async () => {
+    try {
+      const yaml = await api.exportRules();
+      const path = await desktop.saveDialog('switchboard-rules.yaml');
+      if (path === null && !('__TAURI_INTERNALS__' in window)) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([yaml], { type: 'text/yaml' })); a.download = 'switchboard-rules.yaml'; a.click(); return; }
+      if (path) { await desktop.copyText(yaml); toast('规则已复制到剪贴板，粘贴到文件里保存'); }
+    } catch (e) { setErr(e as ApiError); }
+  };
+  const importRules = async (file: File) => {
+    try { await api.importRules(await file.text()); toast('规则已导入'); void rules.reload(); } catch (e) { setErr(e as ApiError); }
+  };
 
   const save = async (next: RulesT) => {
     rules.setData(next);
@@ -24,9 +43,16 @@ export function Rules() {
 
   return (
     <>
-      <div className="ct">
-        <h4>{t('nav.rules')}</h4>
-        <Seg value={tab} onChange={setTab} options={[{ id: 'task', label: '任务类型' }, { id: 'explicit', label: '显式指令' }, { id: 'context', label: '上下文' }]} />
+      <div className="ct" data-tauri-drag-region>
+        <h4 data-tauri-drag-region>{t('nav.rules')}</h4>
+        <div className="tools">
+          {tab === 'task' && <>
+            <button className="btn sm" onClick={exportRules}>导出</button>
+            <button className="btn sm" onClick={() => fileRef.current?.click()}>导入</button>
+            <input ref={fileRef} type="file" accept=".yaml,.yml" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void importRules(f); e.target.value = ''; }} />
+          </>}
+          <Seg value={tab} onChange={setTab} options={[{ id: 'task', label: '任务类型' }, { id: 'explicit', label: '显式指令' }, { id: 'tiers', label: '档位候选' }, { id: 'context', label: '上下文' }, { id: 'eval', label: t('nav.eval') }]} />
+        </div>
       </div>
       {(rules.error || err) && <ErrorLine {...errText(rules.error ?? err)!} />}
       {tab === 'task' && <TryOne />}
@@ -35,6 +61,8 @@ export function Rules() {
           onSuggestion={async (task, action) => { try { rules.setData(await api.suggestionAction(task, action)); void sugg.reload(); } catch (e) { setErr(e as ApiError); } }} />
       )}
       {rules.data && tab === 'explicit' && <ExplicitTab rules={rules.data} onSave={save} />}
+      {rules.data && tab === 'tiers' && <TiersTab rules={rules.data} onSave={save} />}
+      {tab === 'eval' && <Evaluation embedded />}
       {rules.data && tab === 'context' && (
         <div className="panel">
           {rules.data.context_rules.map((r, i) => (
@@ -164,6 +192,35 @@ function ExplicitTab({ rules, onSave }: { rules: RulesT; onSave: (r: RulesT) => 
           </div>
         ) : <button className="btn sm" onClick={() => setAdding(true)}>＋ 添加指令</button>}
       </div>
+    </div>
+  );
+}
+
+/** 每档按什么顺序试：勾选、排序，第一个先试；保存后立刻生效，对所有宿主一样 */
+function TiersTab({ rules, onSave }: { rules: RulesT; onSave: (r: RulesT) => void }) {
+  return (
+    <>
+      <div className="hint mb12">全局顺序，宿主可在接入页自己排；带工具的请求跳过订阅</div>
+      {PICK_TIERS.map((tier) => <TierPanel key={tier} tier={tier} table={rules.tiers?.[tier]} onSave={(ids) => onSave({ ...rules, tier_picks: { [tier]: ids } })} />)}
+    </>
+  );
+}
+
+function TierPanel({ tier, table, onSave }: { tier: PickTier; table?: { custom: boolean; picks: TierPick[] }; onSave: (ids: string[]) => void }) {
+  const { t } = useTheme();
+  const saved = table?.picks.filter((p) => p.on).map((p) => p.id) ?? [];
+  const [sel, setSel] = useState<string[]>(saved);
+  useEffect(() => { setSel(saved); }, [saved.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!table) return null;
+  const dirty = !sameList(sel, saved);
+  return (
+    <div className="panel mb12">
+      <div className="row mb6"><TierSprite tier={tier} scale={2} /><b>{t(`tier.${tier}`)}</b>{table.custom && <span className="chip c-warn">手排</span>}
+        <span className="grow" />
+        {table.custom && <button className="btn sm" onClick={() => onSave([])}>回到默认</button>}
+        <button className="btn pri sm" disabled={!dirty} onClick={() => onSave(sel)}>保存</button>
+      </div>
+      <TierList picks={table.picks} sel={sel} onChange={setSel} />
     </div>
   );
 }

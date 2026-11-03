@@ -29,7 +29,9 @@ pre { font: 12px/1.6 ui-monospace, Menlo, monospace; background: var(--page); bo
 .side .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px; font-weight: 650; font-size: 16px; }
 .side .brand img { height: 30px; width: auto; border-radius: 0; flex-shrink: 0; }
 .drag { -webkit-app-region: drag; }
-.content { flex: 1; padding: 18px 22px; min-width: 0; overflow: auto; }
+.content { position: relative; flex: 1; padding: 18px 22px; min-width: 0; overflow: auto; }
+.ct, .ct h4 { -webkit-app-region: drag; }
+.ct button, .ct input, .ct select, .ct .seg, .ct .tools, .ct a { -webkit-app-region: no-drag; }
 .ct { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 12px; }
 .ct h4 { margin: 0; font-size: 18px; }
 .ct .tools { display: flex; gap: 8px; align-items: center; }
@@ -79,6 +81,16 @@ select.sel { border: 1px solid #CFC9BE; border-radius: 5px; padding: 1px 6px; ba
 
 /* 卡片与面板 */
 .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.cards.three { grid-template-columns: repeat(3, 1fr); }
+.card .qline { margin-top: 4px; }
+.sect { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 8px; }
+.sect h5 { margin: 0; font-size: 14px; }
+.sect .tools { display: flex; gap: 8px; align-items: center; }
+.topo-strip { padding: 8px 12px; margin-bottom: 10px; }
+.topo-toggle { display: flex; align-items: center; gap: 4px; width: 100%; background: none; border: 0; padding: 0; font-size: 12.5px; color: var(--fg); text-align: left; cursor: pointer; }
+.topo-toggle .muted { margin-right: 4px; } .topo-toggle .gap { width: 14px; } .topo-toggle .chev { margin-left: auto; color: var(--muted); }
+.split.embedded { height: 520px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); overflow: hidden; margin-bottom: 14px; }
+.split.embedded .grow { padding: 0 12px; }
 .card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--card); }
 .card .k { color: var(--muted); font-size: 12px; } .card .v { font-size: 22px; font-weight: 650; margin-top: 2px; } .card .d { font-size: 12px; color: var(--ok-text); } .card .d.bad { color: var(--red); } .card .d.plain { color: var(--muted); }
 .row2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 10px; }
@@ -313,3 +325,14 @@ details.raw { margin-top: 6px; font-size: 12px; color: var(--muted); } details.r
 .hm-group { border-top: 1px dashed var(--line-soft); padding-top: 6px; margin-top: 4px; }
 .hm-def { background: var(--line-soft); color: var(--fg); }
 .hm-foot { display: flex; align-items: center; gap: 8px; padding-top: 12px; margin-top: 8px; border-top: 1px solid var(--line-soft); }
+
+/* 宿主页：左边列表，右边选中宿主的详情 */
+.hosts { display: flex; gap: 16px; height: calc(100vh - 78px); }
+.hlist { width: 200px; flex-shrink: 0; overflow: auto; border-right: 1px solid var(--line); padding-right: 10px; }
+.hgrp { margin: 8px 8px 2px; }
+.hitem { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px; background: none; text-align: left; font-size: 13px; color: var(--fg); }
+.hitem .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hitem:hover { background: rgba(0,0,0,.04); } .hitem.on { background: var(--side-on); font-weight: 600; } .hitem.muted { color: var(--muted); }
+.hdetail { flex: 1; min-width: 0; overflow: auto; padding-right: 2px; }
+.hhead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; } .hhead b { font-size: 15px; }
+.hdetail .panel .setrow:first-child { padding-top: 0; }

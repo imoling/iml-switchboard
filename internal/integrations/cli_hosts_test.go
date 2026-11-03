@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/imoling/iml-switchboard/internal/lanes/sub"
 )
 
 // 假的 codex、gemini：记下参数，并像真的一样改配置文件，测试不碰本机真实配置。
@@ -103,5 +105,27 @@ func needShell(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("假 CLI 是 sh 脚本，Windows 上跳过")
+	}
+}
+
+// 只装了 ChatGPT 桌面版、PATH 上没有 codex 时，接入页要认出应用包里自带的那份，接入走它。
+func TestCodexFromAppBundleCountsAsInstalled(t *testing.T) {
+	needShell(t)
+	m, home := setup(t)
+	log := fakeHostBins(t, home)
+	bin := filepath.Dir(log)
+	old := sub.CodexAppBins
+	t.Cleanup(func() { sub.CodexAppBins = old })
+	sub.CodexAppBins = func() []string { return nil }
+	t.Setenv("PATH", "/bin:/usr/bin")
+	if v := m.view("codex"); v["available"] != false || v["detail"] != sub.CodexMissing {
+		t.Fatalf("PATH 上没有就该算没装：%v", v)
+	}
+	sub.CodexAppBins = func() []string { return []string{filepath.Join(bin, "codex")} }
+	if v := m.view("codex"); v["available"] != true {
+		t.Fatalf("应用包里的 codex 应算装了：%v", v)
+	}
+	if v, err := m.Connect("codex", nil); err != nil || v["status"] != "connected" {
+		t.Fatalf("用应用包里的 codex 接入失败：%v %v", err, v)
 	}
 }

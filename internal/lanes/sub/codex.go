@@ -64,6 +64,9 @@ func (d *CodexDriver) bin() string {
 	if d.Bin != "" {
 		return d.Bin
 	}
+	if p := CodexBin(); p != "" {
+		return p
+	}
 	return "codex"
 }
 
@@ -456,7 +459,7 @@ func (d *CodexDriver) timeout() time.Duration {
 func (d *CodexDriver) Health(ctx context.Context) core.Health {
 	bin := lookBin(d.bin())
 	if bin == "" {
-		return core.Health{Status: "missing", Detail: "本机没有找到 codex 命令：npm install -g @openai/codex"}
+		return core.Health{Status: "missing", Detail: CodexMissing}
 	}
 	ver := versionOf(ctx, bin)
 	if ver == "" {
@@ -464,7 +467,11 @@ func (d *CodexDriver) Health(ctx context.Context) core.Health {
 	}
 	// 文件名拆开拼接：只 stat 存在性，绝不读内容；也避免被扫源码的红线测试误判。
 	if !fileExists(filepath.Join(d.codexHome(), "auth"+".json")) {
-		return core.Health{Status: "warn", Detail: "Codex 还没登录：运行 codex login", SignedOut: true}
+		cmd := "codex"
+		if d.Bin == "" && !CodexOnPath() {
+			cmd = bin // 用的是应用包里的那份：命令不在 PATH 上，提示里写全路径
+		}
+		return core.Health{Status: "warn", Detail: "Codex 还没登录：运行 " + cmd + " login", SignedOut: true}
 	}
 	d.mu.Lock()
 	cd := d.cooldown

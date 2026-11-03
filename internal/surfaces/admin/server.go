@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -170,6 +171,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	h("PUT /api/integrations/{id}", s.integrationUpdate)
 	h("GET /api/integrations/{id}/models", s.integrationModels)
 	h("PUT /api/integrations/{id}/models", s.integrationSetModels)
+	h("GET /api/integrations/{id}/tiers", s.integrationTiers)
+	h("PUT /api/integrations/{id}/tiers", s.integrationSetTiers)
 	h("GET /api/settings", s.settings)
 	h("PUT /api/settings", s.putSettings)
 	h("GET /api/themes", func(w http.ResponseWriter, r *http.Request) (any, error) { return themes.All(), nil })
@@ -624,7 +627,139 @@ func (s *Server) rulesBody(cfg *config.Config) map[string]any {
 	for _, c := range cfg.Routing.ContextRules {
 		ctxRules = append(ctxRules, map[string]any{"id": c.ID, "title": c.Title, "off_effect": c.Note, "enabled": c.Enabled})
 	}
-	return map[string]any{"task_table": rows, "explicit": explicit, "context_rules": ctxRules, "sticky": cfg.Routing.Sticky}
+	return map[string]any{"task_table": rows, "explicit": explicit, "context_rules": ctxRules, "sticky": cfg.Routing.Sticky, "tiers": s.tierTables(cfg, "")}
+}
+
+// tierTables 是某个宿主（host 为空是全局）低中高三档的候选表：生效顺序在前（on 为真），这一档其余可选的候选跟在后面；
+// inherited 是这个宿主不手排时会用的顺序，界面上「跟全局」要还原成它。
+func (s *Server) tierTables(cfg *config.Config, host string) map[string]any {
+	out := map[string]any{}
+	for _, tier := range []core.Tier{core.TierLow, core.TierMid, core.TierHigh} {
+		chosen, avail, inherited, custom := s.d.Router.TierTable(host, tier)
+		seen := map[string]bool{}
+		picks := []map[string]any{}
+		add := func(tg core.Target, on bool) {
+			id := pickOf(tg).ID()
+			if seen[id] {
+				return
+			}
+			seen[id] = true
+			group, icon := subGroup[tg.Lane], tg.Provider
+			if tg.Lane == core.LaneAPI {
+				for _, acc := range cfg.API {
+					if acc.ID == tg.AccountID {
+						group = acc.Label
+						if group == "" {
+							group = core.ProviderLabel(acc.Provider)
+						}
+						if acc.Icon != "" {
+							icon = acc.Icon
+						}
+					}
+				}
+			}
+			picks = append(picks, map[string]any{"id": id, "lane": tg.Lane, "account_id": tg.AccountID, "model": tg.Model,
+				"name": s.d.Router.Registry().Display(tg.Model), "group": group, "icon": icon, "on": on, "note": tg.Skipped})
+		}
+		for _, tg := range chosen {
+			add(tg, true)
+		}
+		for _, tg := range avail {
+			add(tg, false)
+		}
+		inh := []string{}
+		for _, tg := range inherited {
+			inh = append(inh, pickOf(tg).ID())
+		}
+		out[string(tier)] = map[string]any{"custom": custom, "picks": picks, "inherited": inh}
+	}
+	return out
+}
+
+// parseTierPicks 把界面交来的候选标识表整理成配置条目：只认这一档现有的条目，乱填的丢掉；档位只认低中高。
+func (s *Server) parseTierPicks(host string, in map[string][]string) (map[string][]config.TierPick, error) {
+	out := map[string][]config.TierPick{}
+	for tier, ids := range in {
+		if tier != "low" && tier != "mid" && tier != "high" {
+			return nil, &httpError{400, "档位只能是 low、mid、high"}
+		}
+		_, avail, _, _ := s.d.Router.TierTable(host, core.Tier(tier))
+		known := map[string]bool{}
+		for _, tg := range avail {
+			known[pickOf(tg).ID()] = true
+		}
+		var list []config.TierPick
+		for _, id := range ids {
+			if p, ok := config.ParseTierPick(id); ok && known[id] {
+				list = append(list, p)
+			}
+		}
+		out[tier] = list
+	}
+	return out, nil
+}
+
+// integrationTiers 是一个宿主自己的档位候选表。
+func (s *Server) integrationTiers(w http.ResponseWriter, r *http.Request) (any, error) {
+	id := r.PathValue("id")
+	if !s.knownHost(id) {
+		return nil, &httpError{404, "没有这个宿主"}
+	}
+	return s.tierTables(s.d.Router.Config().Get(), id), nil
+}
+
+// integrationSetTiers 保存宿主自己的档位候选表；某档给空表示跟全局。
+func (s *Server) integrationSetTiers(w http.ResponseWriter, r *http.Request) (any, error) {
+	id := r.PathValue("id")
+	if !s.knownHost(id) {
+		return nil, &httpError{404, "没有这个宿主"}
+	}
+	var in map[string][]string
+	if err := decode(r, &in); err != nil {
+		return nil, err
+	}
+	picks, err := s.parseTierPicks(id, in)
+	if err != nil {
+		return nil, err
+	}
+	err = s.d.Router.Config().Update(func(c *config.Config) error {
+		if c.Integrations == nil {
+			c.Integrations = map[string]config.Integration{}
+		}
+		it := c.Integrations[id]
+		for tier, list := range picks {
+			if len(list) == 0 {
+				delete(it.Tiers, tier)
+				continue
+			}
+			if it.Tiers == nil {
+				it.Tiers = map[string][]config.TierPick{}
+			}
+			it.Tiers[tier] = list
+		}
+		if len(it.Tiers) == 0 {
+			it.Tiers = nil
+		}
+		c.Integrations[id] = it
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.tierTables(s.d.Router.Config().Get(), id), nil
+}
+
+// knownHost 判断是不是接入页列出的宿主。
+func (s *Server) knownHost(id string) bool { return slices.Contains(config.HostIDs, id) }
+
+// subGroup 是候选表里订阅条目的来源名，和「模型与账号」里的叫法一致。
+var subGroup = map[core.LaneID]string{core.LaneClaudeSub: "Claude 订阅", core.LaneCodexSub: "ChatGPT 订阅", core.LaneAgySub: "Google AI 订阅"}
+
+func pickOf(tg core.Target) config.TierPick {
+	if tg.Lane == core.LaneAPI {
+		return config.TierPick{Lane: "api", Account: tg.AccountID, Model: tg.Model}
+	}
+	return config.TierPick{Lane: string(tg.Lane)}
 }
 
 func (s *Server) rules(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -690,14 +825,30 @@ func keywordsFromHow(how string) []string {
 
 func (s *Server) putRules(w http.ResponseWriter, r *http.Request) (any, error) {
 	var in struct {
-		TaskTable    []uiTaskRow  `json:"task_table"`
-		Explicit     []uiExplicit `json:"explicit"`
-		ContextRules []uiContext  `json:"context_rules"`
+		TaskTable    []uiTaskRow         `json:"task_table"`
+		Explicit     []uiExplicit        `json:"explicit"`
+		ContextRules []uiContext         `json:"context_rules"`
+		TierPicks    map[string][]string `json:"tier_picks"` // 档位 → 候选标识，按顺序；空表示回到内置排法
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
-	err := s.d.Router.Config().Update(func(c *config.Config) error {
+	// 候选表只能挑这一档现有的条目：乱填的丢掉
+	tierPicks, err := s.parseTierPicks("", in.TierPicks)
+	if err != nil {
+		return nil, err
+	}
+	err = s.d.Router.Config().Update(func(c *config.Config) error {
+		for tier, list := range tierPicks {
+			if c.Routing.Tiers == nil {
+				c.Routing.Tiers = map[string][]config.TierPick{}
+			}
+			if len(list) == 0 {
+				delete(c.Routing.Tiers, tier)
+			} else {
+				c.Routing.Tiers[tier] = list
+			}
+		}
 		if in.TaskTable != nil {
 			byType := map[string]config.TaskType{}
 			for _, t := range c.Routing.TaskTable {
@@ -1538,6 +1689,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) (any, error
 		}
 		if !themes.Valid(st.Theme) {
 			return errors.New("主题不存在")
+		}
+		if st.TrayIcon != "" && !slices.Contains(config.TrayIcons, st.TrayIcon) {
+			return errors.New("没有这个菜单栏图标样式")
 		}
 		c.Settings = st
 		return nil

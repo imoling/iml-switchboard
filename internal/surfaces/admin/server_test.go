@@ -241,6 +241,13 @@ func TestAccountsAndSettings(t *testing.T) {
 	if code != 400 {
 		t.Fatal("非法主题应报错")
 	}
+	code, m, _ = do(t, ts, "PUT", "/api/settings", map[string]any{"tray_icon": "patchbay"})
+	if code != 200 || m["tray_icon"] != "patchbay" {
+		t.Fatalf("菜单栏图标样式应能保存：%d %v", code, m)
+	}
+	if code, _, _ := do(t, ts, "PUT", "/api/settings", map[string]any{"tray_icon": "nope"}); code != 400 {
+		t.Fatal("不认识的图标样式应报错")
+	}
 	_, m, _ = do(t, ts, "GET", "/api/rules", nil)
 	rows := m["task_table"].([]any)
 	if len(rows) < 10 {
@@ -376,5 +383,111 @@ func TestDoubaoWorkConnectedByActivity(t *testing.T) {
 	}
 	if got["doubao_work"] != "connected" || got["claude_code"] != "disconnected" {
 		t.Fatalf("派过活的豆包工作应算接入：%v", got)
+	}
+}
+
+// 档位候选表：读出来是生效顺序加其余可选；手排后照表，乱填的丢掉，清空回到内置排法
+func TestTierPicks(t *testing.T) {
+	ts, r := newServer(t)
+	_ = r.Config().Update(func(c *config.Config) error {
+		c.API = []config.APIAccount{{ID: "zhipu-1", Provider: "zhipu", Enabled: true, Currency: "CNY",
+			Models: map[string][]string{"low": {"glm-5.3-flash"}, "mid": {"glm-5.3"}, "high": {}}}}
+		return nil
+	})
+	ids := func(m map[string]any, tier string, onOnly bool) []string {
+		var out []string
+		for _, p := range m["tiers"].(map[string]any)[tier].(map[string]any)["picks"].([]any) {
+			row := p.(map[string]any)
+			if !onOnly || row["on"] == true {
+				out = append(out, row["id"].(string))
+			}
+		}
+		return out
+	}
+	_, m, _ := do(t, ts, "GET", "/api/rules", nil)
+	if low := ids(m, "low", true); len(low) < 2 || low[0] != "api:zhipu-1:glm-5.3-flash" {
+		t.Fatalf("低档内置排法先按量付费：%v", low)
+	}
+	if m["tiers"].(map[string]any)["low"].(map[string]any)["custom"] != false {
+		t.Fatal("没手排时 custom 应为假")
+	}
+	code, m, _ := do(t, ts, "PUT", "/api/rules", map[string]any{"tier_picks": map[string][]string{"low": {"claude_sub", "bogus", "api:zhipu-1:nope", "api:zhipu-1:glm-5.3-flash"}}})
+	if code != 200 {
+		t.Fatalf("%d %v", code, m)
+	}
+	if low := ids(m, "low", true); len(low) != 2 || low[0] != "claude_sub" || low[1] != "api:zhipu-1:glm-5.3-flash" {
+		t.Fatalf("应照表并丢掉乱填的：%v", low)
+	}
+	if m["tiers"].(map[string]any)["low"].(map[string]any)["custom"] != true {
+		t.Fatal("手排后 custom 应为真")
+	}
+	if got := r.Config().Get().Routing.Tiers["low"]; len(got) != 2 || got[0].Lane != "claude_sub" || got[1].Model != "glm-5.3-flash" {
+		t.Fatalf("配置里应存成结构化条目：%+v", got)
+	}
+	// 其余可选的跟在后面，不重复
+	if all := ids(m, "low", false); len(all) != len(ids(m, "low", true))+countOff(m, "low") {
+		t.Fatalf("候选列表不该重复：%v", all)
+	}
+	code, _, _ = do(t, ts, "PUT", "/api/rules", map[string]any{"tier_picks": map[string][]string{"top": {"claude_sub"}}})
+	if code != 400 {
+		t.Fatal("顶配没有候选表")
+	}
+	_, m, _ = do(t, ts, "PUT", "/api/rules", map[string]any{"tier_picks": map[string][]string{"low": {}}})
+	if m["tiers"].(map[string]any)["low"].(map[string]any)["custom"] != false || len(r.Config().Get().Routing.Tiers) != 0 {
+		t.Fatalf("清空应回到内置排法：%v", r.Config().Get().Routing.Tiers)
+	}
+}
+
+func countOff(m map[string]any, tier string) int {
+	n := 0
+	for _, p := range m["tiers"].(map[string]any)[tier].(map[string]any)["picks"].([]any) {
+		if p.(map[string]any)["on"] == false {
+			n++
+		}
+	}
+	return n
+}
+
+// 宿主自己的档位表：没排时显示全局顺序，排了照自己的，清空回到跟全局；不认识的宿主 404
+func TestHostTierPicks(t *testing.T) {
+	ts, r := newServer(t)
+	_ = r.Config().Update(func(c *config.Config) error {
+		c.API = []config.APIAccount{{ID: "zhipu-1", Provider: "zhipu", Enabled: true, Currency: "CNY",
+			Models: map[string][]string{"low": {"glm-5.3-flash"}, "mid": {"glm-5.3"}, "high": {}}}}
+		return nil
+	})
+	on := func(m map[string]any, tier string) []string {
+		var out []string
+		for _, p := range m[tier].(map[string]any)["picks"].([]any) {
+			if row := p.(map[string]any); row["on"] == true {
+				out = append(out, row["id"].(string))
+			}
+		}
+		return out
+	}
+	// 全局先排成 Claude 在前
+	if code, _, _ := do(t, ts, "PUT", "/api/rules", map[string]any{"tier_picks": map[string][]string{"low": {"claude_sub", "api:zhipu-1:glm-5.3-flash"}}}); code != 200 {
+		t.Fatal(code)
+	}
+	code, m, _ := do(t, ts, "GET", "/api/integrations/workbuddy/tiers", nil)
+	if code != 200 || m["low"].(map[string]any)["custom"] != false || on(m, "low")[0] != "claude_sub" {
+		t.Fatalf("没排的宿主应显示全局顺序：%d %v", code, m)
+	}
+	code, m, _ = do(t, ts, "PUT", "/api/integrations/workbuddy/tiers", map[string][]string{"low": {"api:zhipu-1:glm-5.3-flash"}})
+	if code != 200 || m["low"].(map[string]any)["custom"] != true || len(on(m, "low")) != 1 || on(m, "low")[0] != "api:zhipu-1:glm-5.3-flash" {
+		t.Fatalf("宿主自己的表：%d %v", code, m)
+	}
+	inh := m["low"].(map[string]any)["inherited"].([]any)
+	if len(inh) != 2 || inh[0] != "claude_sub" {
+		t.Fatalf("继承的应是全局顺序：%v", inh)
+	}
+	_, lm, _ := do(t, ts, "GET", "/api/integrations", nil)
+	_ = lm
+	_, m, _ = do(t, ts, "PUT", "/api/integrations/workbuddy/tiers", map[string][]string{"low": {}})
+	if m["low"].(map[string]any)["custom"] != false || r.Config().Get().Integrations["workbuddy"].Tiers != nil {
+		t.Fatalf("清空应跟全局：%v", r.Config().Get().Integrations["workbuddy"])
+	}
+	if code, _, _ := do(t, ts, "GET", "/api/integrations/nope/tiers", nil); code != 404 {
+		t.Fatalf("不认识的宿主应 404：%d", code)
 	}
 }

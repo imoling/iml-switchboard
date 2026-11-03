@@ -72,8 +72,8 @@ export function Accounts() {
 
   return (
     <>
-      <div className="ct">
-        <h4>{t('nav.accounts')}</h4>
+      <div className="ct" data-tauri-drag-region>
+        <h4 data-tauri-drag-region>{t('nav.accounts')}</h4>
         <div className="tools">
           <button className="btn" disabled={busy === 'detect'} onClick={() => act('detect', () => api.detectAccounts())}>{busy === 'detect' ? '正在检测…' : '重新检测本机命令'}</button>
           <button className="btn" onClick={() => setAdding(true)}>＋ 添加按量付费账号</button>
@@ -97,6 +97,7 @@ export function Accounts() {
               {a.status === 'cooldown' && <span className="hint">{a.detail}</span>}
             </div>
           ))}
+          <div className="hint">订阅只接不带工具的请求；带工具的智能体回合走按量付费</div>
           <div className="hint" style={{ margin: '14px 0 6px' }}>按量付费</div>
           {apis.length === 0 && <div className="hint mb12">还没有按量付费账号；杂活会先用订阅额度</div>}
           {apis.map((a) => (

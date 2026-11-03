@@ -73,8 +73,8 @@ interface Account { id: string; kind: 'subscription' | 'api'; provider: string; 
 | GET /api/calls/{id} | 详情 | | `Call` |
 | POST /api/calls/{id}/escalate | 标记「判低了」 | | `{ok, escalations_for_task}` |
 | POST /api/calls/{id}/redo | 重做 | `{tier?: Tier, model?: string}` | `Call`（文本同步返回；媒体返回带 job_id） |
-| GET /api/rules | 规则 | | `{task_table[], explicit[], context_rules[], classifier}` |
-| PUT /api/rules | 保存规则 | 同上 | 同上 |
+| GET /api/rules | 规则；`tiers` 是全局的档位候选表，低中高各一张：`picks` 里 `on` 为真的按顺序是现在生效的，其余是这一档可选的，`inherited` 是不手排时的顺序 | | `{task_table[], explicit[], context_rules[], classifier, tiers:{low|mid|high:{custom, picks:[{id,lane,account_id,model,name,group,icon,on,note}], inherited:[id]}}}` |
+| PUT /api/rules | 保存规则；`tier_picks` 按档给候选标识表（订阅是渠道名，按量付费是 `api:账号:型号`），只认这一档现有的条目，空数组回到内置排法 | 同上 + `tier_picks?:{low|mid|high:[id]}` | 同上 |
 | POST /api/rules/try | 试一句 | `{prompt, has_tools?, est_tokens?, session_id?}` | `Decision` |
 | GET /api/rules/suggestions | 调整建议 | | `[{task_type, escalations, from_tier, to_tier, weekly_delta_usd}]` |
 | POST /api/rules/suggestions/{task_type} | 采纳 / 忽略 | `{action:'accept'\|'ignore'}` | rules |
@@ -97,6 +97,8 @@ interface Account { id: string; kind: 'subscription' | 'api'; provider: string; 
 | PUT /api/integrations/{id} | 改选项 | `{options}` | integration |
 | GET /api/integrations/{id}/models | 宿主菜单里的型号表（Codex、WorkBuddy、pi、DeepSeek Harness、OpenClaw）：选中的按顺序排前面，第一个是宿主的默认 | | `{models:[{id,name,group,on,default?}], custom}` |
 | PUT /api/integrations/{id}/models | 保存型号表并立刻写进宿主；空数组回到默认（路由型号加各账号分进档位的型号，新账号自动进表） | `{models:[id]}` | 同上 |
+| GET /api/integrations/{id}/tiers | 这个宿主自己的档位候选表，形状同 `/api/rules` 的 `tiers`；没自己排的档显示继承的顺序（全局表或内置排法），`custom` 为假 | | `{low|mid|high:{custom, picks, inherited}}` |
+| PUT /api/integrations/{id}/tiers | 保存宿主自己的档位候选表；某档给空数组表示跟全局 | `{low?:[id], mid?:[id], high?:[id]}` | 同上 |
 | GET /api/settings | 设置 | | `Settings` |
 | PUT /api/settings | 保存 | `Partial<Settings>` | `Settings` |
 | GET /api/themes | 主题词表 | | `[{id, name, words: Record<string,string>}]` |

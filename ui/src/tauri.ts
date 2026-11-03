@@ -21,6 +21,8 @@ export const desktop = {
   hide: (label: string) => call('hide_window', { label }),
   setHotkey: (hotkey: string) => call('set_hotkey', { hotkey: toAccelerator(hotkey) }),
   setTrayStatus: (status: 'ok' | 'warn' | 'error' | 'off', tooltip?: string) => call('set_tray_status', { status, tooltip }),
+  /** 菜单栏图标样式（实验功能）；状态照旧 */
+  setTrayStyle: (style: string) => call('set_tray_style', { style }),
   startBackend: () => call('start_backend'),
   /** 刘海动画（实验功能）的开关；非 macOS 上什么也不做 */
   setNotch: (on: boolean) => call('set_notch', { on }),

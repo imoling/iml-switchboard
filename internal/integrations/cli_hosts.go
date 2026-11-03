@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/imoling/iml-switchboard/internal/lanes/sub"
 )
 
 // Codex CLI 和 Gemini CLI：用各自官方的 `mcp add` 注册，用户级；调用约定写进它们的全局说明文件。
@@ -63,11 +65,12 @@ func runHostCmd(what string, name string, args ...string) error {
 }
 
 func (m *Manager) connectCodex() error {
-	if _, err := exec.LookPath("codex"); err != nil {
-		return errors.New("本机没有找到 codex 命令")
+	bin := sub.CodexBin()
+	if bin == "" {
+		return errors.New(sub.CodexMissing)
 	}
 	if !m.codexRegistered() {
-		if err := runHostCmd("注册到 Codex ", "codex", "mcp", "add", mcpName, "--env", "IMLS_HOST=codex", "--", m.exe, "mcp"); err != nil {
+		if err := runHostCmd("注册到 Codex ", bin, "mcp", "add", mcpName, "--env", "IMLS_HOST=codex", "--", m.exe, "mcp"); err != nil {
 			return err
 		}
 	}
@@ -76,7 +79,7 @@ func (m *Manager) connectCodex() error {
 
 func (m *Manager) disconnectCodex() error {
 	if m.codexRegistered() {
-		if err := runHostCmd("从 Codex 移除", "codex", "mcp", "remove", mcpName); err != nil {
+		if err := runHostCmd("从 Codex 移除", codexCmdName(), "mcp", "remove", mcpName); err != nil {
 			return err
 		}
 	}

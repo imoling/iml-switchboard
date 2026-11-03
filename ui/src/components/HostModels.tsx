@@ -15,6 +15,9 @@ const TAKES_EFFECT: Partial<Record<IntegrationId, string>> = {
   openclaw: '保存后重启 OpenClaw 网关生效',
 };
 
+/** 「订阅优先」这一行要让人知道它接不了带工具的回合 */
+const SUB_ONLY_NOTE = '只接不带工具的对话';
+
 /** 宿主菜单里列哪些型号：勾选、排序，第一个是默认；保存后立刻写进宿主 */
 export function HostModelDialog({ host, hostName, onClose, onSaved }: { host: IntegrationId; hostName: string; onClose: () => void; onSaved?: (count: number) => void }) {
   const [models, setModels] = useState<HostModel[] | null>(null);
@@ -52,7 +55,7 @@ export function HostModelDialog({ host, hostName, onClose, onSaved }: { host: In
             <div key={m.id} className="hm-row">
               <input type="checkbox" checked disabled={chosen.length === 1} onChange={() => setSel(toggleId(sel, m.id))} />
               <Vendor provider={m.icon} model={m.id} />
-              <span className="grow">{m.name}</span>
+              <span className="grow">{m.name}{m.id === 'router-sub' && <span className="hint">　{SUB_ONLY_NOTE}</span>}</span>
               {i === 0 && <span className="chip hm-def">默认</span>}
               <button className="hm-mv" disabled={i === 0} aria-label="上移" onClick={() => setSel(moveItem(sel, i, i - 1))}>↑</button>
               <button className="hm-mv" disabled={i === chosen.length - 1} aria-label="下移" onClick={() => setSel(moveItem(sel, i, i + 1))}>↓</button>
@@ -65,7 +68,7 @@ export function HostModelDialog({ host, hostName, onClose, onSaved }: { host: In
                 <div key={m.id} className="hm-row">
                   <input type="checkbox" checked={false} onChange={() => setSel(toggleId(sel, m.id))} />
                   <Vendor provider={m.icon} model={m.id} />
-                  <span className="grow">{m.name}</span>
+                  <span className="grow">{m.name}{m.id === 'router-sub' && <span className="hint">　{SUB_ONLY_NOTE}</span>}</span>
                 </div>
               ))}
             </div>

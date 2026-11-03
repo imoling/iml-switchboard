@@ -6,8 +6,6 @@ import { setMoney } from '../format';
 import appMark from '../assets/app-mark.svg';
 import { Mascot } from '../components/Pixel';
 import { Accounts } from '../pages/Accounts';
-import { Calls } from '../pages/Calls';
-import { Evaluation } from '../pages/Evaluation';
 import { Integrations } from '../pages/Integrations';
 import { Media } from '../pages/Media';
 import { Onboarding } from '../pages/Onboarding';
@@ -19,16 +17,19 @@ import { desktop, inTauri } from '../tauri';
 import { About } from './About';
 import { Offline } from './Offline';
 
-type Page = 'overview' | 'calls' | 'rules' | 'eval' | 'accounts' | 'media' | 'integrations' | 'settings';
+type Page = 'overview' | 'rules' | 'accounts' | 'media' | 'integrations' | 'settings';
 const NAV: { id: Page; key: string }[] = [
-  { id: 'overview', key: 'nav.overview' }, { id: 'calls', key: 'records' }, { id: 'rules', key: 'nav.rules' }, { id: 'eval', key: 'nav.eval' },
+  { id: 'overview', key: 'nav.overview' }, { id: 'rules', key: 'nav.rules' },
   { id: 'accounts', key: 'nav.accounts' }, { id: 'media', key: 'nav.media' }, { id: 'integrations', key: 'nav.integrations' },
 ];
 
 export function Console() {
-  const { t, setThemeId, setProjection } = useTheme();
+  const { t, setThemeId, setProjection, reload: reloadThemes } = useTheme();
   const [page, setPage] = useState<Page>('overview');
   const [status, setStatus] = useState<Status | null | 'offline'>(null);
+  // 后台换了版本（重启成新构建）时词表可能变了，按构建号重新拉一次
+  const build = typeof status === 'object' && status ? status.build : '';
+  useEffect(() => { if (build) void reloadThemes(); }, [build, reloadThemes]);
   const [onboarding, setOnboarding] = useState<Ob | null>(null);
   const [liveCall, setLiveCall] = useState<Call | null>(null);
   const [liveJob, setLiveJob] = useState<Job | null>(null);
@@ -68,13 +69,18 @@ export function Console() {
       if (e.type === 'job') { setLiveJob(e.data.job); void api.media('all').then((m) => setActiveJobs(m.jobs.filter((j) => j.status === 'running' || j.status === 'queued' || j.status === 'submitted').length)).catch(() => {}); }
       if (e.type === 'quota') tray(e.data.quotas);
       if (e.type === 'status') { setStatus(e.data); setMoney(e.data.currency, e.data.usd_per_cny); setThemeId(e.data.theme); setProjection(e.data.projection); }
-    }, (open) => { if (!open) void desktop.setTrayStatus('off', '后台未运行'); });
+    }, (open) => {
+      if (!open) { void desktop.setTrayStatus('off', '后台未运行'); return; }
+      // 断线重连（后台重启）后先恢复成正常，再按额度决定要不要变黄；不然图标会一直停在灰色
+      void desktop.setTrayStatus('ok', t('app.title'));
+      void api.overview('today').then((o) => tray(o.quotas)).catch(() => undefined);
+    });
     return off;
   }, [status === null || status === 'offline', setThemeId, setProjection, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { void desktop.setTitle(t('app.title')); }, [t]);
   const online = status !== null && status !== 'offline';
-  useEffect(() => { if (online) void api.settings().then((s) => { if (s.hotkey) void desktop.setHotkey(s.hotkey); void desktop.setNotch(!!s.lab_notch); }).catch(() => undefined); }, [online]);
+  useEffect(() => { if (online) void api.settings().then((s) => { if (s.hotkey) void desktop.setHotkey(s.hotkey); void desktop.setNotch(!!s.lab_notch); void desktop.setTrayStyle(s.tray_icon ?? 'tile'); }).catch(() => undefined); }, [online]);
 
   if (status === null) return <div className="offline"><span className="hint">正在连接后台…</span></div>;
   if (status === 'offline') return <Offline onStarted={boot} />;
@@ -89,7 +95,7 @@ export function Console() {
         {NAV.map((n) => (
           <button key={n.id} className={`nav ${page === n.id ? 'on' : ''}`} onClick={() => setPage(n.id)}>
             <span>{t(n.key)}</span>
-            {n.id === 'calls' && todayCalls !== null && <small>{todayCalls}</small>}
+            {n.id === 'overview' && todayCalls !== null && <small>{todayCalls}</small>}
             {n.id === 'media' && activeJobs > 0 && <small>{activeJobs}</small>}
           </button>
         ))}
@@ -101,10 +107,10 @@ export function Console() {
         <button className="nav" style={{ color: '#6F6A61' }} onClick={() => (inTauri ? desktop.showAbout() : setAbout(true))}><span>关于</span><small>{status.version}</small></button>
       </aside>
       <main className="content">
+        {/* 顶上的留白和各页的标题行都能拖窗口：标题栏隐藏了，右半边不留拖动区就只能从侧栏拖 */}
+        <div className="drag" data-tauri-drag-region style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 18 }} />
         {page === 'overview' && <Overview live={liveCall} onNavigate={setPage} />}
-        {page === 'calls' && <Calls live={liveCall} />}
         {page === 'rules' && <Rules />}
-        {page === 'eval' && <Evaluation />}
         {page === 'accounts' && <Accounts />}
         {page === 'media' && <Media liveJob={liveJob} />}
         {page === 'integrations' && <Integrations />}

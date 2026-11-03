@@ -6,7 +6,8 @@ import { usd } from '../format';
 import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
 
-export function Evaluation() {
+/** 回看：抽样评估分派对不对；embedded 时是分派页的一个页签 */
+export function Evaluation({ embedded }: { embedded?: boolean } = {}) {
   const { t } = useTheme();
   const evs = useLoad(() => api.evaluations());
   const settings = useLoad(() => api.settings());
@@ -37,11 +38,16 @@ export function Evaluation() {
 
   return (
     <>
-      <div className="ct">
-        <h4>{t('nav.eval')}</h4>
-        <button className="btn pri" disabled={busy || latest?.status === 'running'} onClick={start}>{latest?.status === 'running' ? '正在评估…' : '开始一轮评估'}</button>
-      </div>
-      <div className="hint" style={{ margin: '-8px 0 12px' }}>每条样本调两次{t('tier.high')}，先用订阅额度；不够才按量付费，最多约 {usd(1.5)}</div>
+      {embedded
+        ? <div className="sect" style={{ marginTop: 0 }}><span className="hint">抽一批记录用{t('tier.high')}重做一遍，看低档和中档的回答够不够好；先用订阅额度，按量最多约 {usd(1.5)}</span>
+            <button className="btn pri sm" disabled={busy || latest?.status === 'running'} onClick={start}>{latest?.status === 'running' ? '正在评估…' : '开始一轮评估'}</button></div>
+        : <>
+            <div className="ct" data-tauri-drag-region>
+              <h4 data-tauri-drag-region>{t('nav.eval')}</h4>
+              <button className="btn pri" disabled={busy || latest?.status === 'running'} onClick={start}>{latest?.status === 'running' ? '正在评估…' : '开始一轮评估'}</button>
+            </div>
+            <div className="hint" style={{ margin: '-8px 0 12px' }}>每条样本调两次{t('tier.high')}，先用订阅额度；不够才按量付费，最多约 {usd(1.5)}</div>
+          </>}
       {(evs.error || err) && <ErrorLine {...errText(evs.error ?? err)!} />}
       {evs.data && !latest && <Empty>还没有评估过；点右上角开始第一轮</Empty>}
       {latest && (

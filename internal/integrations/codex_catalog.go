@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/imoling/iml-switchboard/internal/config"
+	"github.com/imoling/iml-switchboard/internal/lanes/sub"
 )
 
 const codexCatalogKey = "model_catalog_json"
@@ -33,8 +34,8 @@ func codexCatalogPath() string {
 
 // codexVersionStamp 标识本机装的是哪个 Codex：升级后可执行文件就变了，比起子进程问版本号省事。找不到时返回空串。
 func codexVersionStamp() string {
-	p, err := exec.LookPath("codex")
-	if err != nil {
+	p := sub.CodexBin()
+	if p == "" {
 		return ""
 	}
 	if r, err := filepath.EvalSymlinks(p); err == nil {
@@ -50,14 +51,22 @@ func codexVersionStamp() string {
 func codexBundledCatalog() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return exec.CommandContext(ctx, "codex", "debug", "models", "--bundled").Output()
+	return exec.CommandContext(ctx, codexCmdName(), "debug", "models", "--bundled").Output()
 }
 
 // codexCheckCatalog 让本机 Codex 试读目录。目录有一个字段不合它的格式，它就启动不了，所以试读过了才能写进配置。
 func codexCheckCatalog(path string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return exec.CommandContext(ctx, "codex", "debug", "models", "-c", codexCatalogKey+"="+strconv.Quote(path)).Run()
+	return exec.CommandContext(ctx, codexCmdName(), "debug", "models", "-c", codexCatalogKey+"="+strconv.Quote(path)).Run()
+}
+
+// codexCmdName 是启动 codex 时用的名字：PATH 上有就用名字，没有就用应用包里的全路径。
+func codexCmdName() string {
+	if p := sub.CodexBin(); p != "" {
+		return p
+	}
+	return "codex"
 }
 
 // codexModels 是目录里要列出来的型号，按接入页定的型号表；第一个是 /model 里的默认。

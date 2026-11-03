@@ -1,9 +1,17 @@
 import { hotkeyCaps, isMac, normalizeHotkey } from '../hotkey';
 import { STALE_BACKEND, TRAY_NAME } from '../copy';
 import { restartBackend, useStaleBackend } from '../backend';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
-import type { Mode, Settings as S, ThemeId, UpdateInfo } from '../api/types';
+import type { Mode, Settings as S, ThemeId, TrayIcon, UpdateInfo } from '../api/types';
+import trayTile from '../assets/tray/tile.png';
+import trayFrame from '../assets/tray/frame.png';
+import trayFork from '../assets/tray/fork.png';
+import trayPatchbay from '../assets/tray/patchbay.png';
+import trayLever from '../assets/tray/lever.png';
+import trayBreakout from '../assets/tray/breakout.png';
+import trayPixel from '../assets/tray/pixel.png';
+import trayLadder from '../assets/tray/ladder.png';
 import { ErrorLine, RevealButton, Seg, SetRow, Toggle, toast } from '../components/ui';
 import { fromDisplay, moneySymbol, setMoney, toDisplay, uptime } from '../format';
 import { errText, useLoad } from '../hooks';
@@ -12,6 +20,23 @@ import { desktop, inTauri } from '../tauri';
 
 /** 词表还没从后台拿到时的选项，id 与 internal/themes/*.json 一致 */
 const FALLBACK_THEMES: { id: ThemeId; name: string }[] = [{ id: 'standard', name: '标准' }, { id: 'dianjiang', name: '点将台' }, { id: 'harem', name: '后宫' }, { id: 'seaking', name: '海王' }];
+
+/** 菜单栏图标的八种样式；图是 2x 正常态，和菜单栏里一样按 18 pt 显示 */
+const TRAY_ICONS: { id: TrayIcon; label: string; src: string }[] = [
+  { id: 'tile', label: '底板', src: trayTile }, { id: 'frame', label: '线框', src: trayFrame }, { id: 'fork', label: '无框', src: trayFork },
+  { id: 'patchbay', label: '插线板', src: trayPatchbay }, { id: 'lever', label: '拨杆', src: trayLever }, { id: 'breakout', label: '破框', src: trayBreakout },
+  { id: 'pixel', label: '像素主帅', src: trayPixel }, { id: 'ladder', label: '三档', src: trayLadder },
+];
+
+function TrayIconPicker({ value, onChange }: { value: TrayIcon; onChange: (v: TrayIcon) => void }) {
+  return (
+    <div className="ipick">
+      {TRAY_ICONS.map((o) => (
+        <button key={o.id} className={value === o.id ? 'on' : ''} title={o.label} onClick={() => onChange(o.id)}><img src={o.src} alt={o.label} /></button>
+      ))}
+    </div>
+  );
+}
 
 export const MODE_OPTIONS: { id: Mode; label: string }[] = [{ id: 'save', label: '省钱' }, { id: 'balanced', label: '均衡' }, { id: 'quality', label: '质量' }];
 
@@ -22,7 +47,6 @@ export function Settings() {
   const [recording, setRecording] = useState(false);
   // 月上限输入框里正在改的字，按显示币种；失焦时换回美元再存
   const [limitDraft, setLimitDraft] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const save = async (patch: Partial<S>) => {
     if (!data) return;
@@ -48,24 +72,12 @@ export function Settings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording, data]);
 
-  const exportRules = async () => {
-    try {
-      const yaml = await api.exportRules();
-      const path = await desktop.saveDialog('switchboard-rules.yaml');
-      if (path === null && !('__TAURI_INTERNALS__' in window)) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([yaml], { type: 'text/yaml' })); a.download = 'switchboard-rules.yaml'; a.click(); return; }
-      if (path) { await desktop.copyText(yaml); toast('规则已复制到剪贴板，粘贴到文件里保存'); }
-    } catch (e) { setErr(e as ApiError); }
-  };
-  const importRules = async (file: File) => {
-    try { await api.importRules(await file.text()); toast('规则已导入'); } catch (e) { setErr(e as ApiError); }
-  };
-
   const themeOptions = (themes.length ? themes : FALLBACK_THEMES).map((x) => ({ id: x.id, label: x.name }));
   const hotkeyParts = hotkeyCaps(data?.hotkey ?? 'Alt+Space');
 
   return (
     <>
-      <div className="ct"><h4>{t('nav.settings')}</h4></div>
+      <div className="ct" data-tauri-drag-region><h4 data-tauri-drag-region>{t('nav.settings')}</h4></div>
       {(error || err) && <ErrorLine {...errText(error ?? err)!} />}
       {data && (
         <>
@@ -110,19 +122,19 @@ export function Settings() {
           <SetRow title="数据位置" desc={<><span className="path">{(data.data_dir ?? '').replace(/^\/Users\/[^/]+/, '~')}</span>记录、规则、账号都在这里，换电脑时带走它；图片视频存在各自项目里</>}>
             <RevealButton path={data.data_dir} />
           </SetRow>
-          <SetRow title="规则">
-            <button className="btn sm" onClick={exportRules}>导出</button>
-            <button className="btn sm" onClick={() => fileRef.current?.click()}>导入</button>
-            <input ref={fileRef} type="file" accept=".yaml,.yml" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void importRules(f); e.target.value = ''; }} />
-          </SetRow>
           <BackendRow />
           <VersionRow />
-          {isMac() && (
+          {inTauri && (
             <>
               <div className="hint" style={{ marginTop: 14 }}>实验功能</div>
-              <SetRow title="刘海动画" desc="请求经过时刘海两侧亮起；只在带刘海的屏幕显示" last>
-                <Toggle on={!!data.lab_notch} onChange={(v) => { void save({ lab_notch: v }); void desktop.setNotch(v); }} />
+              <SetRow title="状态栏图标" desc="菜单栏里用哪一个；告警、出错两张带色点，深色菜单栏下不反白" last={!isMac()}>
+                <TrayIconPicker value={data.tray_icon ?? 'tile'} onChange={(v) => { void save({ tray_icon: v }); void desktop.setTrayStyle(v); }} />
               </SetRow>
+              {isMac() && (
+                <SetRow title="刘海动画" desc="请求经过时刘海两侧亮起；只在带刘海的屏幕显示" last>
+                  <Toggle on={!!data.lab_notch} onChange={(v) => { void save({ lab_notch: v }); void desktop.setNotch(v); }} />
+                </SetRow>
+              )}
             </>
           )}
         </>

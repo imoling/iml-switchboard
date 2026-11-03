@@ -1,6 +1,4 @@
-import type { Quota,
-  Account, Call, Decision, Evaluation, HostModelList, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview,
-  QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier, UpdateInfo } from './types';
+import type { Quota, Account, Call, Decision, Evaluation, HostModelList, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview, QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier, UpdateInfo, HostTiers, PickTier } from './types';
 
 export const BASE = 'http://127.0.0.1:18081';
 const HEADERS = { 'X-IMLS-Client': 'ui' };
@@ -86,6 +84,9 @@ export const api = {
   hostModels: (id: IntegrationId) => get<HostModelList>(`/api/integrations/${id}/models`),
   /** 空数组表示回到默认 */
   setHostModels: (id: IntegrationId, models: string[]) => put<HostModelList>(`/api/integrations/${id}/models`, { models }),
+  hostTiers: (id: IntegrationId) => get<HostTiers>(`/api/integrations/${id}/tiers`),
+  /** 某档给空数组表示跟全局 */
+  setHostTiers: (id: IntegrationId, picks: Partial<Record<PickTier, string[]>>) => put<HostTiers>(`/api/integrations/${id}/tiers`, picks),
   settings: () => get<Settings>('/api/settings'),
   saveSettings: (s: Partial<Settings>) => put<Settings>('/api/settings', s),
   themes: () => get<Theme[]>('/api/themes'),

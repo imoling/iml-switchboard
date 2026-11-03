@@ -37,6 +37,7 @@ type Settings struct {
 	USDPerCNY            float64       `yaml:"usd_per_cny" json:"usd_per_cny"`
 	RulesOnly            bool          `yaml:"rules_only,omitempty" json:"rules_only"` // 只按规则判档，拿不准时也不问低档模型
 	LabNotch             bool          `yaml:"lab_notch,omitempty" json:"lab_notch"`   // 实验功能：请求经过时刘海两侧亮起，默认关
+	TrayIcon             string        `yaml:"tray_icon,omitempty" json:"tray_icon"`   // 实验功能：菜单栏图标样式，见 TrayIcons；空是默认的底板
 	Currency             string        `yaml:"currency,omitempty" json:"currency"`     // 费用显示用的币种：CNY 或 USD；账本始终按美元记
 }
 
@@ -196,7 +197,47 @@ type Routing struct {
 	TaskTable    []TaskType    `yaml:"task_table" json:"task_table"`
 	RulesVersion int           `yaml:"rules_version,omitempty" json:"rules_version,omitempty"` // 内置任务表的版本，升级时据此合并新规则
 	Ignored      []string      `yaml:"ignored_suggestions,omitempty" json:"ignored_suggestions,omitempty"`
+	// Tiers 是每档手排的候选表：按顺序试，前一个出错才换下一个；没有这一档的表就按内置规则排。只认低中高三档
+	Tiers map[string][]TierPick `yaml:"tiers,omitempty" json:"tiers,omitempty"`
 }
+
+// TierPick 是档位候选表里的一条：订阅渠道只写 lane（型号跟着「模型与账号」里这一档的选择走），按量付费写 api、账号和型号。
+// 只能挑渠道现在在这一档提供的型号，表只管谁先谁后、谁不用。
+type TierPick struct {
+	Lane    string `yaml:"lane" json:"lane"`
+	Account string `yaml:"account,omitempty" json:"account,omitempty"`
+	Model   string `yaml:"model,omitempty" json:"model,omitempty"`
+}
+
+// ID 是候选表条目在界面里的标识：订阅就是渠道名，按量付费是 api:账号:型号。
+func (p TierPick) ID() string {
+	if p.Lane == "api" {
+		return "api:" + p.Account + ":" + p.Model
+	}
+	return p.Lane
+}
+
+// ParseTierPick 把界面标识还原成条目；格式不对返回 false。
+func ParseTierPick(id string) (TierPick, bool) {
+	if strings.HasPrefix(id, "api:") {
+		rest := strings.TrimPrefix(id, "api:")
+		i := strings.LastIndex(rest, ":")
+		if i <= 0 || i == len(rest)-1 {
+			return TierPick{}, false
+		}
+		return TierPick{Lane: "api", Account: rest[:i], Model: rest[i+1:]}, true
+	}
+	if strings.HasSuffix(id, "_sub") {
+		return TierPick{Lane: id}, true
+	}
+	return TierPick{}, false
+}
+
+// TrayIcons 是菜单栏图标的可选样式，和 ui/src-tauri/icons/tray/ 下的目录名一致；第一个是默认。
+var TrayIcons = []string{"tile", "frame", "fork", "patchbay", "lever", "breakout", "pixel", "ladder"}
+
+// HostIDs 是接入页列出的宿主，顺序就是页面顺序。
+var HostIDs = []string{"claude_code", "claude_desktop", "codex", "gemini_cli", "workbuddy", "winwork", "doubao_work", "deepseek_harness", "pi", "openclaw", "hermes"}
 
 // Integration 是一个宿主的接入状态。
 type Integration struct {
@@ -204,6 +245,8 @@ type Integration struct {
 	Options   map[string]bool `yaml:"options,omitempty" json:"options,omitempty"`
 	// Models 是用户给这个宿主排好的型号表，第一个是默认；空表示跟着默认走（路由型号加各账号分进档位的型号）
 	Models []string `yaml:"models,omitempty" json:"models,omitempty"`
+	// Tiers 是这个宿主自己的档位候选表，档位 → 按顺序的条目；没有这一档的表就用全局的（Routing.Tiers），再没有按内置规则
+	Tiers map[string][]TierPick `yaml:"tiers,omitempty" json:"tiers,omitempty"`
 }
 
 // Config 是整份配置。

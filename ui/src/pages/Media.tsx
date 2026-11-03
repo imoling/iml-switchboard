@@ -42,8 +42,8 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
 
   return (
     <>
-      <div className="ct">
-        <h4>{t('nav.media')}</h4>
+      <div className="ct" data-tauri-drag-region>
+        <h4 data-tauri-drag-region>{t('nav.media')}</h4>
         <Seg value={kind} onChange={setKind} options={[{ id: 'all', label: '全部' }, { id: 'image', label: '图片' }, { id: 'video', label: '视频' }, { id: 'animation', label: '动画' }]} />
       </div>
       {(error || err) && <ErrorLine {...errText(error ?? err)!} />}
