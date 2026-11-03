@@ -48,10 +48,10 @@ for tag in "${tags[@]}"; do
   fi
   [ -n "$body" ] || body=$name   # Gitee 要求说明非空
 
-  existing=$(curl -sS "$API/releases/tags/$tag?access_token=$GITEE_TOKEN")
+  existing=$(curl -sS --connect-timeout 30 --retry 4 --retry-delay 5 --retry-all-errors "$API/releases/tags/$tag?access_token=$GITEE_TOKEN")
   id=$(jq -r 'if type == "object" then .id // empty else empty end' <<<"$existing")
   if [ -z "$id" ]; then
-    resp=$(curl -sS -X POST "$API/releases" \
+    resp=$(curl -sS --connect-timeout 30 --retry 4 --retry-delay 5 --retry-all-errors -X POST "$API/releases" \
       --data-urlencode "access_token=$GITEE_TOKEN" \
       --data-urlencode "tag_name=$tag" \
       --data-urlencode "name=$name" \
@@ -62,7 +62,7 @@ for tag in "${tags[@]}"; do
     [ -n "$id" ] || { echo "创建发布失败：$resp"; failed=1; continue; }
     echo "已创建发布 $id"
   else
-    curl -sS -o /dev/null -X PATCH "$API/releases/$id" \
+    curl -sS --connect-timeout 30 --retry 4 --retry-delay 5 --retry-all-errors -o /dev/null -X PATCH "$API/releases/$id" \
       --data-urlencode "access_token=$GITEE_TOKEN" \
       --data-urlencode "tag_name=$tag" \
       --data-urlencode "name=$name" \
@@ -71,12 +71,12 @@ for tag in "${tags[@]}"; do
     echo "已更新发布 $id"
   fi
 
-  curl -sS "$API/releases/$id/attach_files?access_token=$GITEE_TOKEN&per_page=100" \
+  curl -sS --connect-timeout 30 --retry 4 --retry-delay 5 --retry-all-errors "$API/releases/$id/attach_files?access_token=$GITEE_TOKEN&per_page=100" \
     | jq -r 'if type == "array" then .[] | "\(.id)\t\(.name)" else empty end' > "$WORK/have.tsv"
 
   if [ "$upload" = false ]; then
     while IFS=$'\t' read -r aid aname; do
-      curl -sS -o /dev/null -X DELETE "$API/releases/$id/attach_files/$aid?access_token=$GITEE_TOKEN"
+      curl -sS --connect-timeout 30 --retry 4 --retry-delay 5 --retry-all-errors -o /dev/null -X DELETE "$API/releases/$id/attach_files/$aid?access_token=$GITEE_TOKEN"
       echo "  已删除旧安装包 $aname"
     done < "$WORK/have.tsv"
     continue
@@ -92,7 +92,7 @@ for tag in "${tags[@]}"; do
     elif [ "$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f")" -gt "$MAX_BYTES" ]; then
       echo "  跳过 ${base}（超过 ${GITEE_MAX_MB:-60} MB，附 GitHub 地址）"
     else
-      resp=$(curl -sS --max-time 900 --retry 2 -X POST "$API/releases/$id/attach_files" \
+      resp=$(curl -sS --connect-timeout 30 --retry 4 --retry-delay 5 --retry-all-errors --max-time 900 -X POST "$API/releases/$id/attach_files" \
         -F "access_token=$GITEE_TOKEN" -F "file=@$f")
       if jq -e '.id' <<<"$resp" >/dev/null 2>&1; then
         echo "  已上传 $base"
