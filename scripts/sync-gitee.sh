@@ -5,14 +5,14 @@
 # 不给标签：同步全部发布的说明，安装包只放最新一个发布（Gitee 附件容量有限），
 #           旧发布上之前传过的安装包会删掉，说明末尾附上 GitHub 下载地址。
 # 给了标签：只同步这些发布，安装包都传。
-# 单个文件超过 GITEE_MAX_MB（默认 100）的跳过，改附 GitHub 下载地址。
+# 单个文件超过 GITEE_MAX_MB（默认 60，AppImage 这种近 100 MB 的传 Gitee 会卡住）的跳过，改附 GitHub 下载地址；每个文件最多传 15 分钟。
 # 可重复跑：已有的发布只更新说明，已有的同名附件不再上传。标签要先推到 Gitee。
 set -euo pipefail
 
 : "${GITEE_TOKEN:?缺少 GITEE_TOKEN}"
 : "${GITHUB_REPO:?缺少 GITHUB_REPO}"
 : "${GITEE_REPO:?缺少 GITEE_REPO}"
-MAX_BYTES=$(( ${GITEE_MAX_MB:-100} * 1024 * 1024 ))
+MAX_BYTES=$(( ${GITEE_MAX_MB:-60} * 1024 * 1024 ))
 API="https://gitee.com/api/v5/repos/$GITEE_REPO"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -90,9 +90,9 @@ for tag in "${tags[@]}"; do
     if cut -f2 "$WORK/have.tsv" | grep -qxF "$base"; then
       echo "  跳过 ${base}（已有）"
     elif [ "$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f")" -gt "$MAX_BYTES" ]; then
-      echo "  跳过 ${base}（超过 ${GITEE_MAX_MB:-100} MB，附 GitHub 地址）"
+      echo "  跳过 ${base}（超过 ${GITEE_MAX_MB:-60} MB，附 GitHub 地址）"
     else
-      resp=$(curl -sS -X POST "$API/releases/$id/attach_files" \
+      resp=$(curl -sS --max-time 900 --retry 2 -X POST "$API/releases/$id/attach_files" \
         -F "access_token=$GITEE_TOKEN" -F "file=@$f")
       if jq -e '.id' <<<"$resp" >/dev/null 2>&1; then
         echo "  已上传 $base"

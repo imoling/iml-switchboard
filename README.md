@@ -107,7 +107,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 - 账本：每次调用的模型、花费、全用 Opus 的对照价，菜单栏显示近 7 天省了多少；费用可按人民币或美元显示。
 - 风格主题：标准、点将台、后宫、海王，只换界面说法；投屏时一键切回标准。菜单栏图标有八种样式可选（实验功能）。
 - 后台服务：设置里能看到运行多久、一键重启；连着的后台不是当前安装包里那份时会提示。
-- 检查更新：每天到 GitHub Releases 查一次，连不上就查 Gitee 镜像；有新版本通知一声，设置里一键下载本平台的安装包。
+- 检查更新：每天先查 Gitee 镜像，镜像没有再查 GitHub Releases；有新版本通知一声，设置里一键下载本平台的安装包。
 
 ## 安装
 
@@ -117,7 +117,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 curl -fsSL https://raw.githubusercontent.com/imoling/iml-switchboard/main/scripts/install-mac.sh | bash
 ```
 
-脚本下载本机芯片对应的最新 dmg（GitHub 连不上换 Gitee），装到「应用程序」，清掉下载来源标记；后台服务没在干活时顺手换成新版本。已经下载好的 dmg 可以传给它：`bash install-mac.sh ~/Downloads/Switchboard_0.4.3_aarch64.dmg`。
+脚本下载本机芯片对应的最新 dmg（先 Gitee 镜像，没有再去 GitHub），装到「应用程序」，清掉下载来源标记；后台服务没在干活时顺手换成新版本。已经下载好的 dmg 可以传给它：`bash install-mac.sh ~/Downloads/Switchboard_0.4.3_aarch64.dmg`。
 
 **用安装包**：在 [Releases](https://github.com/imoling/iml-switchboard/releases) 页下载对应系统的安装包（macOS 是 dmg，Windows 是 msi 或 exe）。安装包里已经带了后台程序 `imls`。
 

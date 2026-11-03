@@ -27,6 +27,8 @@ jobs:
   sync:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-latest
+    # 传安装包卡住过一次（v0.4.0 传到第 4 个文件后挂了三个多小时），同一个并发组里后面的同步全被它堵掉；给个上限
+    timeout-minutes: 45
     permissions:
       contents: read
     env:

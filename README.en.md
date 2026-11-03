@@ -109,7 +109,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 - A ledger of every call: model, cost, and what the same call would have cost on Opus. The menu bar shows the last 7 days of savings. Costs can be shown in CNY or USD.
 - Themes: Standard plus three playful ones that only change the interface wording; one click returns to Standard for screen sharing. Eight menu bar icon styles to choose from (Lab).
 - Backend service: Settings shows uptime with a one-click restart, and warns when the running backend isn't the one shipped with the installed app.
-- Update check: once a day Switchboard looks at GitHub Releases (falling back to the Gitee mirror), notifies you of a new version, and offers the installer for your platform from Settings.
+- Update check: once a day Switchboard checks the Gitee mirror first (falling back to GitHub Releases), notifies you of a new version, and offers the installer for your platform from Settings.
 
 ## Install
 
@@ -119,7 +119,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 curl -fsSL https://raw.githubusercontent.com/imoling/iml-switchboard/main/scripts/install-mac.sh | bash
 ```
 
-It downloads the latest dmg for your chip (GitHub first, then the Gitee mirror), installs it into Applications and clears the download quarantine flag; if the backend is idle it switches it to the new version. You can also pass a dmg you already have: `bash install-mac.sh ~/Downloads/Switchboard_0.4.3_aarch64.dmg`.
+It downloads the latest dmg for your chip (Gitee mirror first, then GitHub), installs it into Applications and clears the download quarantine flag; if the backend is idle it switches it to the new version. You can also pass a dmg you already have: `bash install-mac.sh ~/Downloads/Switchboard_0.4.3_aarch64.dmg`.
 
 **Installers**: download the installer for your system from the [Releases](https://github.com/imoling/iml-switchboard/releases) page (a dmg on macOS; an msi or exe on Windows). The installer already includes the `imls` backend.
 

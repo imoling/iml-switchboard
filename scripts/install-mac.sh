@@ -4,7 +4,7 @@
 # 装好后再把标记清一遍，所以双击就能打开。只在你信任这个安装包时用。
 #
 # 用法：
-#   bash scripts/install-mac.sh                      # 下载最新版：先 GitHub，连不上换 Gitee
+#   bash scripts/install-mac.sh                      # 下载最新版：先 Gitee 镜像，没有再去 GitHub
 #   bash scripts/install-mac.sh ~/Downloads/xxx.dmg  # 用手上的安装包
 set -euo pipefail
 
@@ -50,9 +50,9 @@ if [ $# -ge 1 ]; then
   DMG="$1"
   [ -f "$DMG" ] || die "找不到安装包：$DMG"
 else
-  URL="$(dmg_url "https://api.github.com/repos/$REPO/releases?per_page=10")"
-  [ -n "$URL" ] || URL="$(dmg_url "https://gitee.com/api/v5/repos/$REPO/releases?per_page=10")"
-  [ -n "$URL" ] || die "GitHub 和 Gitee 上都没找到 ${ARCH} 的安装包；也可以先手动下载，再把 dmg 路径传给这个脚本"
+  URL="$(dmg_url "https://gitee.com/api/v5/repos/$REPO/releases?per_page=10")"
+  [ -n "$URL" ] || URL="$(dmg_url "https://api.github.com/repos/$REPO/releases?per_page=10")"
+  [ -n "$URL" ] || die "Gitee 和 GitHub 上都没找到 ${ARCH} 的安装包；也可以先手动下载，再把 dmg 路径传给这个脚本"
   say "正在下载 $(basename "$URL")…"
   DMG="$WORK/Switchboard.dmg"
   curl -fL --progress-bar --max-time 600 -o "$DMG" "$URL" || die "下载没完成：$URL"

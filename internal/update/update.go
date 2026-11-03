@@ -41,8 +41,9 @@ type Source struct {
 // DefaultSources 先 GitHub，连不上再 Gitee 镜像（镜像只放最新一个发布的安装包）。
 func DefaultSources() []Source {
 	return []Source{
-		{Name: "github", API: "https://api.github.com/repos/" + Repo + "/releases?per_page=10", Page: func(tag string) string { return "https://github.com/" + Repo + "/releases/tag/" + tag }},
+		// 国内先查 Gitee 镜像，连不上或镜像还没同步到最新再查 GitHub
 		{Name: "gitee", API: "https://gitee.com/api/v5/repos/" + Repo + "/releases?per_page=10", Page: func(tag string) string { return "https://gitee.com/" + Repo + "/releases/tag/" + tag }},
+		{Name: "github", API: "https://api.github.com/repos/" + Repo + "/releases?per_page=10", Page: func(tag string) string { return "https://github.com/" + Repo + "/releases/tag/" + tag }},
 	}
 }
 
