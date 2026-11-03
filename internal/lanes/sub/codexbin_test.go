@@ -10,6 +10,7 @@ import (
 
 // PATH 上没有 codex 时，要认出 ChatGPT 桌面版应用包里自带的那份。
 func TestCodexBinFallsBackToAppBundle(t *testing.T) {
+	needShell(t) // 假 codex 是 sh 脚本，而且 Windows 没有可执行位；应用包里的 codex 本来也只有 macOS 有
 	t.Setenv("PATH", t.TempDir())
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "codex")
