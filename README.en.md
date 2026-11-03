@@ -27,7 +27,7 @@ It comes with a menu bar app (system tray on Windows) for quotas, spend, savings
 >
 > The app's interface is in Chinese for now.
 
-<p align="center"><img src="docs/images/overview.png" width="760" alt="Overview: calls, pay-as-you-go spend, savings versus Opus, subscription quota"></p>
+<p align="center"><img src="docs/images/overview.png" width="760" alt="Overview: pay-as-you-go spend, subscription quota, call count, and the records table"></p>
 
 <p align="center"><a href="docs/videos/switchboard-launch-en.mp4"><img src="docs/images/launch-poster.png" width="760" alt="46-second intro video"></a><br><sub>What it does, in 46 seconds · <a href="docs/videos/switchboard-launch-en.mp4">play the video</a></sub></p>
 
@@ -69,7 +69,8 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 **Routing**
 - Low, mid and high tiers, plus a top tier used only on explicit request; three modes: save, balanced and quality.
 - When the rules are unsure, a low-tier model judges the task first; if it can't answer within 10 seconds, the rules decide.
-- When a subscription runs out, hits a rate limit or errors, the next candidate takes over with the same conversation.
+- When a subscription runs out, hits a rate limit or errors, the next candidate takes over with the same conversation; a model pinned to a session falls back the same way.
+- Tier candidates: for each of the low, mid and high tiers, pick which channel models belong and which one is tried first, globally and optionally per host.
 - Each candidate is checked against its context window and larger windows are tried when a request doesn't fit. When nothing fits, Switchboard returns the standard `context_length_exceeded` error so the agent can compact its own conversation.
 - Mark a call as under-routed with one click; enough marks produce a rule suggestion. The evaluation feature re-runs samples on a high-tier model and has it judge blind whether the cheaper answer was good enough.
 
@@ -83,7 +84,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 | Agent | How it connects | Tested |
 |---|---|---|
 | Claude Code | MCP tools, usage notes in `CLAUDE.md`, slash commands | Used daily |
-| Codex | MCP tools, usage notes in `AGENTS.md` | Registered; hand-off flow verified with a simulated host |
+| Codex | MCP tools, usage notes in `AGENTS.md`; works with the `codex` CLI from npm or the one bundled in the ChatGPT desktop app | Registered; hand-off flow verified with a simulated host |
 | Gemini CLI | MCP tools, usage notes in `GEMINI.md` | Registered; personal Google accounts have moved to Antigravity, so an API key or enterprise account is needed |
 | pi | OpenAI-compatible endpoint | Agent turns with tool calls verified |
 | OpenClaw | OpenAI-compatible endpoint | Agent turns with tool calls verified |
@@ -100,13 +101,13 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 </tr>
 <tr>
 <td align="center">Menu bar: today's spend, quotas, routing mode</td>
-<td align="center">Connect agents and see how much each one delegates; edit routing rules in place</td>
+<td align="center">Hosts: connect agents and order their tier candidates; Dispatch: edit rules and review results</td>
 </tr>
 </table>
 
 **Also**
 - A ledger of every call: model, cost, and what the same call would have cost on Opus. The menu bar shows the last 7 days of savings. Costs can be shown in CNY or USD.
-- Themes: Standard plus three playful ones that only change the interface wording; one click returns to Standard for screen sharing.
+- Themes: Standard plus three playful ones that only change the interface wording; one click returns to Standard for screen sharing. Eight menu bar icon styles to choose from (Lab).
 - Backend service: Settings shows uptime with a one-click restart, and warns when the running backend isn't the one shipped with the installed app.
 - Update check: once a day Switchboard looks at GitHub Releases (falling back to the Gitee mirror), notifies you of a new version, and offers the installer for your platform from Settings.
 
@@ -118,7 +119,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 curl -fsSL https://raw.githubusercontent.com/imoling/iml-switchboard/main/scripts/install-mac.sh | bash
 ```
 
-It downloads the latest dmg for your chip (GitHub first, then the Gitee mirror), installs it into Applications and clears the download quarantine flag; if the backend is idle it switches it to the new version. You can also pass a dmg you already have: `bash install-mac.sh ~/Downloads/Switchboard_0.3.0_aarch64.dmg`.
+It downloads the latest dmg for your chip (GitHub first, then the Gitee mirror), installs it into Applications and clears the download quarantine flag; if the backend is idle it switches it to the new version. You can also pass a dmg you already have: `bash install-mac.sh ~/Downloads/Switchboard_0.4.0_aarch64.dmg`.
 
 **Installers**: download the installer for your system from the [Releases](https://github.com/imoling/iml-switchboard/releases) page (a dmg on macOS; an msi or exe on Windows). The installer already includes the `imls` backend.
 
@@ -185,7 +186,6 @@ Most rule misses are hard problems that contain no telltale keywords, which is w
 ## Roadmap
 
 - Signed installers and silent in-app updates (today: check for a new version and download it); verify Linux.
-- When Claude Code's subscription runs out, let it switch to Switchboard and continue on pay-as-you-go models (API keys only, never the subscription).
 - Rate limits on subscription lanes; stop sending whole conversations from the OpenAI-compatible endpoint to the Claude subscription by default.
 - More routing test data, growing the blind set to 200 cases.
 - A Copilot CLI subscription lane (through the official CLI).

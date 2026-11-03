@@ -19,13 +19,13 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 
 - **派活**：Claude Code、Codex、Gemini CLI 保留自己的主力模型，把翻译、第二意见、生图这些子任务交给 Switchboard（MCP 工具）。主力的上下文和缓存不受影响。
 - **当主力模型**：WorkBuddy、pi、OpenClaw、DeepSeek Harness 直接把 Switchboard 当成一个模型（OpenAI 兼容接口）。每次请求带着完整对话，Switchboard 按难易挑模型，一个失败就换下一个接着答。
-- **接管 Claude Code、Claude Desktop 和 Codex**：接入页打开「接管模型」，它们自己的对话就改走 Switchboard（Claude Code 和 Claude Desktop 用 Anthropic 协议，Codex 用 Responses 协议，流式、工具调用、提示缓存都是原生的）。Claude Code 和 Codex 的 `/model` 里能选「自动分档」「高档 / 中档 / 低档」或任何一个按量付费型号，Claude Desktop 的模型菜单里是这四档；关掉开关原样恢复。订阅额度用完、或想用 WinWork 网关的模型接着写代码时用它。
+- **接管 Claude Code、Claude Desktop 和 Codex**：宿主页打开「接管模型」，它们自己的对话就改走 Switchboard（Claude Code 和 Claude Desktop 用 Anthropic 协议，Codex 用 Responses 协议，流式、工具调用、提示缓存都是原生的）。Claude Code 和 Codex 的 `/model` 里能选「自动分档」「高档 / 中档 / 低档」或任何一个按量付费型号，Claude Desktop 的模型菜单里是这四档；关掉开关原样恢复。订阅额度用完、或想用 WinWork 网关的模型接着写代码时用它。
 
 配一个菜单栏（Windows 上是托盘）应用：看额度、看花费、看省了多少、改规则。
 
 > 支持 macOS 和 Windows。macOS 版在作者的电脑上日常使用；Windows 版已完成移植，每次提交都会在 Windows 上自动跑全部测试，但还没有在真实的 Windows 电脑上手工用过，欢迎反馈。Linux 版能构建，未验证。
 
-<p align="center"><img src="docs/images/overview.png" width="760" alt="概览：调度次数、按量花费、比全用 Opus 省了多少、订阅额度"></p>
+<p align="center"><img src="docs/images/overview.png" width="760" alt="总览：按量花费、订阅额度、调度次数，下面是记录表"></p>
 
 <p align="center"><a href="docs/videos/switchboard-launch.mp4"><img src="docs/images/launch-poster.png" width="760" alt="46 秒介绍视频"></a><br><sub>46 秒看懂它在做什么 · <a href="docs/videos/switchboard-launch.mp4">播放视频</a></sub></p>
 
@@ -67,7 +67,8 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 **调度**
 - 低档、中档、高档三档，加只在显式要求时才用的顶配；省钱、均衡、质量三种调度模式。
 - 规则拿不准时，先请低档模型判一次档，10 秒内判不出就照规则走。
-- 订阅额度用完、限流或报错时，自动换下一个候选模型，同一段对话照样带过去。
+- 订阅额度用完、限流或报错时，自动换下一个候选模型，同一段对话照样带过去；会话粘住的模型出错也一样回退。
+- 档位候选：低、中、高三档各一张表，勾选哪些渠道的型号进这一档、谁先试，全局一张，每个宿主还能另排一张只对它生效的。
 - 选模型时检查上下文窗口，装不下就换窗口更大的；谁都装不下时返回标准的 `context_length_exceeded`，让宿主自己压缩。
 - 「判低了」一键标记，攒够了会建议调整规则；评估功能抽样重做、盲评，看便宜模型的结果够不够好。
 
@@ -81,7 +82,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 | 宿主 | 接入方式 | 实测 |
 |---|---|---|
 | Claude Code | MCP 工具 + `CLAUDE.md` 调用约定 + 斜杠命令 | 已在本机日常使用 |
-| Codex | MCP 工具 + `AGENTS.md` 调用约定 | 已注册；派活流程用模拟宿主验证 |
+| Codex | MCP 工具 + `AGENTS.md` 调用约定；终端装的或 ChatGPT 桌面版自带的 `codex` 都认 | 已注册；派活流程用模拟宿主验证 |
 | Gemini CLI | MCP 工具 + `GEMINI.md` 调用约定 | 已注册；个人账号已被 Google 迁到 Antigravity，需 API 密钥或企业账号 |
 | pi | 兼容入口（OpenAI 格式） | 带工具的智能体回合实测通过 |
 | OpenClaw | 兼容入口 | 带工具的智能体回合实测通过 |
@@ -94,17 +95,17 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 <table>
 <tr>
 <td width="34%"><img src="docs/images/popover.png" alt="菜单栏弹窗"></td>
-<td><img src="docs/images/integrations.png" alt="接入页"><br><img src="docs/images/rules.png" alt="路由规则"></td>
+<td><img src="docs/images/integrations.png" alt="宿主页"><br><img src="docs/images/rules.png" alt="分派"></td>
 </tr>
 <tr>
 <td align="center">菜单栏：今天花了多少、额度、调度模式</td>
-<td align="center">接入各个宿主，看每家派了多少活；路由规则可直接改</td>
+<td align="center">宿主页接入各个智能体、排它自己的档位候选；分派页改规则、看回看结果</td>
 </tr>
 </table>
 
 **其他**
 - 账本：每次调用的模型、花费、全用 Opus 的对照价，菜单栏显示近 7 天省了多少；费用可按人民币或美元显示。
-- 风格主题：标准、点将台、后宫、海王，只换界面说法；投屏时一键切回标准。
+- 风格主题：标准、点将台、后宫、海王，只换界面说法；投屏时一键切回标准。菜单栏图标有八种样式可选（实验功能）。
 - 后台服务：设置里能看到运行多久、一键重启；连着的后台不是当前安装包里那份时会提示。
 - 检查更新：每天到 GitHub Releases 查一次，连不上就查 Gitee 镜像；有新版本通知一声，设置里一键下载本平台的安装包。
 
@@ -116,7 +117,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 curl -fsSL https://raw.githubusercontent.com/imoling/iml-switchboard/main/scripts/install-mac.sh | bash
 ```
 
-脚本下载本机芯片对应的最新 dmg（GitHub 连不上换 Gitee），装到「应用程序」，清掉下载来源标记；后台服务没在干活时顺手换成新版本。已经下载好的 dmg 可以传给它：`bash install-mac.sh ~/Downloads/Switchboard_0.3.0_aarch64.dmg`。
+脚本下载本机芯片对应的最新 dmg（GitHub 连不上换 Gitee），装到「应用程序」，清掉下载来源标记；后台服务没在干活时顺手换成新版本。已经下载好的 dmg 可以传给它：`bash install-mac.sh ~/Downloads/Switchboard_0.4.0_aarch64.dmg`。
 
 **用安装包**：在 [Releases](https://github.com/imoling/iml-switchboard/releases) 页下载对应系统的安装包（macOS 是 dmg，Windows 是 msi 或 exe）。安装包里已经带了后台程序 `imls`。
 
@@ -179,11 +180,11 @@ imls golden                                           # 导出「判低了」的
 - 带系统提示的 Claude 请求不预热（兼容入口转来的请求多半带系统提示）。
 - Codex 订阅渠道的派活流程、Hermes 的带工具回合还没有在真实环境完整跑过。
 - 不会替宿主压缩对话：只返回标准错误，由宿主自己压缩。
+- 菜单栏图标的告警、出错两张带色点，不是模板图，深色菜单栏下底板会和菜单栏融在一起。
 
 ## 路线图
 
 - 签名安装包和应用内静默更新（现在是检查新版本后给下载）；Linux 版验证。
-- Claude Code 订阅额度用完时，可以改连 Switchboard，用按量付费模型接着干（走 API 密钥，不碰订阅）。
 - 订阅渠道限速；兼容入口默认不把整轮对话交给 Claude 订阅。
 - 扩充路由测试数据，盲测集扩到 200 条。
 - Copilot CLI 订阅渠道（走官方命令行）。
