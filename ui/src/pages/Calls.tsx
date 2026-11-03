@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Call } from '../api/types';
 import { Empty, ErrorLine, LaneChip, TierChip, toast } from '../components/ui';
-import { Model } from '../components/Vendor';
+import { Model, Vendor } from '../components/Vendor';
 import { cost, hhmm, hostLabel, secs, tokens, usd } from '../format';
 import { errText, useDebounced, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
@@ -62,7 +62,7 @@ export function Calls({ live, embedded }: { live?: Call | null; embedded?: boole
                   const free = c.ok && c.lane === 'api' && c.cost_usd === 0;
                   return (
                     <tr key={c.id} className={`clickable ${sel?.id === c.id ? 'sel' : ''}`} onClick={() => setSel(c)}>
-                      <td>{hhmm(c.ts)}</td><td>{hostLabel(c)}</td>
+                      <td>{hhmm(c.ts)}</td><td><Vendor provider={c.host ?? c.source} />{hostLabel(c)}</td>
                       <td>{c.task_name ?? c.task_type}{c.tier === 'top' && c.source !== 'redo' ? ' · 仔细想' : ''}</td>
                       <td><TierChip tier={c.tier} /></td>
                       <td>{c.ok

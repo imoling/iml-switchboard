@@ -197,6 +197,27 @@ func Heuristic(sig Signals) (Tier, string) {
 	}
 }
 
+// HeuristicType 给没命中任务表的请求起个看得懂的类型，记录和统计里不再是一句「未归类」：
+// 带工具的智能体回合、带代码、长消息、短消息。
+func HeuristicType(hasTools bool, sig Signals) string {
+	switch {
+	case hasTools:
+		return "heuristic_tools"
+	case sig.CodeBlocks > 0 || sig.HasStack:
+		return "heuristic_code"
+	case sig.Chars > 1500 || sig.Reasoning || sig.Constraints >= 3:
+		return "heuristic_long"
+	default:
+		return "heuristic_short"
+	}
+}
+
+// HeuristicNames 是启发式类型在界面上的名字；老记录里的 heuristic 仍叫未归类。
+var HeuristicNames = map[string]string{"heuristic": "未归类", "heuristic_tools": "带工具的回合", "heuristic_code": "带代码", "heuristic_long": "长消息", "heuristic_short": "短消息"}
+
+// IsHeuristic 判断是不是启发式兜底出来的类型。
+func IsHeuristic(tt string) bool { return strings.HasPrefix(tt, "heuristic") }
+
 // ExplicitHit 是显式指令命中的结果。
 type ExplicitHit struct {
 	Tier      Tier

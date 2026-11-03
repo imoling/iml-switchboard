@@ -336,3 +336,8 @@ details.raw { margin-top: 6px; font-size: 12px; color: var(--muted); } details.r
 .hdetail { flex: 1; min-width: 0; overflow: auto; padding-right: 2px; }
 .hhead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; } .hhead b { font-size: 15px; }
 .hdetail .panel .setrow:first-child { padding-top: 0; }
+
+/* 模型页：订阅卡片底下的额度窗口 */
+.acct .quota-row { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--muted); }
+.acct .qw { display: flex; align-items: center; gap: 8px; min-width: 200px; }
+.acct .qw em { font-style: normal; white-space: nowrap; } .acct .qw .bar { flex: 1; margin: 0; } .acct .qw b { color: var(--fg); font-weight: 600; min-width: 34px; text-align: right; }

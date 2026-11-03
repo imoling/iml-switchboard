@@ -404,7 +404,7 @@ func Validate(c *Config) error {
 }
 
 // rulesAddedIn 记录每一版新增的内置任务类型：只在升级那一次补进去，用户之后删掉的不再补。
-var rulesAddedIn = map[int][]string{2: {"hard_problem", "code_write", "tech_issue", "explain"}}
+var rulesAddedIn = map[int][]string{2: {"hard_problem", "code_write", "tech_issue", "explain"}, 3: {"writing", "automation", "housekeeping"}}
 
 // mergeRules 把新版内置任务表合进老配置。识别说明没改过的内置行整行换成新规则（保留用户选的档位和渠道）；
 // 改过的只补排除词；新增的类型按默认顺序插进去。

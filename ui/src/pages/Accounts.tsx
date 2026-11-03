@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { api, ApiError } from '../api/client';
+import { useEffect, useState } from 'react';
+import { api, ApiError, subscribeEvents } from '../api/client';
 import type { Account, Tier } from '../api/types';
-import { Dot, ErrorLine, Modal, toast } from '../components/ui';
+import { Bar, Dot, ErrorLine, Modal, toast } from '../components/ui';
 import { MediaSprite, TierSprite } from '../components/Pixel';
 import { accountIcon, ICON_CHOICES, vendorSrc, VendorLogo } from '../components/Vendor';
 import { accountCost } from '../format';
@@ -38,6 +38,10 @@ export function Accounts() {
   const [busy, setBusy] = useState<string | null>(null);
   const [tierEdit, setTierEdit] = useState<Account | null>(null);
   const [iconEdit, setIconEdit] = useState<Account | null>(null);
+  // 订阅额度：点「刷新」让后台去官方命令里问一次，回来的 quota 事件触发重载
+  const [refreshing, setRefreshing] = useState(false);
+  useEffect(() => subscribeEvents((e) => { if (e.type === 'quota') { setRefreshing(false); void reload(); } }), [reload]);
+  const refreshQuota = async () => { setRefreshing(true); try { await api.refreshQuota(); } catch { setRefreshing(false); } setTimeout(() => setRefreshing(false), 120000); };
   // 本机登录的客户端（WinWork）自动出现、不计费，和订阅排在一起
   const subs = data?.filter((a) => a.kind === 'subscription' || a.local) ?? [];
   const apis = data?.filter((a) => a.kind === 'api' && !a.local) ?? [];
@@ -82,7 +86,7 @@ export function Accounts() {
       {(error || err) && <ErrorLine {...errText(error ?? err)!} />}
       {data && (
         <>
-          <div className="hint mb6">订阅</div>
+          <div className="row mb6"><span className="hint">订阅</span><span className="grow" /><button className="btn sm" disabled={refreshing} onClick={refreshQuota}>{refreshing ? '正在刷新…' : '刷新额度'}</button></div>
           {subs.map((a) => (
             <div key={a.id} className={`acct ${a.enabled ? '' : 'dim'}`}>
               <VendorLogo provider={accountIcon(a)} />
@@ -94,6 +98,15 @@ export function Accounts() {
                   ? <button className="btn sm" disabled={busy === a.id} onClick={() => act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled }))}>{a.enabled ? '停用' : '启用'}</button>
                   : null}
               {((a.tiers && Object.keys(a.tiers).length > 0) || (a.media && a.media.length > 0)) && tierTiles(a)}
+              {a.kind === 'subscription' && a.quota && a.quota.length > 0 && (
+                <div className="quota-row">
+                  {a.quota.map((q) => (
+                    <span key={q.window} className="qw" title={q.resets_at ? `${new Date(q.resets_at).toLocaleString()} 重置` : undefined}>
+                      <em>{q.label ?? q.window}{q.estimated && <span className="chip" title="按本应用的记录估的；没标的由官方命令回报">估算</span>}</em><Bar pct={q.pct} tone={q.pct >= 80 ? 'amber' : undefined} /><b>{Math.round(q.pct)}%</b>
+                    </span>
+                  ))}
+                </div>
+              )}
               {a.status === 'cooldown' && <span className="hint">{a.detail}</span>}
             </div>
           ))}

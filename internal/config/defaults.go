@@ -24,7 +24,8 @@ func randomKey() string {
 
 // RulesVersion 是内置任务表的版本；改了内置行就加一，fillMissing 会把新规则合进老配置。
 // 2：加排除词，新增疑难问题、写代码、排查小问题、解释与比较四类（金标准确率 66.7% → 见 golden_test）。
-const RulesVersion = 2
+// 3：新增写作、自动化、记忆整理三类，Codex 的定时任务和写文档的会话不再整条记成「未归类」。
+const RulesVersion = 3
 
 // mediaTechWords 出现时，说的是做软件里的图片、视频，不是要生成一张。
 var mediaTechWords = []string{"接口", "上传", "组件", "报错", "bug", "前端", "后端", "加载", "渲染", "压缩"}
@@ -100,6 +101,9 @@ func Default() *Config {
 			}}, Order: 42},
 			{Type: "tech_issue", Name: "排查小问题", Hint: "白屏、闪烁、卡住、接口报 4xx / 5xx", Tier: "mid", Prefer: []string{"api", "claude_sub"}, Match: Match{Keywords: []string{"白屏", "闪烁", "卡住", "卡顿", "不生效", "兼容", "溢出", "怎么解决"}, Patterns: []string{`(返回|报)\s*[45]\d\d`}}, Order: 43},
 			{Type: "explain", Name: "解释与比较", Hint: "为什么、解释、对比、利弊、哪种更好", Tier: "mid", Prefer: []string{"api", "claude_sub"}, Match: Match{Keywords: []string{"为什么", "解释", "对比", "利弊", "哪种更好", "有什么风险", "证明", "原理", "why ", "explain"}}, Order: 45},
+			{Type: "writing", Name: "写作", Hint: "写一篇、文章、报告、讲稿、PPT、补充几页", Tier: "mid", Prefer: []string{"api", "claude_sub"}, Match: Match{Keywords: []string{"写一篇", "写篇", "文章", "报告", "讲稿", "演讲稿", "ppt", "幻灯片", "公众号", "文案", "扩写", "写一份"}, Patterns: []string{`补充[一二两三四五六七八九十\d]+页`}, Exclude: []string{"报错", "错误报告"}}, Order: 46},
+			{Type: "automation", Name: "自动化", Hint: "Codex 定时任务这类自动发起的请求，开头是 Automation:", Tier: "mid", Prefer: []string{"api"}, Match: Match{Patterns: []string{`^\s*automation:`}}, Order: 47},
+			{Type: "housekeeping", Name: "记忆整理", Hint: "Codex 自己整理会话记忆的内部请求", Tier: "low", Prefer: []string{"api"}, Match: Match{Patterns: []string{`produce json with .raw_memory`}}, Order: 48},
 			{Type: "qa_short", Name: "短问答", Hint: "300 字以内，无代码、无附件", Tier: "low", Prefer: []string{"api", "codex_sub"}, Match: Match{MaxChars: 300, HasCode: b(false), HasImage: b(false)}, Order: 50},
 		},
 	}

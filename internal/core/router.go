@@ -203,13 +203,13 @@ func (r *Router) Decide(t *Task) *Decision {
 		d.Reason = append(d.Reason, fmt.Sprintf("命中「%s」：%s", tt.Name, tt.Hint))
 	} else {
 		ht, why := Heuristic(sig)
-		d.TaskType = "heuristic"
+		d.TaskType = HeuristicType(t.HasTools(), sig)
 		if tier == "" {
 			tier = ht
 		}
 		d.Reason = append(d.Reason, why)
 	}
-	if hit.Word == "" && explicitTier == "" && (d.TaskType == "qa_short" || d.TaskType == "heuristic") {
+	if hit.Word == "" && explicitTier == "" && (d.TaskType == "qa_short" || IsHeuristic(d.TaskType)) {
 		d.Unsure = true
 		if jt := Tier(t.Judged); tierRank(jt) > 0 {
 			d.Reason = append(d.Reason, "规则拿不准，低档模型判为"+TierLabel(jt))
@@ -1109,8 +1109,8 @@ func (r *Router) TaskName(tt string) string {
 			return t.Name
 		}
 	}
-	if tt == "heuristic" {
-		return "未归类"
+	if n, ok := HeuristicNames[tt]; ok {
+		return n
 	}
 	if tt == "judged" {
 		return "模型判档"
@@ -1141,7 +1141,7 @@ func (r *Router) Suggestions() ([]Suggestion, error) {
 	}
 	out := []Suggestion{}
 	for _, s := range stats {
-		if s.Escalations < 5 || ignored[s.TaskType] || s.TaskType == "heuristic" {
+		if s.Escalations < 5 || ignored[s.TaskType] || IsHeuristic(s.TaskType) {
 			continue
 		}
 		var row *config.TaskType

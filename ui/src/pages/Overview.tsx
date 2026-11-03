@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react';
-import { api, subscribeEvents } from '../api/client';
-import type { Call, Quota } from '../api/types';
-import { Bar, ErrorLine, GroupChip, Seg } from '../components/ui';
+import { useState } from 'react';
+import { api } from '../api/client';
+import type { Call } from '../api/types';
+import { ErrorLine, GroupChip, Seg } from '../components/ui';
 import { Topology } from '../components/Topology';
 import { accountIcon, Vendor } from '../components/Vendor';
-import { QUOTA_ESTIMATE_NOTE } from '../copy';
 import { dayLabel, usd } from '../format';
 import { errText, useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
@@ -17,17 +16,11 @@ const TOPO_KEY = 'overview.topology.open';
 
 /** 总览：三个数字、一行接入情况、两张小图，下面直接是记录表 */
 export function Overview({ live, onNavigate }: { live?: Call | null; onNavigate?: (page: 'integrations' | 'accounts') => void }) {
-  const [quotas, setQuotas] = useState<Quota[] | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  useEffect(() => subscribeEvents((e) => { if (e.type === 'quota') { setQuotas(e.data.quotas); setRefreshing(false); } }), []);
-  const refreshQuota = async () => { setRefreshing(true); try { await api.refreshQuota(); } catch { setRefreshing(false); } setTimeout(() => setRefreshing(false), 120000); };
   const { t } = useTheme();
   const [range, setRange] = useState<Range>('7d');
   const { data, error } = useLoad(() => api.overview(range), [range]);
   const [topoOpen, setTopoOpen] = useState(() => localStorage.getItem(TOPO_KEY) === '1');
   const toggleTopo = () => setTopoOpen((v) => { localStorage.setItem(TOPO_KEY, v ? '0' : '1'); return !v; });
-  // 订阅额度只列用过的；窗口细节在模型页
-  const used = (quotas ?? data?.quotas ?? []).filter((q) => !q.sub && q.pct > 0);
   const over = !!data && data.budget.limit_usd > 0 && data.budget.month_usd >= data.budget.limit_usd;
 
   return (
@@ -44,15 +37,9 @@ export function Overview({ live, onNavigate }: { live?: Call | null; onNavigate?
               <div className="k">按量花费 · {RANGE_LABEL[range]}</div><div className="v">{usd(data.api_cost_usd)}</div>
               <div className={`d ${over ? 'bad' : 'plain'}`}>本月 {usd(data.budget.month_usd)}{data.budget.limit_usd > 0 && <> / 上限 {usd(data.budget.limit_usd)}</>}</div>
             </div>
-            <div className="card" title={QUOTA_ESTIMATE_NOTE}>
-              <div className="k" style={{ display: 'flex', alignItems: 'center' }}>订阅额度<button className="btn link sm" style={{ marginLeft: 'auto', padding: 0 }} disabled={refreshing} onClick={refreshQuota}>{refreshing ? '正在刷新…' : '刷新'}</button></div>
-              {used.length === 0 && <><div className="v muted">—</div><div className="d plain">还没用过订阅</div></>}
-              {used.slice(0, 3).map((q, i) => (
-                <div key={i}>
-                  <div className="qline"><span><Vendor provider={q.provider} />{q.label}</span><em>{q.window} · {Math.round(q.pct)}%</em></div>
-                  <Bar pct={q.pct} tone={q.pct >= 80 ? 'amber' : undefined} />
-                </div>
-              ))}
+            <div className="card" title="按同样的请求全部交给 Opus 的价算，减去实际花费和订阅折算">
+              <div className="k">自动分档省下 · {RANGE_LABEL[range]}</div><div className="v ok-text">{usd(data.saved_usd)}</div>
+              <div className="d plain">全用 Opus 要 {usd(data.baseline_cost_usd)}</div>
             </div>
             <div className="card">
               <div className="k">{t('dispatch.noun')}次数 · {RANGE_LABEL[range]}</div><div className="v">{data.calls}</div>
