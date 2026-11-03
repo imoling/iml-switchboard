@@ -40,3 +40,31 @@ func TestCodexBinFallsBackToAppBundle(t *testing.T) {
 		t.Fatalf("都没有时应报没找到：%+v", h)
 	}
 }
+
+// 版本号要缓存：健康检查每页都跑，不能每次都起一个进程；文件换了（升级）才重问。
+func TestVersionOfCached(t *testing.T) {
+	needShell(t)
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "cli")
+	log := filepath.Join(dir, "calls.log")
+	write := func(ver string) {
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\necho x >> "+log+"\necho "+ver+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("1.0.0")
+	ctx := context.Background()
+	if v := versionOf(ctx, bin); v != "1.0.0" {
+		t.Fatalf("第一次应问到 1.0.0：%q", v)
+	}
+	versionOf(ctx, bin)
+	versionOf(ctx, bin)
+	if b, _ := os.ReadFile(log); strings.Count(string(b), "x") != 1 {
+		t.Fatalf("十分钟内应复用缓存，只起一次进程：%q", b)
+	}
+	// 文件变了：大小不同，立刻重问
+	write("1.0.10")
+	if v := versionOf(ctx, bin); v != "1.0.10" {
+		t.Fatalf("文件换了应重问：%q", v)
+	}
+}

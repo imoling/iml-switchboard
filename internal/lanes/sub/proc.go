@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -249,7 +250,28 @@ func fileExists(path string) bool {
 }
 
 // versionOf 运行 `<bin> --version` 并返回首行；失败返回空串。不会消耗额度。
+// verCache 记住每个可执行文件问出来的版本：健康检查每页都要跑，而 claude --version 一次要几十到几百毫秒。
+// 文件大小或修改时间变了（升级了）立刻重问，否则十分钟内复用。
+var verCache sync.Map // bin → verEntry
+
+type verEntry struct {
+	ver  string
+	at   time.Time
+	size int64
+	mod  time.Time
+}
+
 func versionOf(ctx context.Context, bin string) string {
+	var size int64
+	var mod time.Time
+	if st, err := os.Stat(bin); err == nil {
+		size, mod = st.Size(), st.ModTime()
+	}
+	if v, ok := verCache.Load(bin); ok {
+		if e := v.(verEntry); e.size == size && e.mod.Equal(mod) && time.Since(e.at) < 10*time.Minute {
+			return e.ver
+		}
+	}
 	var first string
 	res := runProc(ctx, procSpec{Bin: bin, Args: []string{"--version"}, Timeout: 15 * time.Second, OnLine: func(l string) {
 		if first == "" && strings.TrimSpace(l) != "" {
@@ -259,6 +281,7 @@ func versionOf(ctx context.Context, bin string) string {
 	if res.Err != nil || res.ExitCode != 0 {
 		return ""
 	}
+	verCache.Store(bin, verEntry{ver: first, at: time.Now(), size: size, mod: mod})
 	return first
 }
 
