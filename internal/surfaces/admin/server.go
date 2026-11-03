@@ -1013,6 +1013,7 @@ type accountView struct {
 	Provider        string              `json:"provider"`
 	Icon            string              `json:"icon,omitempty"` // 自定义服务手动选的图标；空表示界面按型号名认
 	Label           string              `json:"label"`
+	BaseURL         string              `json:"base_url,omitempty"` // 按量付费：接口地址，改地址时回填
 	Status          string              `json:"status"`
 	Detail          string              `json:"detail"`
 	Plan            string              `json:"plan,omitempty"`
@@ -1115,7 +1116,7 @@ func (s *Server) accountViews() []accountView {
 		out = append(out, v)
 	}
 	for _, a := range cfg.API {
-		v := accountView{ID: a.ID, Kind: "api", Provider: a.Provider, Icon: a.Icon, Label: labelOr(a.Label, core.ProviderLabel(a.Provider)), Enabled: a.Enabled, Currency: a.Currency, NeedsProxy: a.NeedsProxy, Status: "ok", Detail: "", Plan: "按量付费"}
+		v := accountView{ID: a.ID, Kind: "api", Provider: a.Provider, Icon: a.Icon, Label: labelOr(a.Label, core.ProviderLabel(a.Provider)), BaseURL: a.BaseURL, Enabled: a.Enabled, Currency: a.Currency, NeedsProxy: a.NeedsProxy, Status: "ok", Detail: "", Plan: "按量付费"}
 		if a.Provider == "winwork" {
 			// 走的是它网关的接口，所以在按量付费这条通路上；但它是本机登录的客户端，不计费，界面上和订阅排在一起
 			v.Local, v.Plan = true, "不计费"
@@ -1348,9 +1349,58 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 		AllowPaid *bool             `json:"allow_paid"` // 按量付费：是否允许用收费型号
 		Media     map[string]string `json:"media"`      // 按量付费：image / video → 型号，空串表示不用
 		Icon      *string           `json:"icon"`       // 自定义服务：换图标，空串表示按型号名自动认
+		APIKey    *string           `json:"api_key"`    // 按量付费：换密钥；先验证再存
+		BaseURL   *string           `json:"base_url"`   // 按量付费：换接口地址（自定义服务、OpenRouter）
+		Label     *string           `json:"label"`      // 按量付费：改名字
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
+	}
+	// 换密钥或地址：先用新值去验证，过了才落盘；自定义服务顺便把型号列表换新
+	var discovered []config.DiscoveredModel
+	var newBase string
+	if in.APIKey != nil || in.BaseURL != nil {
+		var acc *config.APIAccount
+		for _, a := range s.d.Router.Config().Get().API {
+			if a.ID == id {
+				a := a
+				acc = &a
+			}
+		}
+		if acc == nil {
+			return nil, errors.New("不是按量付费账号")
+		}
+		key := ""
+		if in.APIKey != nil && strings.TrimSpace(*in.APIKey) != "" {
+			key = strings.TrimSpace(*in.APIKey)
+		} else if k, err := s.d.Secrets.Get(id); err == nil {
+			key = k
+		} else {
+			return nil, errors.New("没有找到密钥，重新填写")
+		}
+		newBase = acc.BaseURL
+		if in.BaseURL != nil {
+			newBase = strings.TrimRight(strings.TrimSpace(*in.BaseURL), "/")
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		if acc.Provider == "custom" {
+			if newBase == "" {
+				return nil, errors.New("自定义服务要填接口地址")
+			}
+			ms, err := s.d.Accounts.ListModels(ctx, newBase, key)
+			if err != nil {
+				return nil, err
+			}
+			discovered = ms
+		} else if _, err := s.d.Accounts.Verify(ctx, acc.Provider, newBase, key); err != nil {
+			return nil, err
+		}
+		if in.APIKey != nil && strings.TrimSpace(*in.APIKey) != "" {
+			if err := s.d.Secrets.Set(id, key); err != nil {
+				return nil, err
+			}
+		}
 	}
 	err := s.d.Router.Config().Update(func(c *config.Config) error {
 		if sl, ok := c.Sub[id]; ok {
@@ -1385,6 +1435,15 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 				}
 				if in.Icon != nil {
 					c.API[i].Icon = *in.Icon
+				}
+				if in.Label != nil {
+					c.API[i].Label = strings.TrimSpace(*in.Label)
+				}
+				if in.BaseURL != nil {
+					c.API[i].BaseURL = newBase
+				}
+				if discovered != nil {
+					c.API[i].Discovered = discovered
 				}
 				if in.Media != nil {
 					if c.API[i].Media == nil {

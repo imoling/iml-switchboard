@@ -38,6 +38,7 @@ export function Accounts() {
   const [busy, setBusy] = useState<string | null>(null);
   const [tierEdit, setTierEdit] = useState<Account | null>(null);
   const [iconEdit, setIconEdit] = useState<Account | null>(null);
+  const [keyEdit, setKeyEdit] = useState<Account | null>(null);
   // 订阅额度：点「刷新」让后台去官方命令里问一次，回来的 quota 事件触发重载
   const [refreshing, setRefreshing] = useState(false);
   useEffect(() => subscribeEvents((e) => { if (e.type === 'quota') { setRefreshing(false); void reload(); } }), [reload]);
@@ -124,8 +125,8 @@ export function Accounts() {
                   ? <button className="btn sm" disabled={busy === a.id} onClick={() => act(a.id, async () => { await api.verifyAccount(a.id); toast(`${a.label} 验证通过，密钥可用`); })}>重新验证</button>
                   : <span className="muted">{monthCost(a) && `本月 ${monthCost(a)}`}</span>}
 
-              <select className="sel" value="" onChange={(e) => { const v = e.target.value; if (v === 'toggle') void act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled })); if (v === 'icon') setIconEdit(a); if (v === 'verify') void act(a.id, async () => { await api.verifyAccount(a.id); toast(a.provider === 'custom' ? `${a.label} 型号已更新` : `${a.label} 验证通过，密钥可用`); }); if (v === 'delete') void act(a.id, () => api.deleteAccount(a.id)); }}>
-                <option value="">操作 ▾</option><option value="verify">{a.provider === 'custom' ? '刷新型号' : '重新验证'}</option>{a.provider === 'custom' && <option value="icon">换图标</option>}<option value="toggle">{a.enabled ? '停用' : '启用'}</option><option value="delete">删除</option>
+              <select className="sel" value="" onChange={(e) => { const v = e.target.value; if (v === 'toggle') void act(a.id, () => api.updateAccount(a.id, { enabled: !a.enabled })); if (v === 'icon') setIconEdit(a); if (v === 'edit') setKeyEdit(a); if (v === 'verify') void act(a.id, async () => { await api.verifyAccount(a.id); toast(a.provider === 'custom' ? `${a.label} 型号已更新` : `${a.label} 验证通过，密钥可用`); }); if (v === 'delete') void act(a.id, () => api.deleteAccount(a.id)); }}>
+                <option value="">操作 ▾</option><option value="edit">改密钥 / 地址</option><option value="verify">{a.provider === 'custom' ? '刷新型号' : '重新验证'}</option>{a.provider === 'custom' && <option value="icon">换图标</option>}<option value="toggle">{a.enabled ? '停用' : '启用'}</option><option value="delete">删除</option>
               </select>
               {((a.tiers && Object.keys(a.tiers).length > 0) || (a.media && a.media.length > 0)) && tierTiles(a)}
             </div>
@@ -133,6 +134,7 @@ export function Accounts() {
           <div className="hint mt12">密钥只存在这台电脑上，不会上传</div>
         </>
       )}
+      {keyEdit && <EditAccount account={keyEdit} onClose={() => setKeyEdit(null)} onSaved={() => { setKeyEdit(null); void reload(); }} />}
       {iconEdit && (
         <Modal title={`${iconEdit.label} 的图标`} onClose={() => setIconEdit(null)} width={420}>
           <IconPicker value={iconEdit.icon ?? ''} onChange={(v) => { const id = iconEdit.id; setIconEdit(null); void act(id, () => api.updateAccount(id, { icon: v })); }} />
@@ -232,6 +234,38 @@ export function AddAccount({ onClose, onAdded, embedded, onSkip }: { onClose?: (
       <div className="row mt12" style={{ justifyContent: 'flex-end' }}>
         <button className="btn" onClick={onClose}>取消</button>
         <button className="btn pri" disabled={busy || !key.trim() || (custom && !baseUrl.trim())} onClick={submit}>{busy ? '正在验证…' : '验证并添加'}</button>
+      </div>
+    </Modal>
+  );
+}
+
+/** 改密钥、接口地址、名字：先验证再存，坏密钥不会覆盖旧的 */
+function EditAccount({ account: a, onClose, onSaved }: { account: Account; onClose: () => void; onSaved: () => void }) {
+  const [key, setKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState(a.base_url ?? '');
+  const [label, setLabel] = useState(a.label);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<ApiError | null>(null);
+  const editable = a.provider === 'custom' || a.provider === 'openrouter';
+  const dirty = key.trim() !== '' || (editable && baseUrl.trim() !== (a.base_url ?? '')) || (a.provider === 'custom' && label.trim() !== a.label);
+  const submit = async () => {
+    setBusy(true); setErr(null);
+    const patch: { api_key?: string; base_url?: string; label?: string } = {};
+    if (key.trim()) patch.api_key = key.trim();
+    if (editable && baseUrl.trim() !== (a.base_url ?? '')) patch.base_url = baseUrl.trim();
+    if (a.provider === 'custom' && label.trim() !== a.label) patch.label = label.trim();
+    try { await api.updateAccount(a.id, patch); toast('已验证并保存'); onSaved(); } catch (e) { setErr(e as ApiError); setBusy(false); }
+  };
+  return (
+    <Modal title={`${a.label} · 改密钥 / 地址`} onClose={onClose} width={480}>
+      {a.provider === 'custom' && <input className="input mb6" placeholder="名称" value={label} onChange={(e) => setLabel(e.target.value)} />}
+      {editable && <input className="input mb6" placeholder="接口地址" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />}
+      <input className="input mb6" type="password" placeholder="新密钥，留空不改" value={key} onChange={(e) => setKey(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && dirty && submit()} autoFocus />
+      {err && <div className="hint err-text mb6">{err.message}</div>}
+      <div className="hint">保存前用新值验证一次，没通过不动旧的</div>
+      <div className="row mt12" style={{ justifyContent: 'flex-end' }}>
+        <button className="btn" onClick={onClose}>取消</button>
+        <button className="btn pri" disabled={busy || !dirty} onClick={submit}>{busy ? '正在验证…' : '验证并保存'}</button>
       </div>
     </Modal>
   );

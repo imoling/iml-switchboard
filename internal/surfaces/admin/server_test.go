@@ -386,6 +386,29 @@ func TestDoubaoWorkConnectedByActivity(t *testing.T) {
 	}
 }
 
+// 按量付费账号配好后能改密钥、地址和名字：先验证再存，坏密钥不落盘
+func TestUpdateAccountKeyAndAddress(t *testing.T) {
+	ts, r := newServer(t)
+	_, m, _ := do(t, ts, "POST", "/api/accounts", map[string]any{"provider": "zhipu", "api_key": "good"})
+	id := m["id"].(string)
+	if code, m, _ := do(t, ts, "PUT", "/api/accounts/"+id, map[string]any{"api_key": "bad"}); code != 400 || !strings.Contains(m["error"].(string), "验证失败") {
+		t.Fatalf("坏密钥应被拒：%d %v", code, m)
+	}
+	code, m, _ := do(t, ts, "PUT", "/api/accounts/"+id, map[string]any{"api_key": "good2", "label": "智谱备用"})
+	if code != 200 || m["label"] != "智谱备用" {
+		t.Fatalf("改密钥和名字：%d %v", code, m)
+	}
+	if r.Config().Get().API[0].ID != id {
+		t.Fatal("账号没了")
+	}
+	_, m, _ = do(t, ts, "POST", "/api/accounts", map[string]any{"provider": "custom", "api_key": "good", "base_url": "http://a.example/v1"})
+	cid := m["id"].(string)
+	code, m, _ = do(t, ts, "PUT", "/api/accounts/"+cid, map[string]any{"base_url": "http://b.example/v1/"})
+	if code != 200 || m["base_url"] != "http://b.example/v1" {
+		t.Fatalf("改地址应去掉末尾斜杠并回填：%d %v", code, m)
+	}
+}
+
 // 档位候选表：读出来是生效顺序加其余可选；手排后照表，乱填的丢掉，清空回到内置排法
 func TestTierPicks(t *testing.T) {
 	ts, r := newServer(t)

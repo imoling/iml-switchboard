@@ -41,7 +41,7 @@ export interface Job {
 
 export type AccountStatus = 'ok' | 'warn' | 'missing' | 'error' | 'cooldown' | 'disabled';
 export interface Account {
-  id: string; kind: 'subscription' | 'api'; provider: string; icon?: string; label: string; status: AccountStatus; detail: string;
+  id: string; kind: 'subscription' | 'api'; provider: string; icon?: string; label: string; base_url?: string; status: AccountStatus; detail: string;
   /** 本机登录的客户端（WinWork）：自动出现，不计费，和订阅排在一起 */
   local?: boolean;
   month_cost_usd?: number; month_cost_native?: number; currency?: string;
