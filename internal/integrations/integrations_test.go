@@ -209,3 +209,47 @@ func TestWorkBuddyWinWorkEntries(t *testing.T) {
 		t.Fatalf("断开应去掉我们的全部条目：%s", b)
 	}
 }
+
+// Hermes 的接管：主模型改指到 Switchboard，关掉原样放回；别的段不动
+func TestHermesTakeover(t *testing.T) {
+	m, home := setup(t)
+	cfg := filepath.Join(home, ".hermes", "config.yaml")
+	b, _ := os.ReadFile(cfg)
+	_ = os.WriteFile(cfg, append([]byte("model:\n  default: anthropic/claude-opus-4\n  provider: openrouter\n"), b...), 0o600)
+	if m.view("hermes")["options"].(map[string]bool)["takeover"] {
+		t.Fatal("接管前不该是开的")
+	}
+	if _, err := m.Update("hermes", map[string]bool{"takeover": true}); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := os.ReadFile(cfg)
+	for _, want := range []string{"provider: custom", "base_url: http://127.0.0.1:18081/v1", "default: router-auto", "api_key: imls-key", "homeassistant"} {
+		if !strings.Contains(string(s), want) {
+			t.Fatalf("缺少 %q：\n%s", want, s)
+		}
+	}
+	if !m.view("hermes")["options"].(map[string]bool)["takeover"] {
+		t.Fatal("接管后应是开的")
+	}
+	if _, err := m.Update("hermes", map[string]bool{"takeover": false}); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = os.ReadFile(cfg)
+	if !strings.Contains(string(s), "provider: openrouter") || !strings.Contains(string(s), "default: anthropic/claude-opus-4") || strings.Contains(string(s), "router-auto") {
+		t.Fatalf("关掉后应放回原来的 model 段：\n%s", s)
+	}
+}
+
+// 只装了 DeepSeek Harness 桌面版、dsh 还没进 PATH：数据目录里有它自己建的 profiles 就算装了
+func TestDshDetectedByDataDir(t *testing.T) {
+	m, home := setup(t)
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("DSH_HOME", filepath.Join(home, ".dsh"))
+	if m.view("deepseek_harness")["available"] != false {
+		t.Fatal("什么都没有时应算没装")
+	}
+	_ = os.MkdirAll(filepath.Join(home, ".dsh", "profiles"), 0o755)
+	if m.view("deepseek_harness")["available"] != true {
+		t.Fatal("有 profiles 目录就该算装了")
+	}
+}

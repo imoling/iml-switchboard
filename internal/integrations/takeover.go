@@ -5,12 +5,16 @@ package integrations
 // 动之前把原值存到数据目录，关掉接管时原样放回。宿主的登录凭据文件从头到尾不碰。
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/imoling/iml-switchboard/internal/config"
 )
@@ -263,4 +267,79 @@ func (m *Manager) setCodexTakeover(on bool) error {
 		_ = os.Remove(save)
 	}
 	return nil
+}
+
+// ---------- Hermes ----------
+
+// hermesTakenOver 看 Hermes 的主模型是不是指向 Switchboard。
+func (m *Manager) hermesTakenOver() bool {
+	b, err := os.ReadFile(m.hermesCfg())
+	if err != nil {
+		return false
+	}
+	var doc yaml.Node
+	if yaml.Unmarshal(b, &doc) != nil || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return false
+	}
+	md := findMap(doc.Content[0], "model")
+	return md != nil && findScalar(md, "provider") == "custom" && findScalar(md, "base_url") == m.facade+"/v1"
+}
+
+// setHermesTakeover 打开时把 ~/.hermes/config.yaml 的 model 段改成 Switchboard 的兼容接口（默认型号 router-auto），
+// 原来的 model 段存到数据目录的 takeover-hermes.yaml；关掉时原样放回。Hermes 重启后生效。
+func (m *Manager) setHermesTakeover(on bool) error {
+	path := m.hermesCfg()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return errors.New("本机没有找到 Hermes 的配置")
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return errors.New("Hermes 配置无法解析：" + err.Error())
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return errors.New("Hermes 配置顶层不是键值表")
+	}
+	save := strings.TrimSuffix(takeoverSavePath("hermes"), ".json") + ".yaml"
+	if on {
+		if _, err := os.Stat(save); err != nil {
+			orig := []byte("")
+			if md := findMap(root, "model"); md != nil {
+				wrap := yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{{Kind: yaml.ScalarNode, Value: "model"}, md}}
+				orig, _ = yaml.Marshal(&wrap)
+			}
+			if err := os.WriteFile(save, orig, 0o600); err != nil {
+				return err
+			}
+		}
+		md := ensureMap(root, "model")
+		setScalar(md, "default", "router-auto")
+		setScalar(md, "provider", "custom")
+		setScalar(md, "base_url", m.facade+"/v1")
+		setScalar(md, "api_key", m.facadeKey())
+		deleteKey(md, "key_env")
+	} else {
+		deleteKey(root, "model")
+		if ob, err := os.ReadFile(save); err == nil {
+			var saved yaml.Node
+			if yaml.Unmarshal(ob, &saved) == nil && len(saved.Content) > 0 && saved.Content[0].Kind == yaml.MappingNode {
+				if md := findMap(saved.Content[0], "model"); md != nil {
+					root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: "model"}, md)
+				}
+			}
+			_ = os.Remove(save)
+		}
+	}
+	_ = os.WriteFile(path+".bak-imls-"+time.Now().Format("20060102-150405"), b, 0o600)
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(&doc); err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o600)
 }

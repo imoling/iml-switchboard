@@ -19,7 +19,7 @@ const META: Record<IntegrationId, { name: string; note: string; manual?: boolean
   pi: { name: 'pi', note: '型号在模型列表里定；下次启动生效' },
   deepseek_harness: { name: 'DeepSeek Harness', note: '在它的模型列表里选 Switchboard' },
   openclaw: { name: 'OpenClaw', note: '下次启动网关生效' },
-  hermes: { name: 'Hermes Agent', note: '下次启动 Hermes 生效' },
+  hermes: { name: 'Hermes Agent', note: '派活工具和生图写进它的配置；要让它整个用 Switchboard 的模型，打开下面的接管' },
   workbuddy: { name: 'WorkBuddy', note: '型号出现在它的自定义模型里；重开生效' },
   winwork: { name: 'WinWork', note: '下次新建会话生效' },
 };
@@ -29,12 +29,13 @@ const TAKEOVER_DESC: Partial<Record<IntegrationId, string>> = {
   claude_code: '对话改走按量付费，订阅暂停；/model 里可选档位',
   codex: '对话改走按量付费；彻底重启 Codex 生效',
   claude_desktop: '对话改走按量付费，订阅暂停；完全退出后重开生效',
+  hermes: '主模型改走按量付费，型号 router-auto；重启 Hermes 生效',
 };
 
 /** 订阅只能由官方命令行消耗，跑不了宿主自己的工具：派活和纯对话用得上，带工具的回合和接管走按量付费 */
 const SUB_USE: Record<IntegrationId, string> = {
   claude_code: '订阅 · 派活', claude_desktop: '不走订阅', codex: '订阅 · 派活', gemini_cli: '订阅 · 派活',
-  doubao_work: '订阅 · 派活', winwork: '订阅 · 派活', hermes: '订阅 · 纯对话',
+  doubao_work: '订阅 · 派活', winwork: '订阅 · 派活', hermes: '订阅 · 派活',
   workbuddy: '订阅 · 纯对话', pi: '订阅 · 纯对话', deepseek_harness: '订阅 · 纯对话', openclaw: '订阅 · 纯对话',
 };
 const SUB_RULE = '订阅只接不带工具的请求：派活工具和纯对话能用，带工具的智能体回合和接管走按量付费';
@@ -101,7 +102,7 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
   const routeRows = (it: Integration): ReactNode[] => {
     const rows: ReactNode[] = [];
     const connected = it.status === 'connected';
-    if ((connected && (it.id === 'claude_code' || it.id === 'codex')) || (it.id === 'claude_desktop' && installed(it))) {
+    if ((connected && (it.id === 'claude_code' || it.id === 'codex' || it.id === 'hermes')) || (it.id === 'claude_desktop' && installed(it))) {
       rows.push(
         <SetRow key="takeover" title="接管模型" desc={TAKEOVER_DESC[it.id]}>
           <Toggle on={!!it.options?.takeover} onChange={(v) => set(it, { takeover: v })} />

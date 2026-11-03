@@ -69,7 +69,21 @@ func (m *Manager) dshHome() string {
 	}
 	return filepath.Join(m.home, ".dsh")
 }
-func (m *Manager) dshPatch() string    { return filepath.Join(m.dshHome(), "cordis.patch.yml") }
+func (m *Manager) dshPatch() string { return filepath.Join(m.dshHome(), "cordis.patch.yml") }
+
+// dshInstalled 判断本机有没有 DeepSeek Harness：PATH 上有 dsh 命令，或数据目录里有它自己建的东西
+// （桌面版用的是垫片，装完要重开终端 PATH 才有；profiles、sessions 这些只有它自己会建，我们接入时只写 cordis.patch.yml 和 .env）。
+func (m *Manager) dshInstalled() bool {
+	if _, err := exec.LookPath("dsh"); err == nil {
+		return true
+	}
+	for _, name := range []string{"profiles", "sessions", "storages", ".credentials.yaml", "settings.yaml", "settings.yaml.imported"} {
+		if _, err := os.Stat(filepath.Join(m.dshHome(), name)); err == nil {
+			return true
+		}
+	}
+	return false
+}
 func (m *Manager) openclawCfg() string { return filepath.Join(m.home, ".openclaw", "openclaw.json") }
 func (m *Manager) dshEnv() string      { return filepath.Join(m.dshHome(), ".env") }
 
@@ -131,7 +145,9 @@ func (m *Manager) view(id string) map[string]any {
 		if _, err := os.Stat(m.hermesCfg()); err != nil {
 			v["available"] = false
 			v["detail"] = "本机没有找到 Hermes 的配置"
-		} else if m.hermesHasKeys() {
+		}
+		v["options"] = map[string]bool{"takeover": m.hermesTakenOver()}
+		if _, err := os.Stat(m.hermesCfg()); err == nil && m.hermesHasKeys() {
 			v["status"] = "connected"
 		}
 		v["snippet"] = m.hermesSnippet()
@@ -170,9 +186,9 @@ func (m *Manager) view(id string) map[string]any {
 		}
 		v["snippet"] = m.piSnippet()
 	case "deepseek_harness":
-		if _, err := exec.LookPath("dsh"); err != nil {
+		if !m.dshInstalled() {
 			v["available"] = false
-			v["detail"] = "本机没有找到 dsh 命令"
+			v["detail"] = "本机没有找到 dsh 命令，也没有它的数据目录"
 		} else if m.dshHas() {
 			v["status"] = "connected"
 		}
@@ -305,6 +321,14 @@ func (m *Manager) Update(id string, opts map[string]bool) (map[string]any, error
 	if id == "claude_desktop" {
 		if v, ok := opts["takeover"]; ok {
 			if err := m.setDesktopTakeover(v); err != nil {
+				return nil, err
+			}
+		}
+		return m.view(id), nil
+	}
+	if id == "hermes" {
+		if v, ok := opts["takeover"]; ok {
+			if err := m.setHermesTakeover(v); err != nil {
 				return nil, err
 			}
 		}
