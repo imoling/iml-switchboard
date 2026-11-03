@@ -119,7 +119,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 curl -fsSL https://raw.githubusercontent.com/imoling/iml-switchboard/main/scripts/install-mac.sh | bash
 ```
 
-It downloads the latest dmg for your chip (GitHub first, then the Gitee mirror), installs it into Applications and clears the download quarantine flag; if the backend is idle it switches it to the new version. You can also pass a dmg you already have: `bash install-mac.sh ~/Downloads/Switchboard_0.4.1_aarch64.dmg`.
+It downloads the latest dmg for your chip (GitHub first, then the Gitee mirror), installs it into Applications and clears the download quarantine flag; if the backend is idle it switches it to the new version. You can also pass a dmg you already have: `bash install-mac.sh ~/Downloads/Switchboard_0.4.2_aarch64.dmg`.
 
 **Installers**: download the installer for your system from the [Releases](https://github.com/imoling/iml-switchboard/releases) page (a dmg on macOS; an msi or exe on Windows). The installer already includes the `imls` backend.
 
