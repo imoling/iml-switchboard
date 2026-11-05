@@ -10,7 +10,7 @@
 
 Switchboard brings your subscription models (Claude, ChatGPT, Antigravity), your pay-as-you-go models and your image and video models under one roof, and makes them usable from every agent you run: Claude Code, Codex, WorkBuddy, Hermes and more.
 
-- **Picks a model by difficulty and saves where it can**: chores go to cheap models, hard problems to strong ones, and subscription quota is spent first.
+- **Picks a model by difficulty and saves where it can**: chores go to cheap models, hard problems to strong ones, and subscription quota is spent first. Turn on smart dispatch to let a local Laya model, Jev or a fast model you already have pick by task content; every record shows what the app would have paid on its own, so the savings are plain to see.
 - **Images without switching tools**: calls GPT Image, Nano Banana, Volcengine Ark and others directly, and saves the result into your project.
 - **One model down, the next one carries on**: when a subscription runs out, hits a rate limit or errors, the next model picks up the same conversation.
 - **Top models for every agent**: with the matching subscription or key, Opus, Fable and GPT are reachable from any connected agent (agent turns that carry tools use pay-as-you-go only, never a subscription).
@@ -101,7 +101,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 </tr>
 <tr>
 <td align="center">Menu bar: today's spend, quotas, routing mode</td>
-<td align="center">Hosts: connect agents and order their tier candidates; Dispatch: edit rules and review results</td>
+<td align="center">Apps: connect agents and order their tier candidates; Dispatch: edit rules and review results</td>
 </tr>
 </table>
 
@@ -119,7 +119,7 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 curl -fsSL https://raw.githubusercontent.com/imoling/iml-switchboard/main/scripts/install-mac.sh | bash
 ```
 
-It downloads the latest dmg for your chip (Gitee mirror first, then GitHub), installs it into Applications and clears the download quarantine flag; if the backend is idle it switches it to the new version. You can also pass a dmg you already have: `bash install-mac.sh ~/Downloads/Switchboard_0.5.0_aarch64.dmg`.
+It downloads the latest dmg for your chip (Gitee mirror first, then GitHub), installs it into Applications and clears the download quarantine flag; if the backend is idle it switches it to the new version. You can also pass a dmg you already have: `bash install-mac.sh ~/Downloads/Switchboard_0.6.0_aarch64.dmg`.
 
 **Installers**: download the installer for your system from the [Releases](https://github.com/imoling/iml-switchboard/releases) page (a dmg on macOS; an msi or exe on Windows). The installer already includes the `imls` backend.
 
@@ -152,7 +152,7 @@ If your terminal sets a global proxy, add `NO_PROXY=127.0.0.1,localhost`; otherw
 
 ## Usage
 
-Once connected, Claude Code gains five tools: `ask_model` (ask another model), `generate_image`, `generate_video`, `make_animation` and `get_job` (check a media job). Just ask in plain words, for example "make a cover image" or "get a second opinion on this".
+Once connected, Claude Code gains five tools: `ask_model` (ask another model), `generate_image`, `generate_video`, `make_animation` and `get_job` (check a media job). Just ask in plain words, for example "make a cover image", "redraw this avatar as pixel art" or "get a second opinion on this"; images you paste are passed along as references.
 
 From the command line:
 

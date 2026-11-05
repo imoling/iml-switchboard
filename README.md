@@ -10,7 +10,7 @@
 
 Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值的按量付费模型、生图生视频模型统一管起来，让 Claude Code、Codex、WorkBuddy、Hermes 这些智能体在哪都能用：
 
-- **按难易自动挑模型，能省就省**：杂活给便宜模型，难事给强模型，订阅额度先用。
+- **按难易自动挑模型，能省就省**：杂活给便宜模型，难事给强模型，订阅额度先用。也可以打开智能分派，请本机 Laya、Jev 或你已有的快模型按任务内容挑；每条记录都算出应用自己调模型要花多少（原价），省下多少一目了然。
 - **要图就生图，不用切换**：直接调 GPT Image、Nano Banana、火山方舟这些生图模型，产物落到项目里。
 - **一个挂了换下一个**：订阅额度用完、限流或报错时，自动换下一个模型，带着同一段对话接着干。
 - **哪个宿主都能用上顶级模型**：配好对应的订阅或密钥，Opus、Fable、GPT 这些强模型哪个宿主都调得到（带工具的智能体回合只走按量付费，不走订阅）。
@@ -19,7 +19,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 
 - **派活**：Claude Code、Codex、Gemini CLI 保留自己的主力模型，把翻译、第二意见、生图这些子任务交给 Switchboard（MCP 工具）。主力的上下文和缓存不受影响。
 - **当主力模型**：WorkBuddy、pi、OpenClaw、DeepSeek Harness 直接把 Switchboard 当成一个模型（OpenAI 兼容接口）。每次请求带着完整对话，Switchboard 按难易挑模型，一个失败就换下一个接着答。
-- **接管 Claude Code、Claude Desktop 和 Codex**：宿主页打开「接管模型」，它们自己的对话就改走 Switchboard（Claude Code 和 Claude Desktop 用 Anthropic 协议，Codex 用 Responses 协议，流式、工具调用、提示缓存都是原生的）。Claude Code 和 Codex 的 `/model` 里能选「自动分档」「高档 / 中档 / 低档」或任何一个按量付费型号，Claude Desktop 的模型菜单里是这四档；关掉开关原样恢复。订阅额度用完、或想用 WinWork 网关的模型接着写代码时用它。
+- **接管 Claude Code、Claude Desktop 和 Codex**：应用页打开「接管模型」，它们自己的对话就改走 Switchboard（Claude Code 和 Claude Desktop 用 Anthropic 协议，Codex 用 Responses 协议，流式、工具调用、提示缓存都是原生的）。Claude Code 和 Codex 的 `/model` 里能选「自动分档」「高档 / 中档 / 低档」或任何一个按量付费型号，Claude Desktop 的模型菜单里是这四档；关掉开关原样恢复。订阅额度用完、或想用 WinWork 网关的模型接着写代码时用它。
 
 配一个菜单栏（Windows 上是托盘）应用：看额度、看花费、看省了多少、改规则。
 
@@ -95,11 +95,11 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 <table>
 <tr>
 <td width="34%"><img src="docs/images/popover.png" alt="菜单栏弹窗"></td>
-<td><img src="docs/images/integrations.png" alt="宿主页"><br><img src="docs/images/rules.png" alt="分派"></td>
+<td><img src="docs/images/integrations.png" alt="应用页"><br><img src="docs/images/rules.png" alt="分派"></td>
 </tr>
 <tr>
 <td align="center">菜单栏：今天花了多少、额度、调度模式</td>
-<td align="center">宿主页接入各个智能体、排它自己的档位候选；分派页改规则、看回看结果</td>
+<td align="center">应用页接入各个智能体、排它自己的档位候选；分派页改规则、看回看结果</td>
 </tr>
 </table>
 
@@ -117,7 +117,7 @@ Switchboard 把你订阅的模型（Claude、ChatGPT、Antigravity）、充值�
 curl -fsSL https://raw.githubusercontent.com/imoling/iml-switchboard/main/scripts/install-mac.sh | bash
 ```
 
-脚本下载本机芯片对应的最新 dmg（先 Gitee 镜像，没有再去 GitHub），装到「应用程序」，清掉下载来源标记；后台服务没在干活时顺手换成新版本。已经下载好的 dmg 可以传给它：`bash install-mac.sh ~/Downloads/Switchboard_0.5.0_aarch64.dmg`。
+脚本下载本机芯片对应的最新 dmg（先 Gitee 镜像，没有再去 GitHub），装到「应用程序」，清掉下载来源标记；后台服务没在干活时顺手换成新版本。已经下载好的 dmg 可以传给它：`bash install-mac.sh ~/Downloads/Switchboard_0.6.0_aarch64.dmg`。
 
 **用安装包**：在 [Releases](https://github.com/imoling/iml-switchboard/releases) 页下载对应系统的安装包（macOS 是 dmg，Windows 是 msi 或 exe）。安装包里已经带了后台程序 `imls`。
 
@@ -150,7 +150,7 @@ cd ui && npm install && npm run tauri build
 
 ## 用起来
 
-接入 Claude Code 后，它多了五个工具：`ask_model`（问别的模型）、`generate_image`、`generate_video`、`make_animation`、`get_job`（查媒体任务进度）。平时直接说「配一张封面图」「请另一个模型评审一下」就行。
+接入 Claude Code 后，它多了五个工具：`ask_model`（问别的模型）、`generate_image`、`generate_video`、`make_animation`、`get_job`（查媒体任务进度）。平时直接说「配一张封面图」「照着这张头像画成像素风」「请另一个模型评审一下」就行，贴的图会当参考图传过去。
 
 命令行：
 

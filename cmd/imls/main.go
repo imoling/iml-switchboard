@@ -21,7 +21,7 @@ import (
 	"github.com/imoling/iml-switchboard/internal/surfaces/mcp"
 )
 
-var version = "0.5.0"
+var version = "0.6.0"
 
 func main() {
 	admin.Version = version
@@ -229,7 +229,7 @@ func doctor() error {
 		fmt.Printf("密钥         warn      系统凭据库不可用，按量付费密钥存在数据目录的 secrets.local 里（明文，只有当前用户能读）\n")
 	}
 	if p := proxyWithoutLocal(); p != "" {
-		fmt.Printf("代理         warn      设了 %s 但没排除本机，pi、OpenClaw 这些宿主连不上 Switchboard；加上 NO_PROXY=127.0.0.1,localhost\n", p)
+		fmt.Printf("代理         warn      设了 %s 但没排除本机，pi、OpenClaw 这些应用连不上 Switchboard；加上 NO_PROXY=127.0.0.1,localhost\n", p)
 	}
 	if _, err := exec.LookPath("node"); err != nil {
 		fmt.Println("node         missing   动画需要本机安装 Node")
