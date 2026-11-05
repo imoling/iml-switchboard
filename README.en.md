@@ -10,15 +10,16 @@
 
 Switchboard brings your subscription models (Claude, ChatGPT, Antigravity), your pay-as-you-go models and your image and video models under one roof, and makes them usable from every agent you run: Claude Code, Codex, WorkBuddy, Hermes and more.
 
-- **Picks a model by difficulty and saves where it can**: chores go to cheap models, hard problems to strong ones, and subscription quota is spent first. Turn on smart dispatch to let a local Laya model, Jev or a fast model you already have pick by task content; every record shows what the app would have paid on its own, so the savings are plain to see.
-- **Images without switching tools**: calls GPT Image, Nano Banana, Volcengine Ark and others directly, and saves the result into your project.
-- **One model down, the next one carries on**: when a subscription runs out, hits a rate limit or errors, the next model picks up the same conversation.
+- **Picks a model by difficulty and saves where it can**: chores go to cheap models, hard problems to strong ones, and subscription quota is spent first. Turn on smart dispatch to let a small local Laya model, Jev or a fast model you already have pick by task content.
+- **Savings you can see**: every record carries the app's own price, what the app would have paid calling models itself (WorkBuddy's credit billing; for other apps, the model they used before at official prices). Saved = app price − actual spend.
+- **Images without switching tools**: calls GPT Image, Nano Banana, Volcengine Ark, Agnes and others directly, can work from reference images, and saves the result into your project. Say "draw this script" in a chat and the conversation goes along to the image model.
+- **One model down, the next one carries on**: when a subscription runs out, hits a rate limit or errors, the next model picks up the same conversation; if a whole tier is down, it climbs a tier.
 - **Top models for every agent**: with the matching subscription or key, Opus, Fable and GPT are reachable from any connected agent (agent turns that carry tools use pay-as-you-go only, never a subscription).
 
-Two ways to use it:
+Three ways to use it:
 
 - **Delegate**: Claude Code, Codex and Gemini CLI keep their own main model and hand sub-tasks (translation, a second opinion, images) to Switchboard as MCP tools. The main conversation and its prompt cache are untouched.
-- **Take over Claude Code, Claude Desktop and Codex**: flip "Take over model" on the Integrations page and their own conversations go through Switchboard (Anthropic Messages for Claude Code and Claude Desktop, OpenAI Responses for Codex; streaming, tool calls and prompt caching are native). `/model` in Claude Code and Codex lists "auto", "high / mid / low" and every pay-as-you-go model; Claude Desktop's model menu shows the four tiers. Switch it off and the original config is restored.
+- **Take over Claude Code, Claude Desktop and Codex**: flip "Take over model" on the Apps page and their own conversations go through Switchboard (Anthropic Messages for Claude Code and Claude Desktop, OpenAI Responses for Codex; streaming, tool calls and prompt caching are native). `/model` in Claude Code and Codex lists "auto", "high / mid / low" and every pay-as-you-go model; Claude Desktop's model menu shows the four tiers. Switch it off and the original config is restored.
 - **Be the main model**: WorkBuddy, pi, OpenClaw and DeepSeek Harness use Switchboard as a model through an OpenAI-compatible endpoint. Every request carries the full conversation; Switchboard picks a model by difficulty and falls over to the next one if it fails.
 
 It comes with a menu bar app (system tray on Windows) for quotas, spend, savings, and routing rules.
@@ -27,14 +28,14 @@ It comes with a menu bar app (system tray on Windows) for quotas, spend, savings
 >
 > The app's interface is in Chinese for now.
 
-<p align="center"><img src="docs/images/overview.png" width="760" alt="Overview: pay-as-you-go spend, subscription quota, call count, and the records table"></p>
+<p align="center"><img src="docs/images/overview.png" width="760" alt="Overview: pay-as-you-go spend, savings from auto routing, call count, connected apps and channels, daily savings"></p>
 
-<p align="center"><a href="docs/videos/switchboard-launch-en.mp4"><img src="docs/images/launch-poster.png" width="760" alt="46-second intro video"></a><br><sub>What it does, in 46 seconds · <a href="docs/videos/switchboard-launch-en.mp4">play the video</a></sub></p>
+<p align="center"><a href="docs/videos/switchboard-launch-0.6-en.mp4"><img src="docs/images/launch-poster-0.6-en.png" width="760" alt="50-second intro video"></a><br><sub>What it does, in 50 seconds · <a href="docs/videos/switchboard-launch-0.6-en.mp4">play the video</a></sub></p>
 
 ## What it solves
 
 - **Your subscription goes unused while your API bill grows.** Claude and ChatGPT plan quota is spent first, through the official CLIs on your machine. Only when it runs out does work move to pay-as-you-go, and that stops at a monthly cap.
-- **Every task goes to the most expensive model.** Rules plus a low-tier model acting as a judge sort tasks into low, mid and high tiers. The top tier is used only when you ask for it, when you redo a task, or in quality mode.
+- **Every task goes to the most expensive model.** Rules plus a low-tier model acting as a judge, or smart dispatch, sort tasks into low, mid and high tiers. The top tier is used only when you ask for it, when you redo a task, or in quality mode.
 - **Agents can't make images or videos.** Agents get tools for images, videos and motion graphics, and the output lands in the project's `assets/` folder.
 
 ## How it differs from similar tools
@@ -69,22 +70,23 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 **Routing**
 - Low, mid and high tiers, plus a top tier used only on explicit request; three modes: save, balanced and quality.
 - When the rules are unsure, a low-tier model judges the task first; if it can't answer within 10 seconds, the rules decide.
-- When a subscription runs out, hits a rate limit or errors, the next candidate takes over with the same conversation; a model pinned to a session falls back the same way.
-- Tier candidates: for each of the low, mid and high tiers, pick which channel models belong and which one is tried first, globally and optionally per host.
+- Smart dispatch (off by default): a judge picks among the usable models with the rule tier as a prior; requests with tools or images first drop models that can't handle them. The judge is a local Laya model (download, start and stop it on the Dispatch page; it frees memory after 10 idle minutes and task content never leaves your machine), Jev, or a fast model you already have. Apps can also pick "Switchboard 智能分派" from their model menu. "Try a sentence" on the Dispatch page shows the rule result and the judge's pick side by side.
+- When a subscription runs out, hits a rate limit or errors, the next candidate takes over with the same conversation; a model pinned to a session falls back the same way. In auto mode, if the whole tier is unavailable, the next tier up answers.
+- Tier candidates: for each of the low, mid and high tiers, pick which channel models belong and which one is tried first, globally and optionally per app. Image and video generation each have their own order too; models with no working service aren't listed.
 - Each candidate is checked against its context window and larger windows are tried when a request doesn't fit. When nothing fits, Switchboard returns the standard `context_length_exceeded` error so the agent can compact its own conversation.
 - Mark a call as under-routed with one click; enough marks produce a rule suggestion. The evaluation feature re-runs samples on a high-tier model and has it judge blind whether the cheaper answer was good enough.
 
 **Lanes**
 - Subscriptions: Claude (`claude -p`), ChatGPT (`codex exec`), Antigravity (`agy -p`). While running, Switchboard starts the next CLI process ahead of time; measured end-to-end latency dropped from 7.5 s to about 4 s for Claude and from 32 s to about 5 s for Antigravity.
 - Pay-as-you-go: Zhipu (GLM), Alibaba Cloud Model Studio (Qwen), DeepSeek, Moonshot (Kimi), MiniMax, Volcengine Ark (Doubao), OpenRouter, Anthropic, Agnes AI, 302.ai and WinWork (iFLYTEK; appears automatically when installed and exposes its gateway models, Sonnet 5.5, DeepSeek, Qwen, Kimi and more, at no cost to you). Keys live in the system credential store: the macOS Keychain or Windows Credential Manager.
-- Media: image and video generation in cheap, default and best tiers; motion graphics are written as Remotion code by a model and rendered to video on your machine.
+- Media: image and video generation in cheap, default and best tiers, or in the order you set, or by naming a model in the request; reference images are supported; motion graphics are written as Remotion code by a model and rendered to video on your machine.
 
 **Supported agents**
 
 | Agent | How it connects | Tested |
 |---|---|---|
 | Claude Code | MCP tools, usage notes in `CLAUDE.md`, slash commands | Used daily |
-| Codex | MCP tools, usage notes in `AGENTS.md`; works with the `codex` CLI from npm or the one bundled in the ChatGPT desktop app | Registered; hand-off flow verified with a simulated host |
+| Codex | MCP tools, usage notes in `AGENTS.md`; works with the `codex` CLI from npm or the one bundled in the ChatGPT desktop app | Registered; hand-off flow verified with a simulated app |
 | Gemini CLI | MCP tools, usage notes in `GEMINI.md` | Registered; personal Google accounts have moved to Antigravity, so an API key or enterprise account is needed |
 | pi | OpenAI-compatible endpoint | Agent turns with tool calls verified |
 | OpenClaw | OpenAI-compatible endpoint | Agent turns with tool calls verified |
@@ -97,16 +99,22 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 <table>
 <tr>
 <td width="34%"><img src="docs/images/popover.png" alt="Menu bar popover"></td>
-<td><img src="docs/images/integrations.png" alt="Integrations"><br><img src="docs/images/rules.png" alt="Routing rules"></td>
+<td><img src="docs/images/rules.png" alt="Dispatch: smart dispatch and try a sentence"><br><img src="docs/images/calls.png" alt="Records"></td>
 </tr>
 <tr>
 <td align="center">Menu bar: today's spend, quotas, routing mode</td>
-<td align="center">Apps: connect agents and order their tier candidates; Dispatch: edit rules and review results</td>
+<td align="center">Dispatch: choose rule or smart dispatch and see where a sentence would go under each; Records: usage, unit price, spend and app price for every call</td>
+</tr>
+<tr>
+<td colspan="2"><img src="docs/images/integrations.png" alt="Apps"></td>
+</tr>
+<tr>
+<td colspan="2" align="center">Apps: connect agents, order their tier candidates, and set which model the app price is based on</td>
 </tr>
 </table>
 
 **Also**
-- A ledger of every call: model, cost, and what the same call would have cost on Opus. The menu bar shows the last 7 days of savings. Costs can be shown in CNY or USD.
+- Records: model, usage, unit price, spend and app price for every call, paged, with the routing reasons one click away; evaluation runs don't count toward savings. The overview shows daily savings or call volume, the tier mix and the costliest task types. Costs can be shown in CNY or USD.
 - Themes: Standard plus three playful ones that only change the interface wording; one click returns to Standard for screen sharing. Eight menu bar icon styles to choose from (Lab).
 - Backend service: Settings shows uptime with a one-click restart, and warns when the running backend isn't the one shipped with the installed app.
 - Update check: once a day Switchboard checks the Gitee mirror first (falling back to GitHub Releases), notifies you of a new version, and offers the installer for your platform from Settings.
@@ -152,7 +160,7 @@ If your terminal sets a global proxy, add `NO_PROXY=127.0.0.1,localhost`; otherw
 
 ## Usage
 
-Once connected, Claude Code gains five tools: `ask_model` (ask another model), `generate_image`, `generate_video`, `make_animation` and `get_job` (check a media job). Just ask in plain words, for example "make a cover image", "redraw this avatar as pixel art" or "get a second opinion on this"; images you paste are passed along as references.
+Once connected, Claude Code gains five tools: `ask_model` (ask another model), `generate_image`, `generate_video`, `make_animation` and `get_job` (check a media job). Just ask in plain words, for example "make a cover image", "redraw this avatar as pixel art" or "get a second opinion on this"; images you paste are passed along as references. Apps that use Switchboard as their main model, such as WorkBuddy and Codex, can also say "draw the script above" mid-conversation; the conversation is folded into the image prompt.
 
 From the command line:
 
@@ -173,8 +181,9 @@ Routing is tested against two data sets: 105 golden cases used to tune the rules
 |---|---|---|
 | Rules only (previous version) | 46.7% | 51.7% |
 | Rules only (current) | 65.0% | 33.3% |
+| Smart dispatch (local Laya judge) | 56.7% | 21.7% |
 
-Most rule misses are hard problems that contain no telltale keywords, which is why a low-tier judge is consulted when the rules are unsure. The samples are small, so treat these numbers as a direction rather than a guarantee; run `go test ./internal/core -run Tiers -v` to see them yourself.
+Most rule misses are hard problems that contain no telltale keywords, which is why a low-tier judge is consulted when the rules are unsure. The smart dispatch row was measured on the author's machine on 2026-11-05: the judge chose among the 11 models actually usable there, at 57 ms per case on average. It under-routes a third less often than the rules, but it sent 7 mid-tier cases to the high tier, so overall accuracy is lower. The samples are small, so treat these numbers as a direction rather than a guarantee; run `go test ./internal/core -run Tiers -v` to reproduce the rule rows.
 
 ## Known limitations
 
@@ -182,6 +191,7 @@ Most rule misses are hard problems that contain no telltale keywords, which is w
 - Claude requests that carry their own system prompt aren't pre-warmed (requests from the OpenAI-compatible endpoint usually do).
 - The Codex subscription hand-off flow and tool-calling turns from Hermes haven't been run end to end for real.
 - Switchboard does not compact conversations on an agent's behalf; it returns the standard error and lets the agent compact.
+- Smart dispatch judges: the local Laya model needs a Python environment and a ~680 MB download the first time; Jev rejects direct connections from mainland China, so set a proxy in Settings.
 
 ## Roadmap
 
