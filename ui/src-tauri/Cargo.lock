@@ -1829,7 +1829,7 @@ dependencies = [
 
 [[package]]
 name = "iml-switchboard"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "objc2",
  "objc2-app-kit",
