@@ -27,31 +27,44 @@ MNT="$WORK/mnt"
 cleanup() { hdiutil detach "$MNT" -quiet >/dev/null 2>&1 || true; rm -rf "$WORK"; }
 trap cleanup EXIT
 
-# 找本机芯片对应的 dmg 地址。预发布版也算，所以用版本列表，不用「最新版」接口。
+# 找本机芯片对应的 dmg 地址：Gitee、GitHub 各问一次最新正式版，取版本高、又有这个芯片 dmg 的那个；一样新时用 Gitee，国内快。
+# 不用发布列表：Gitee 的列表旧的在前，取第一条会装回老版本。
 dmg_url() {
-  local api="$1"
-  curl -fsSL --max-time 20 "$api" 2>/dev/null | /usr/bin/python3 -c '
-import json, sys
-arch = sys.argv[1]
-try:
-    rels = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-for r in rels if isinstance(rels, list) else []:
+  /usr/bin/python3 - "$ARCH" "$@" <<'PY'
+import json, subprocess, sys
+arch, apis = sys.argv[1], sys.argv[2:]
+def ver(tag):
+    out = []
+    for p in tag.lstrip("v").split("-")[0].split(".")[:3]:
+        try: out.append(int(p))
+        except ValueError: out.append(0)
+    return tuple(out + [0] * (3 - len(out)))
+best = None
+for api in apis:
+    try:
+        raw = subprocess.run(["curl", "-fsSL", "--max-time", "20", api], capture_output=True, timeout=30).stdout
+        r = json.loads(raw)
+    except Exception:
+        continue
+    if not isinstance(r, dict) or r.get("prerelease") or r.get("draft"):
+        continue
     for a in r.get("assets") or []:
         u = a.get("browser_download_url") or ""
         if u.endswith("_" + arch + ".dmg"):
-            print(u)
-            sys.exit(0)
-' "$ARCH"
+            v = ver(r.get("tag_name") or "")
+            if best is None or v > best[0]:
+                best = (v, u)
+            break
+if best:
+    print(best[1])
+PY
 }
 
 if [ $# -ge 1 ]; then
   DMG="$1"
   [ -f "$DMG" ] || die "找不到安装包：$DMG"
 else
-  URL="$(dmg_url "https://gitee.com/api/v5/repos/$REPO/releases?per_page=10")"
-  [ -n "$URL" ] || URL="$(dmg_url "https://api.github.com/repos/$REPO/releases?per_page=10")"
+  URL="$(dmg_url "https://gitee.com/api/v5/repos/$REPO/releases/latest" "https://api.github.com/repos/$REPO/releases/latest")"
   [ -n "$URL" ] || die "Gitee 和 GitHub 上都没找到 ${ARCH} 的安装包；也可以先手动下载，再把 dmg 路径传给这个脚本"
   say "正在下载 $(basename "$URL")…"
   DMG="$WORK/Switchboard.dmg"
