@@ -1,4 +1,4 @@
-# 打 v* 标签时：三个平台各自构建安装包（macOS dmg、Windows msi 和 exe、Linux AppImage 和 deb）。
+# 打 v* 标签时：三个平台各自构建安装包（macOS dmg、Windows msi 和 exe、Linux deb 和 rpm；AppImage 近 100 MB，不再出）。
 # 标签不带「-」（v0.6.0）发正式版，成为 latest；带「-」（v0.6.1-pre、v0.7.0-rc.1）发预发布版。
 # 发布说明取 docs/releases/<标签>.md。
 # 也可以手动触发，补构建某个已有标签的某个平台，产物挂到同一个发布上（用标签上的代码构建）。
@@ -41,7 +41,7 @@ jobs:
             rust-target: ''
           - os: ubuntu-22.04
             platform: linux
-            args: ''
+            args: --bundles deb,rpm
             rust-target: ''
     runs-on: ${{ matrix.os }}
     permissions:

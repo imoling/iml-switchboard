@@ -162,7 +162,7 @@ func (c *Checker) fetch(ctx context.Context, client *http.Client, src Source, at
 	return nil, errors.New(src.Name + " 上还没有发布")
 }
 
-// matchAsset 按平台挑安装包：macOS 按芯片分 dmg，Windows 用 exe 安装程序，Linux 用 AppImage。
+// matchAsset 按平台挑安装包：macOS 按芯片分 dmg，Windows 用 exe 安装程序，Linux 用 deb（AppImage 太大，不再出）。
 func matchAsset(name, goos, goarch string) bool {
 	n := strings.ToLower(name)
 	switch goos {
@@ -177,7 +177,13 @@ func matchAsset(name, goos, goarch string) bool {
 	case "windows":
 		return strings.HasSuffix(n, "setup.exe") || strings.HasSuffix(n, ".exe")
 	case "linux":
-		return strings.HasSuffix(n, ".appimage")
+		if !strings.HasSuffix(n, ".deb") {
+			return false
+		}
+		if goarch == "arm64" {
+			return strings.Contains(n, "arm64") || strings.Contains(n, "aarch64")
+		}
+		return strings.Contains(n, "amd64") || strings.Contains(n, "x86_64")
 	}
 	return false
 }

@@ -29,7 +29,8 @@ func TestCheckPicksPlatformAssetAndCaches(t *testing.T) {
 		  "assets":[{"name":"Switchboard_0.2.0_x64.dmg","browser_download_url":"https://x/x64.dmg"},
 		            {"name":"Switchboard_0.2.0_aarch64.dmg","browser_download_url":"https://x/arm.dmg"},
 		            {"name":"Switchboard_0.2.0_x64-setup.exe","browser_download_url":"https://x/setup.exe"},
-		            {"name":"Switchboard_0.2.0_amd64.AppImage","browser_download_url":"https://x/app.AppImage"}]},
+		            {"name":"Switchboard_0.2.0_amd64.AppImage","browser_download_url":"https://x/app.AppImage"},
+		            {"name":"Switchboard_0.2.0_amd64.deb","browser_download_url":"https://x/app.deb"}]},
 		 {"tag_name":"v0.1.0","draft":false,"html_url":"https://x/v0.1.0","assets":[]}]`))
 	}))
 	defer ts.Close()
@@ -48,7 +49,7 @@ func TestCheckPicksPlatformAssetAndCaches(t *testing.T) {
 	if _, _ = c.Check(context.Background(), true); hits != 2 {
 		t.Fatalf("手动检查要绕过缓存：%d", hits)
 	}
-	for _, p := range []struct{ goos, goarch, want string }{{"darwin", "amd64", "https://x/x64.dmg"}, {"windows", "amd64", "https://x/setup.exe"}, {"linux", "amd64", "https://x/app.AppImage"}} {
+	for _, p := range []struct{ goos, goarch, want string }{{"darwin", "amd64", "https://x/x64.dmg"}, {"windows", "amd64", "https://x/setup.exe"}, {"linux", "amd64", "https://x/app.deb"}} {
 		c := &Checker{Current: "0.1.0", Sources: []Source{{Name: "github", API: ts.URL}}, GOOS: p.goos, GOARCH: p.goarch}
 		if info, _ := c.Check(context.Background(), true); info.URL != p.want {
 			t.Errorf("%s/%s 应选 %s，得到 %s", p.goos, p.goarch, p.want, info.URL)
