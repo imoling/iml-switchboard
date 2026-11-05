@@ -26,10 +26,12 @@ const (
 	Repo        = "convaiinnovations/laya" // 权重在这个仓库的 multilingual/ 下
 	Checkpoint  = "multilingual"           // 中文任务用多语言版（mmBERT-base，322M）
 	ModelBytes  = 678_000_000              // 多语言版权重大小，算下载进度用
-	Port        = 18120                    // 只监听 127.0.0.1
 	idleUnload  = 600                      // 空闲 10 分钟卸载权重、放回内存，下次请求自动加载
 	startupWait = 90 * time.Second
 )
+
+// Port 是本机服务的端口，只监听 127.0.0.1；测试里换成空闲端口，免得探到真在跑的 Laya
+var Port = 18120
 
 // Status 是 Laya 在本机的状态。
 type Status struct {

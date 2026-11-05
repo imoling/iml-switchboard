@@ -1,6 +1,7 @@
 package laya
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,12 @@ import (
 )
 
 func TestStatusAndKey(t *testing.T) {
+	if l, err := net.Listen("tcp", "127.0.0.1:0"); err == nil { // 换个没人用的端口：本机可能真开着 Laya
+		old := Port
+		Port = l.Addr().(*net.TCPAddr).Port
+		l.Close()
+		t.Cleanup(func() { Port = old })
+	}
 	m := &Manager{Dir: filepath.Join(t.TempDir(), "laya")}
 	st := m.Status()
 	if st.Installed || st.Downloaded || st.Running {
@@ -17,9 +24,9 @@ func TestStatusAndKey(t *testing.T) {
 		t.Fatalf("没装时启动应报还没下载：%v", err)
 	}
 	// 装好运行环境、下好权重
-	bin := filepath.Join(m.Dir, "venv", "bin")
-	_ = os.MkdirAll(bin, 0o755)
-	_ = os.WriteFile(filepath.Join(bin, "laya-serve"), []byte("#!/bin/sh\n"), 0o755)
+	serve := m.venvBin("laya-serve") // Windows 上是 venv\Scripts\laya-serve.exe
+	_ = os.MkdirAll(filepath.Dir(serve), 0o755)
+	_ = os.WriteFile(serve, []byte("#!/bin/sh\n"), 0o755)
 	w := filepath.Join(m.Dir, "hf", "hub", "models--convaiinnovations--laya", "snapshots", "abc", Checkpoint)
 	_ = os.MkdirAll(w, 0o755)
 	f, _ := os.Create(filepath.Join(w, "model.safetensors"))
