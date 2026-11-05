@@ -7,7 +7,7 @@ import (
 	"github.com/imoling/iml-switchboard/internal/lanes/api"
 )
 
-// OpenAICompatImage 走 OpenAI 兼容的 /v1/images/generations（OpenAI gpt-image-2.5-*、302.ai）。
+// OpenAICompatImage 走 OpenAI 兼容的 /v1/images/generations（OpenAI gpt-image-2.5-*、302.ai）；带参考图时走 /v1/images/edits。
 type OpenAICompatImage struct {
 	Account api.Account
 	Client  *http.Client
@@ -24,7 +24,7 @@ func (p *OpenAICompatImage) Name() string {
 // Generate 出图。
 func (p *OpenAICompatImage) Generate(ctx context.Context, req ImageRequest) (ImageResult, error) {
 	d := api.NewAPIDriver(nil, p.Client)
-	res, err := d.GenerateImage(ctx, p.Account, api.ImageGenRequest{Model: req.Model, Prompt: req.Prompt, Size: req.Size, Quality: req.Quality})
+	res, err := d.GenerateImage(ctx, p.Account, api.ImageGenRequest{Model: req.Model, Prompt: req.Prompt, Size: req.Size, Quality: req.Quality, Refs: req.Refs})
 	if err != nil {
 		return ImageResult{}, err
 	}

@@ -56,12 +56,10 @@ func (p *ArkImage) Generate(ctx context.Context, req ImageRequest) (ImageResult,
 		"response_format": "b64_json",
 		"watermark":       false,
 	}
-	if req.ImagePath != "" {
-		u, err := imageDataURL(req.ImagePath)
-		if err != nil {
-			return ImageResult{}, err
-		}
-		body["image"] = u
+	if us, err := refDataURLs(req.Refs); err != nil {
+		return ImageResult{}, err
+	} else if len(us) > 0 {
+		body["image"] = oneOrMany(us)
 	}
 	raw, err := doJSON(ctx, p.Client, p.Name(), http.MethodPost, joinURL(base, "/images/generations"), headers, body)
 	if err != nil {

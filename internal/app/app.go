@@ -19,6 +19,8 @@ import (
 	"github.com/imoling/iml-switchboard/internal/core"
 	"github.com/imoling/iml-switchboard/internal/integrations"
 	"github.com/imoling/iml-switchboard/internal/lanes/api"
+	"github.com/imoling/iml-switchboard/internal/lanes/jev"
+	"github.com/imoling/iml-switchboard/internal/lanes/laya"
 	"github.com/imoling/iml-switchboard/internal/lanes/media"
 	"github.com/imoling/iml-switchboard/internal/lanes/sub"
 	"github.com/imoling/iml-switchboard/internal/surfaces/admin"
@@ -52,6 +54,7 @@ type App struct {
 	Codex   *sub.CodexDriver
 	Agy     *sub.AntigravityDriver
 	Admin   *admin.Server
+	Laya    *laya.Manager
 	Facade  *facade.Server
 	Integr  *integrations.Manager
 	Version string
@@ -79,9 +82,9 @@ func New(version string) (*App, error) {
 	a.updates = &update.Checker{Current: version}
 	// 老记录的摘录里带着宿主注入的内容，升级后清一次
 	var done bool
-	if !ledger.KVGet("migrate:clean_excerpts_v3", &done) || !done {
+	if !ledger.KVGet("migrate:clean_excerpts_v4", &done) || !done {
 		if _, err := ledger.CleanExcerpts(core.StripInjected); err == nil {
-			_ = ledger.KVSet("migrate:clean_excerpts_v3", true)
+			_ = ledger.KVSet("migrate:clean_excerpts_v4", true)
 		}
 	}
 	a.exe, _ = os.Executable()
@@ -150,6 +153,33 @@ func New(version string) (*App, error) {
 		return nil
 	})
 	a.Integr = integrations.New(cfg, a.exe, BaseURL, func() string { return cfg.Get().Settings.FacadeKey })
+	a.Router.SetBaselineDefault(a.Integr.OriginalModel)
+	a.Router.SetAppBilling(a.workbuddyBilling)
+	a.Laya = &laya.Manager{Dir: filepath.Join(dir, "laya"), Env: envWithoutProxy}
+	a.Router.SetSmartJudge(a.jevJudge(client))
+	if s := cfg.Get().Routing.Smart; s.JudgeOrDefault() == "laya" && s.LayaAutostart {
+		go func() { _ = a.Laya.Start() }() // 上次开着：接着跑（还在跑就直接认领）
+	}
+	// 点名型号的老记录档位记的是规则判的，按型号所在的档改正一次
+	if !ledger.KVGet("migrate:pinned_tier_v1", &done) || !done {
+		if _, err := ledger.RewriteTiers(func(c *core.Call) core.Tier {
+			return a.Router.TierOfModel(core.Target{Lane: c.Lane, Model: c.Model, AccountID: accountOfCall(c)})
+		}); err == nil {
+			_ = ledger.KVSet("migrate:pinned_tier_v1", true)
+		}
+	}
+	if !ledger.KVGet("migrate:router_smart_v1", &done) || !done {
+		a.Integr.AddRouterModel("router-smart", "router-auto") // 「智能分派」补进各应用的模型列表
+		_ = ledger.KVSet("migrate:router_smart_v1", true)
+	}
+	a.workbuddyBilling("workbuddy", "") // 先把 WorkBuddy 的积分价登记进价目表，应用页一打开就有
+	// 省下的钱从「全用 Opus」改成按应用原价算：历史记录按现在的设置重算一次
+	// 内置价目表改过价也重算一次
+	if key := "migrate:app_baseline:" + core.PriceTableVersion; !ledger.KVGet(key, &done) || !done {
+		if _, err := a.Router.RecomputeBaselines(""); err == nil {
+			_ = ledger.KVSet(key, true)
+		}
+	}
 	a.Integr.ModelName = a.Router.Registry().Display
 	a.Integr.Lookup = a.Router.Registry().Lookup
 	a.Integr.ModelContext = func(id string) int {
@@ -158,7 +188,7 @@ func New(version string) (*App, error) {
 	}
 	a.Admin = admin.New(admin.Deps{Router: a.Router, Jobs: a.Jobs, Bus: a.Bus, Accounts: &accountOps{a: a}, Media: &mediaOps{a: a}, Integr: a.Integr, Secrets: secretsWithWinWork{a.Secrets}, StartedAt: time.Now(),
 		NodeAvailable: func() bool { _, err := exec.LookPath("node"); return err == nil },
-		Build:         BuildID(), Quit: a.Quit,
+		Build:         BuildID(), Quit: a.Quit, Laya: a.Laya,
 		Update: func(ctx context.Context, force bool) (any, error) { return a.updates.Check(ctx, force) }})
 	a.Facade = facade.New(a.Router, func() string { return cfg.Get().Settings.FacadeKey })
 	a.Facade.MediaURL = mediaURL(filepath.Join(dir, "media"))
@@ -189,15 +219,16 @@ func kindTitle(k core.Kind) string {
 
 // httpClient 只给需要代理的海外服务走设置里的代理。
 func (a *App) httpClient() *http.Client {
-	proxied := []string{"openrouter.ai", "api.openai.com", "api.anthropic.com", "googleapis.com", "fal.run", "replicate.com", "github.com"}
+	proxied := []string{"openrouter.ai", "api.openai.com", "api.anthropic.com", "googleapis.com", "fal.run", "replicate.com", "github.com", "typesafe.ai"}
 	tr := &http.Transport{
 		Proxy: func(r *http.Request) (*url.URL, error) {
 			p := strings.TrimSpace(a.Cfg.Get().Settings.Proxy)
-			if p == "" {
-				return nil, nil
-			}
 			for _, h := range proxied {
 				if strings.HasSuffix(r.URL.Host, h) {
+					if p == "" {
+						// 设置里没填代理就用系统的（HTTPS_PROXY 这些）：这几家国内直连不通，Jev 直连回 451
+						return http.ProxyFromEnvironment(r)
+					}
 					if !strings.Contains(p, "://") {
 						p = "http://" + p
 					}
@@ -626,4 +657,77 @@ func labelOrID(name, id string) string {
 		return name
 	}
 	return id
+}
+
+// workbuddyBilling 给 WorkBuddy 的请求换算计价型号：点名的是它自带的模型就按那个模型的倍率，否则按它的「均衡」档。
+// 每个倍率登记成一个 workbuddy:<id> 型号，单价是 306 积分 × 倍率 × ¥0.05 每百万 token，输入、输出、缓存同价。
+func (a *App) workbuddyBilling(host, hostModel string) string {
+	if host != "workbuddy" {
+		return ""
+	}
+	models := a.Integr.WorkBuddyModels()
+	reg := a.Router.Registry()
+	for _, m := range models {
+		id := "workbuddy:" + m.ID
+		usd := integrations.WorkBuddyCNYPerM(m.Mult) * reg.USDPerCNY()
+		name := m.Name
+		if name == "" {
+			name = m.ID
+		}
+		reg.Upsert(core.ModelInfo{ID: id, Provider: "workbuddy", Display: fmt.Sprintf("WorkBuddy %s（×%.2f 积分）", name, m.Mult), InputPerM: usd, OutputPerM: usd, CacheReadPerM: usd, Currency: "CNY"})
+	}
+	if _, ok := models[hostModel]; ok {
+		return "workbuddy:" + hostModel
+	}
+	return "workbuddy:" + integrations.WorkBuddyDefaultModel
+}
+
+// jevJudge 把智能分派接到 Jev 协议：云端的 Jev，或本机的 Laya（laya-serve 说同一套协议）。
+// 原话脱敏、只留开头，连同工具、看图这些信号一起问一道选择题。密钥现取，不缓存。
+func (a *App) jevJudge(client *http.Client) core.SmartJudge {
+	cloud := &jev.Client{HTTP: client, Key: func() (string, error) { return a.Secrets.Get(admin.SmartKeyID) }}
+	// 本机不走代理；空闲卸载后第一次要重新加载权重，给宽一点
+	local := &jev.Client{Name: "Laya", HTTP: &http.Client{Transport: &http.Transport{Proxy: nil}}, Endpoint: laya.Endpoint(), Key: a.Laya.Key, Timeout: 8 * time.Second}
+	return func(ctx context.Context, task string, signals map[string]any, criteria map[string]string, instructions string) (map[string]float64, error) {
+		jc := cloud
+		if a.Cfg.Get().Routing.Smart.JudgeOrDefault() == "laya" {
+			if !a.Laya.Running() {
+				return nil, errors.New("本机 Laya 没在运行")
+			}
+			jc = local
+		}
+		state := map[string]any{"task": jev.Redact(task, 1500)}
+		for k, v := range signals {
+			state[k] = v
+		}
+		ans, err := jc.Choose(ctx, state, criteria, instructions)
+		if err != nil {
+			return nil, err
+		}
+		return ans.Probabilities, nil
+	}
+}
+
+// envWithoutProxy 是给 Laya 子进程的环境：去掉代理。国内直连 PyPI、Hugging Face 每秒几 MB，走代理反而只有几十 KB。
+func envWithoutProxy() []string {
+	var out []string
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		switch strings.ToUpper(k) {
+		case "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY":
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+// accountOfCall 从记录的候选里找出实际用的那个账号（记录本身不存账号 id）。
+func accountOfCall(c *core.Call) string {
+	for _, t := range c.Candidates {
+		if t.Model == c.Model && t.Lane == c.Lane && t.Skipped == "" {
+			return t.AccountID
+		}
+	}
+	return ""
 }

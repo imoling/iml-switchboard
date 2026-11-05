@@ -6,7 +6,7 @@ import { Vendor } from '../components/Vendor';
 import { Mascot } from '../components/Pixel';
 import { quotaWarning, STALE_BACKEND } from '../copy';
 import { restartBackend, useStaleBackend } from '../backend';
-import { cost, usd, setMoney } from '../format';
+import { cost, num, usd, setMoney } from '../format';
 import { MODE_OPTIONS } from '../pages/Settings';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop } from '../tauri';
@@ -124,7 +124,7 @@ export function Popover() {
       {status && status !== 'offline' && ov && (
         <>
           <div className="stats">
-            <div><div className="hint">今天</div><b>{ov.calls} 次</b></div>
+            <div><div className="hint">今天</div><b>{num(ov.calls)} 次</b></div>
             <div><div className="hint">按量花费</div><b>{usd(ov.api_cost_usd)}</b></div>
             <div title="和全部用 Opus 相比"><div className="hint">近 7 天省下</div><b className="ok-text">{usd((week ?? ov).saved_usd)}</b></div>
           </div>
@@ -144,7 +144,7 @@ export function Popover() {
                       <Bar pct={q.pct} tone={q.sub ? 'gold' : q.pct >= yieldPct ? 'amber' : undefined} />
                     </div>
                   ))}
-                  <div className="qline"><span className="hint">{g.estimated ? '按本应用记录估算' : `官方命令回报 · ${observedAgo(ov.quotas.find((q) => q.account_id === g.id)?.observed_at)}`}</span><button className="btn sm" disabled={refreshing} onClick={(e) => { e.stopPropagation(); void refreshQuota(); }}>{refreshing ? '正在刷新…' : '刷新'}</button></div>
+                  <div className="qline"><span className="hint">{g.estimated ? '按 Switchboard 的记录估算' : `官方命令回报 · ${observedAgo(ov.quotas.find((q) => q.account_id === g.id)?.observed_at)}`}</span><button className="btn sm" disabled={refreshing} onClick={(e) => { e.stopPropagation(); void refreshQuota(); }}>{refreshing ? '正在刷新…' : '刷新'}</button></div>
                 </div>
               )}
             </div>

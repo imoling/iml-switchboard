@@ -308,3 +308,22 @@ func TestQuotaObserveMerge(t *testing.T) {
 		t.Fatal("没有观测过的渠道应视为过期")
 	}
 }
+
+// 订阅出图走本机 Codex：没登录时算没有模型服务，不当候选去试
+func TestCodexImageNeedsSignIn(t *testing.T) {
+	r, _, _ := newTestRouter(t)
+	codex := &fakeDriver{id: LaneCodexSub, health: Health{Status: "warn", Detail: "Codex 还没登录", SignedOut: true}}
+	r.Register(codex)
+	found := false
+	for _, c := range r.MediaModels(KindImage) {
+		if c.Provider == "codex" {
+			found = true
+			if !c.NoService || c.Skipped == "" {
+				t.Fatalf("没登录的 Codex 不能算可用：%+v", c)
+			}
+		}
+	}
+	if !found {
+		t.Skip("默认出图表里没有订阅出图")
+	}
+}

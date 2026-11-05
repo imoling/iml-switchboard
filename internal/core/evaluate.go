@@ -78,7 +78,7 @@ func (r *Router) RunEvaluation(ctx context.Context, ev *Evaluation, onUpdate fun
 		if prompt == "" { // 老记录：抽样时已确认摘录没被截断
 			prompt, lowAnswer = s.PromptExcerpt, s.ResultText
 		}
-		hi := &Task{Prompt: prompt, Tier: TierHigh, Source: "evaluation", Kind: KindText}
+		hi := &Task{Prompt: prompt, Tier: TierHigh, Source: EvaluationSource, Kind: KindText}
 		hiCall, hiRes, err := r.Run(ctx, hi, nil)
 		if err != nil {
 			failed++
@@ -93,7 +93,7 @@ func (r *Router) RunEvaluation(ctx context.Context, ev *Evaluation, onUpdate fun
 			a, b = b, a
 		}
 		judgePrompt := fmt.Sprintf("你是评审。下面是同一个问题的两个回答，只输出一个字：A、B 或 平。\n\n问题：\n%s\n\n回答 A：\n%s\n\n回答 B：\n%s\n\n哪个更好？", prompt, a, b)
-		judge := &Task{Prompt: judgePrompt, Tier: TierHigh, Source: "evaluation", Kind: KindText}
+		judge := &Task{Prompt: judgePrompt, Tier: TierHigh, Source: EvaluationSource, Kind: KindText}
 		jCall, jRes, err := r.Run(ctx, judge, nil)
 		if err != nil {
 			failed++

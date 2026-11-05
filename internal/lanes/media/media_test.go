@@ -100,7 +100,9 @@ func TestPrices(t *testing.T) {
 	}{
 		{"google/gemini-nano-banana-2.1", "", 1, 0.045, "USD"},
 		{"gpt-image-2.5", "low", 1, 0.006, "USD"},
-		{"gpt-image-2.5-high", "", 1, 0.17, "USD"},
+		{"gpt-image-2.5-high", "", 1, 0.211, "USD"},
+		{"gpt-image-2.5-flare", "medium", 1, 0.053, "USD"},
+		{"gpt-image-1.5", "high", 1, 0.133, "USD"},
 		{"doubao-seedream-5-0-flash-260915", "", 1, 0.12 / api.USDPerCNY, "CNY"},
 		{"doubao-seedream-5-0-pro-260628", "", 1, 0.30 / api.USDPerCNY, "CNY"},
 		{"doubao-seedance-2-0-fast-260128", "", 5, 4.0 / api.USDPerCNY, "CNY"},

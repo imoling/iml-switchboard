@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { api } from '../api/client';
 import type { Call } from '../api/types';
 import appMark from '../assets/app-mark.svg';
-import { cost, HOST_LABEL } from '../format';
+import { cost, HOST_LABEL, num } from '../format';
 import { useLoad } from '../hooks';
 import { useTheme } from '../theme/ThemeContext';
 import { callColor, channelNodes, channelOf, hostNodes, type Link, linkPath, linkPoint, linkWidth, modelCount, rowY } from '../topology';
@@ -23,7 +23,8 @@ type Flight = { start: number; segs: { link: Link | null; ms: number }[]; dots: 
 const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
 /** 全貌：谁来派活、谁去干活。光点是真实的调用，空闲时不动 */
-export function Topology({ live, onNavigate }: { live?: Call | null; onNavigate?: (page: 'integrations' | 'accounts') => void }) {
+/** bare：嵌在总览那条接入栏的卡片里，不自带边框和标题行 */
+export function Topology({ live, onNavigate, bare }: { live?: Call | null; onNavigate?: (page: 'integrations' | 'accounts') => void; bare?: boolean }) {
   const { t } = useTheme();
   const { data } = useLoad(() => Promise.all([api.integrations(), api.accounts(), api.calls({ limit: 200 })]), []);
   const hosts = useMemo(() => (data ? hostNodes(data[0]) : []), [data]);
@@ -132,7 +133,7 @@ export function Topology({ live, onNavigate }: { live?: Call | null; onNavigate?
     fire(live, channels);
   }, [live, channels, fire]);
 
-  if (!data) return <div className="panel topo-wait" />;
+  if (!data) return <div className={bare ? 'topo-wait bare' : 'panel topo-wait'} />;
 
   const height = Math.max(3, hosts.length, channels.length) * ROW;
   const hubY = height / 2;
@@ -151,11 +152,13 @@ export function Topology({ live, onNavigate }: { live?: Call | null; onNavigate?
   const keepNode = (key: string) => (el: HTMLElement | null) => { if (el) nodes.current.set(key, el); else nodes.current.delete(key); };
 
   return (
-    <div className="panel topo">
-      <div className="topo-head">
-        <span>已接入 {hosts.length} 个</span>
-        <span>渠道 {channels.length} 个<em> · 订阅 {subs} · 按量付费 {channels.length - subs}</em></span>
-      </div>
+    <div className={bare ? 'topo bare' : 'panel topo'}>
+      {!bare && (
+        <div className="topo-head">
+          <span>已接入 {hosts.length} 个</span>
+          <span>渠道 {channels.length} 个<em> · 订阅 {subs} · 按量付费 {channels.length - subs}</em></span>
+        </div>
+      )}
       <div className="topo-map" ref={boxRef} style={{ height }}>
         {width > 0 && (
           <svg ref={svgRef} width={width} height={height}>
@@ -170,7 +173,7 @@ export function Topology({ live, onNavigate }: { live?: Call | null; onNavigate?
         {hosts.length === 0 && <button className="btn sm topo-empty" style={{ left: 0, top: hubY - 12 }} onClick={() => onNavigate?.('integrations')}>接入一个智能体</button>}
         {hosts.map((h, i) => (
           <button key={h.id} ref={keepNode(`h:${h.id}`)} className={`topo-node ${(h.calls_7d ?? 0) === 0 ? 'quiet' : ''}`} style={{ left: 0, top: rowY(i, hosts.length, height) - 12 }}
-            title={h.calls_7d ? `近 7 天 ${h.calls_7d} 次` : '近 7 天没派活'} onClick={() => onNavigate?.('integrations')}>
+            title={h.calls_7d ? `近 7 天 ${num(h.calls_7d)} 次` : '近 7 天没派活'} onClick={() => onNavigate?.('integrations')}>
             <Vendor provider={h.id} /><span>{HOST_LABEL[h.id] ?? h.id}</span>
           </button>
         ))}

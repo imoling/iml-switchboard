@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/imoling/iml-switchboard/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -64,6 +65,11 @@ func TestHoldoutTiers(t *testing.T) {
 func scoreGolden(t *testing.T, file string, minAcc, maxUnder float64) {
 	r, _, _ := newTestRouter(t)
 	r.SetMode(ModeBalanced)
+	// 量的是规则认没认出媒体：配上出图、出视频账号，免得「没配画师交给文字模型」把媒体行都改判成文字
+	_ = r.Config().Update(func(c *config.Config) error {
+		c.API = append(c.API, config.APIAccount{ID: "openrouter-1", Provider: "openrouter", Enabled: true}, config.APIAccount{ID: "ark-1", Provider: "ark", Enabled: true})
+		return nil
+	})
 	cases := loadGolden(t, file)
 	ok, under, over := 0, 0, 0
 	var misses []string

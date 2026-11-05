@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { REVEAL_LABEL } from '../copy';
 import type { Tier } from '../api/types';
-import { LANE_CHIP, LANE_LABEL, TIER_CHIP, laneGroup } from '../format';
+import { LANE_CHIP, LANE_LABEL, TIER_CHIP, laneGroup, num } from '../format';
 import { useTheme } from '../theme/ThemeContext';
 import { Mascot, TierSprite } from './Pixel';
 import { desktop } from '../tauri';
@@ -87,3 +87,16 @@ export function Modal({ title, onClose, children, width }: { title: string; onCl
 export const RevealButton = ({ path, disabled }: { path?: string; disabled?: boolean }) => (
   <button className="btn sm" disabled={disabled || !path} onClick={() => path && desktop.revealInFinder(path)}>{REVEAL_LABEL}</button>
 );
+
+/** 翻页：只有一页时不显示 */
+export function Pager({ page, total, size, onChange }: { page: number; total: number; size: number; onChange: (p: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / size));
+  if (pages <= 1) return null;
+  return (
+    <div className="pager">
+      <button className="btn sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>上一页</button>
+      <span className="hint">第 {num(page)} / {num(pages)} 页 · 共 {num(total)} 条</span>
+      <button className="btn sm" disabled={page >= pages} onClick={() => onChange(page + 1)}>下一页</button>
+    </div>
+  );
+}

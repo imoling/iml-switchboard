@@ -80,9 +80,12 @@ type Task struct {
 	SessionID  string          `json:"session_id,omitempty"`
 	Source     string          `json:"source"` // mcp facade cli quick redo
 	Host       string          `json:"host,omitempty"`
+	HostModel  string          `json:"host_model,omitempty"` // 应用原样送来的型号名（门面请求的 model），算应用原价用
+	Smart      bool            `json:"smart,omitempty"`      // 应用选了「智能分派」（router-smart）
 	EstTokens  int             `json:"est_tokens"`
 	// 媒体参数
-	ImagePath  string    `json:"image_path,omitempty"`
+	ImagePath  string    `json:"image_path,omitempty"` // 视频的首帧；出图时也算一张参考图
+	RefImages  []string  `json:"ref_images,omitempty"` // 出图的参考图：本地路径、data URL 或 http 地址
 	Seconds    int       `json:"seconds,omitempty"`
 	Size       string    `json:"size,omitempty"`
 	OutDir     string    `json:"out_dir,omitempty"`
@@ -94,6 +97,31 @@ type Task struct {
 	// Judged 是低档模型给的档位（low mid high image video animation），只在规则拿不准时由 Run 填
 	Judged       string  `json:"-"`
 	JudgeCostUSD float64 `json:"-"` // 判档花的钱，记到这次请求上
+	Ask          string  `json:"-"` // 用户原话：出图出视频时 Prompt 会改写成带上文的提示词，记录里仍记原话
+}
+
+// ImageRefs 是出图要参照的图：ImagePath 在前，去重。
+func (t *Task) ImageRefs() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, p := range append([]string{t.ImagePath}, t.RefImages...) {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// FreshTurn 表示最后一条是用户刚说的话，不是工具结果：智能体回合中途接着跑工具时，最后一条用户消息还是开头那句，
+// 不能每一轮都按它再出一张图。
+func (t *Task) FreshTurn() bool {
+	if len(t.Messages) == 0 {
+		return true
+	}
+	last := t.Messages[len(t.Messages)-1]
+	// Claude Code 会把提醒块和工具结果放进同一条用户消息：剥掉提醒块什么都不剩，就不是用户说的话
+	return last.Role == "user" && !last.ToolImage && StripInjected(last.Content) != ""
 }
 
 // HasTools 表示调用方传了工具定义；这类请求不能走订阅渠道。
@@ -109,6 +137,9 @@ type Target struct {
 	AccountID  string  `json:"account_id,omitempty"`
 	EstCostUSD float64 `json:"est_cost_usd"`
 	Skipped    string  `json:"skipped,omitempty"` // 非空表示被跳过及原因
+	Tier       Tier    `json:"tier,omitempty"`    // 提档或降档补进来的候选标上自己那一档；空表示就是决策的那一档
+	Why        string  `json:"-"`                 // 换了档时记进理由的话；空用「X都用不了，改用Y」
+	NoService  bool    `json:"-"`                 // 没有能用的模型服务（没装、没登录、没添加账号）；候选表里不列出来
 }
 
 // Decision 是路由结果。
@@ -122,6 +153,10 @@ type Decision struct {
 	Sticky     bool     `json:"sticky,omitempty"`
 	// Unsure 表示规则拿不准：落到短问答或启发式兜底，且没有显式指令、没指定档位
 	Unsure bool `json:"unsure,omitempty"`
+	// Auto 表示档位是自动判的：没有显式指令，调用方也没指定档位、型号、渠道
+	Auto bool `json:"-"`
+	// Smart 是智能分派的明细：Jev 给每个候选的概率、档位系数、最后的分数
+	Smart *SmartPick `json:"smart,omitempty"`
 }
 
 // Usage 是一次执行的用量与费用。

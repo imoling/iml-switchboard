@@ -78,8 +78,8 @@ describe('界面文案', () => {
   });
 
   it('术语表外的词不出现，也不用「您」', () => {
-    // 本仓库 CLAUDE.md：渠道不叫泳道 / lane / provider；档位不叫 Tier / 第四档 / 旗舰；实现细节词不上界面
-    const banned = ['泳道', 'lane', 'provider', 'Tier', '第四档', '旗舰', 'MCP', 'stdio', 'OAuth', '钥匙串', 'LiteLLM', 'JSONL', 'SSE', 'base_url', '您'];
+    // 本仓库 CLAUDE.md：渠道不叫泳道 / lane / provider；档位不叫 Tier / 第四档 / 旗舰；接进来的工具叫应用，不叫宿主；实现细节词不上界面
+    const banned = ['泳道', 'lane', 'provider', 'Tier', '第四档', '旗舰', 'MCP', 'stdio', 'OAuth', '钥匙串', 'LiteLLM', 'JSONL', 'SSE', 'base_url', '您', '宿主', '本应用'];
     const bad = strings.filter((s) => banned.some((w) => (/^[a-zA-Z_]+$/.test(w) ? new RegExp(`(^|[^a-zA-Z_])${w}([^a-zA-Z_]|$)`).test(s.text) : s.text.includes(w))));
     expect(bad.map(at)).toEqual([]);
   });

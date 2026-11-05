@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import type { Call, Job } from '../api/types';
-import { Empty, ErrorLine, GroupChip, LaneChip, Modal, RevealButton, Seg, toast } from '../components/ui';
+import { Empty, ErrorLine, GroupChip, LaneChip, Modal, Pager, RevealButton, Seg, toast } from '../components/ui';
 import { Model, Vendor } from '../components/Vendor';
 import { cost, eta, jobCost, usd } from '../format';
 import { errText, useLoad } from '../hooks';
@@ -14,6 +14,8 @@ const KIND_LABEL: Record<string, string> = { image: '图片', video: '视频', a
 /** 后台的进度是 0 到 1，mock 是 0 到 100，两种都认 */
 const pct = (p: number) => (p <= 1 ? p * 100 : p);
 
+const GAL_PAGE = 24;
+
 export function Media({ liveJob }: { liveJob?: Job | null }) {
   const { t } = useTheme();
   const [kind, setKind] = useState<Kind>('all');
@@ -21,6 +23,8 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
   const [err, setErr] = useState<ApiError | null>(null);
   const [open, setOpen] = useState<Job | null>(null);
   const [pick, setPick] = useState<Job | null>(null);
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [kind]);
 
   useEffect(() => {
     if (!liveJob) return;
@@ -73,15 +77,24 @@ export function Media({ liveJob }: { liveJob?: Job | null }) {
           ))}
           <div className="hint" style={{ margin: '14px 0 6px' }}>已完成</div>
           {data.items.length === 0 && data.jobs.filter((j) => j.status === 'done').length === 0 && <Empty>还没有生成过{kind === 'all' ? '媒体' : KIND_LABEL[kind]}；在快速面板里说一句试试</Empty>}
-          <div className="gal">
-            {data.jobs.filter((j) => j.status === 'done').map((j) => (
-              <div key={j.id} className="thumb" onClick={() => j.kind === 'animation' && setOpen(j)}>
-                <Preview kind={j.kind} path={j.result_path} />
-                <div className="meta"><b>{j.title ?? titleOf(j.prompt_excerpt)}</b><div className="muted"><Vendor provider={j.provider} />{j.model}{j.seconds ? ` · ${j.seconds} 秒` : ''}{jobCost(j) && ` · ${jobCost(j)}`}</div></div>
-              </div>
-            ))}
-            {data.items.map((c) => <Thumb key={c.id} c={c} onDelete={() => act(() => api.deleteCall(c.id))} />)}
-          </div>
+          {(() => {
+            // 已完成的任务和出过的图合在一起翻页：一页 24 张，缩略图不用一次全加载
+            const done: ({ job: Job } | { call: Call })[] = [...data.jobs.filter((j) => j.status === 'done').map((job) => ({ job })), ...data.items.map((call) => ({ call }))];
+            const shown = done.slice((page - 1) * GAL_PAGE, page * GAL_PAGE);
+            return (
+              <>
+                <div className="gal">
+                  {shown.map((x) => ('job' in x ? (
+                    <div key={x.job.id} className="thumb" onClick={() => x.job.kind === 'animation' && setOpen(x.job)}>
+                      <Preview kind={x.job.kind} path={x.job.result_path} />
+                      <div className="meta"><b>{x.job.title ?? titleOf(x.job.prompt_excerpt)}</b><div className="muted"><Vendor provider={x.job.provider} />{x.job.model}{x.job.seconds ? ` · ${x.job.seconds} 秒` : ''}{jobCost(x.job) && ` · ${jobCost(x.job)}`}</div></div>
+                    </div>
+                  ) : <Thumb key={x.call.id} c={x.call} onDelete={() => act(() => api.deleteCall(x.call.id))} />))}
+                </div>
+                <Pager page={page} total={done.length} size={GAL_PAGE} onChange={setPage} />
+              </>
+            );
+          })()}
           <div className="hint" style={{ marginTop: 10 }}>文件存在各项目的 assets 文件夹里；删除记录不会删文件</div>
         </>
       )}

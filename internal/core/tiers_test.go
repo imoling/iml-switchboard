@@ -21,6 +21,7 @@ func TestTierTablePicks(t *testing.T) {
 		return nil
 	})
 	d := r.Decide(&Task{Prompt: "把这段话翻译成英文：你好", Source: "cli"})
+	d.Candidates = sameTier(d.Candidates) // 后面接着的是提档用的中档、高档候选
 	if d.Tier != TierLow || len(d.Candidates) != 2 || d.Candidates[0].Lane != LaneClaudeSub || d.Candidates[1].Model != "glm-5.3-flash" {
 		t.Fatalf("应照表排：%+v %v", d.Candidates, d.Reason)
 	}
@@ -78,10 +79,12 @@ func TestTierTablePerHost(t *testing.T) {
 		return nil
 	})
 	d := r.Decide(&Task{Prompt: "把这段话翻译成英文：你好", Source: "facade", Host: "workbuddy"})
+	d.Candidates = sameTier(d.Candidates)
 	if len(d.Candidates) != 1 || d.Candidates[0].Lane != LaneClaudeSub {
 		t.Fatalf("WorkBuddy 应照自己的表：%+v %v", d.Candidates, d.Reason)
 	}
 	d = r.Decide(&Task{Prompt: "把这段话翻译成英文：你好", Source: "facade", Host: "codex"})
+	d.Candidates = sameTier(d.Candidates)
 	if len(d.Candidates) != 2 || d.Candidates[0].Lane != LaneAPI {
 		t.Fatalf("没排的宿主应跟全局：%+v %v", d.Candidates, d.Reason)
 	}
@@ -91,5 +94,62 @@ func TestTierTablePerHost(t *testing.T) {
 	}
 	if chosen, _, _, custom := r.TierTable("codex", TierLow); custom || len(chosen) != 2 {
 		t.Fatalf("没排的宿主应显示全局顺序：%+v", chosen)
+	}
+}
+
+// sameTier 只留决策那一档的候选。
+func sameTier(ts []Target) []Target {
+	var out []Target
+	for _, t := range ts {
+		if t.Tier == "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// 自动分档：低档都用不了（带图、模型不能看图；带工具、订阅接不了；按量付费被限流）就往上提档，记实际用的那一档
+func TestAutoTierEscalates(t *testing.T) {
+	r, _, api := newTestRouter(t)
+	tools := []byte(`[{"type":"function"}]`)
+	// 低档只有不能看图的 glm-5.3-flash；中档的 glm-5v 能看图
+	_ = r.cfg.Update(func(c *config.Config) error {
+		c.API[0].Models = map[string][]string{"low": {"glm-5.3-flash"}, "mid": {"glm-5v"}, "high": {}}
+		return nil
+	})
+	task := &Task{Prompt: "这张图里写的是什么", Source: "facade", Host: "codex", Tools: tools,
+		Messages: []Message{{Role: "user", Content: "这张图里写的是什么", Images: []string{"data:image/png;base64,AAAA"}}}}
+	call, _, err := r.Run(context.Background(), task, nil)
+	if err != nil {
+		t.Fatalf("低档不能看图时应提到中档，不该报错：%v", err)
+	}
+	if call.Model != "glm-5v" || call.Tier != TierMid || api.calls == 0 {
+		t.Fatalf("应提到中档的 glm-5v：%s %s %v", call.Model, call.Tier, call.Reason)
+	}
+	// 调用方指定档位（MCP 参数、router-low）就不提档
+	task = &Task{Prompt: "这张图里写的是什么", Source: "mcp", Tier: TierLow, Tools: tools,
+		Messages: []Message{{Role: "user", Content: "这张图里写的是什么", Images: []string{"data:image/png;base64,AAAA"}}}}
+	if d := r.Decide(task); len(d.Candidates) != len(sameTier(d.Candidates)) {
+		t.Fatalf("指定了档位不该往上补：%+v", d.Candidates)
+	}
+}
+
+// 应用点名了型号：记录的档位是这个型号在配置里的档，不是规则判的
+func TestPinnedModelRecordsItsTier(t *testing.T) {
+	r, _, _ := newTestRouter(t)
+	_ = r.cfg.Update(func(c *config.Config) error {
+		c.API[0].Models = map[string][]string{"low": {"glm-5.3-flash"}, "mid": {}, "high": {"glm-5.3"}}
+		return nil
+	})
+	tools := []byte(`[{"type":"function"}]`)
+	call, _, err := r.Run(context.Background(), &Task{Prompt: "你好", Model: "glm-5.3", Source: "facade", Host: "workbuddy", Tools: tools}, nil)
+	if err != nil || call.Model != "glm-5.3" || call.Tier != TierHigh {
+		t.Fatalf("点名高档型号应记高档：%v %s %s %v", err, call.Model, call.Tier, call.Reason)
+	}
+	// 哪档都没有：按型号名认；名字也认不出记空，界面显示「指定」
+	for m, want := range map[string]Tier{"gpt-5.6-luna": TierLow, "gpt-5.6-terra": TierMid, "gpt-5.6-sol": TierHigh, "claude-haiku-5-5": TierLow, "glm-9-unknown": ""} {
+		if got := r.TierOfModel(Target{Lane: LaneAPI, Model: m}); got != want {
+			t.Errorf("%s 应为 %q，得到 %q", m, want, got)
+		}
 	}
 }

@@ -131,3 +131,51 @@ func TestCheckHostKey(t *testing.T) {
 		t.Error("没设密钥时一律拒绝")
 	}
 }
+
+// 4 之前新建的行排在 100 以后、落在「短问答」后面，短句永远轮不到：升级时挪到最前
+func TestMergeRulesMovesCustomRowsFirst(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("IMLS_DATA_DIR", dir)
+	old := Default()
+	old.Routing.RulesVersion = 3
+	old.Routing.TaskTable = append(old.Routing.TaskTable, TaskType{Type: "拼豆", Name: "拼豆", Hint: "拼豆", Tier: "low", Order: 105, Match: Match{Keywords: []string{"拼豆"}}})
+	b, _ := yaml.Marshal(old)
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := st.Get().Routing.TaskTable[0]
+	if first.Type != "拼豆" || first.Order != CustomOrder {
+		t.Fatalf("自定义行应挪到最前：%s order=%d", first.Type, first.Order)
+	}
+}
+
+func TestValidateTaskKind(t *testing.T) {
+	c := Default()
+	c.Routing.TaskTable = append(c.Routing.TaskTable, TaskType{Type: "x", Kind: "audio"})
+	if Validate(c) == nil {
+		t.Fatal("不认识的模态应报错")
+	}
+	c = Default()
+	c.Routing.TaskTable = append(c.Routing.TaskTable, TaskType{Type: "x", Kind: "image", MediaTier: "best"})
+	if err := Validate(c); err != nil {
+		t.Fatalf("媒体行不需要文字档位：%v", err)
+	}
+}
+
+func TestNumberFormat(t *testing.T) {
+	cases := map[float64]string{0: "0", 0.005: "0.0050", 2.41: "2.41", 1119.71: "1,119.71", 99999.5: "99,999.50", 123456.78: "12.35 万", -1234.5: "-1,234.50"}
+	for v, want := range cases {
+		if got := moneyDigits(v); got != want {
+			t.Errorf("moneyDigits(%v) = %q，想要 %q", v, got, want)
+		}
+	}
+	for n, want := range map[int]string{7: "7", 1359: "1,359", 99999: "99,999", 123456: "12.3 万"} {
+		if got := Count(n); got != want {
+			t.Errorf("Count(%d) = %q，想要 %q", n, got, want)
+		}
+	}
+}

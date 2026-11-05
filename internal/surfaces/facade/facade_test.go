@@ -410,8 +410,14 @@ func TestAnthropicStream(t *testing.T) {
 	if r2.StatusCode != 200 || !strings.Contains(buf.String(), "input_tokens") {
 		t.Fatalf("%d %s", r2.StatusCode, buf.String())
 	}
-	// Claude 自家的模型名按档位理解
+	// 智能分派：不定档位，交给 Jev 挑
 	task := &core.Task{}
+	applyModelName(task, "router-smart", nil)
+	if !task.Smart || task.Tier != "" || task.Model != "" {
+		t.Fatalf("router-smart 应打开智能分派：%+v", task)
+	}
+	// Claude 自家的模型名按档位理解
+	task = &core.Task{}
 	applyModelName(task, "claude-haiku-5-5", nil)
 	if task.Tier != core.TierLow || task.Model != "" {
 		t.Fatalf("haiku 应当低档：%+v", task)

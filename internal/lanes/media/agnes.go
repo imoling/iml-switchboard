@@ -89,12 +89,10 @@ func (p *AgnesImage) Generate(ctx context.Context, req ImageRequest) (ImageResul
 		tier = "2K"
 	}
 	body := map[string]interface{}{"model": req.Model, "prompt": req.Prompt, "size": tier, "ratio": ratio, "return_base64": true}
-	if req.ImagePath != "" {
-		u, err := imageDataURL(req.ImagePath)
-		if err != nil {
-			return ImageResult{}, err
-		}
-		body["image"] = []string{u}
+	if us, err := refDataURLs(req.Refs); err != nil {
+		return ImageResult{}, err
+	} else if len(us) > 0 {
+		body["image"] = us
 	}
 	raw, err := doJSON(ctx, p.Client, p.Name(), http.MethodPost, joinURL(p.base(), "/images/generations"), headers, body)
 	if err != nil {

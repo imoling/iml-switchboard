@@ -1,4 +1,4 @@
-import type { Quota, Account, Call, Decision, Evaluation, HostModelList, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview, QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier, UpdateInfo, HostTiers, PickTier } from './types';
+import type { Quota, Account, Call, Decision, Evaluation, HostModelList, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview, QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier, UpdateInfo, HostTiers, PickTier, Price, AppBaseline, SmartSettings } from './types';
 
 export const BASE = 'http://127.0.0.1:18081';
 const HEADERS = { 'X-IMLS-Client': 'ui' };
@@ -54,12 +54,17 @@ export const api = {
   overview: (range: 'today' | '7d' | '30d') => get<Overview>(`/api/overview?range=${range}`),
   refreshQuota: () => post<{ started: boolean; quotas: Quota[] }>('/api/quota/refresh'),
   calls: (q: { source?: string; lane?: string; tier?: string; q?: string; limit?: number; before?: string } = {}) => get<Call[]>(`/api/calls${qs(q)}`),
+  callsPage: (q: { source?: string; lane?: string; q?: string; failed?: boolean; page: number; size?: number }) => get<{ items: Call[]; total: number; page: number; size: number }>(`/api/calls${qs({ ...q, failed: q.failed ? 1 : undefined })}`),
   call: (id: string) => get<Call>(`/api/calls/${id}`),
   escalate: (id: string) => post<{ ok: boolean; escalations_for_task: number }>(`/api/calls/${id}/escalate`),
   redo: (id: string, body: { tier?: Tier; model?: string } = {}) => post<Call>(`/api/calls/${id}/redo`, body),
   rules: () => get<Rules>('/api/rules'),
   saveRules: (r: Rules) => put<Rules>('/api/rules', r),
-  tryRule: (body: { prompt: string; has_tools?: boolean; est_tokens?: number; session_id?: string }) => post<Decision>('/api/rules/try', body),
+  tryRule: (body: { prompt: string; has_tools?: boolean; est_tokens?: number; session_id?: string; smart?: boolean }) => post<Decision>('/api/rules/try', body),
+  smart: () => get<SmartSettings>('/api/smart'),
+  setSmart: (body: { enabled?: boolean; key?: string; clear_key?: boolean; judge?: string; judge_account?: string; judge_model?: string }) => put<SmartSettings>('/api/smart', body),
+  laya: (action: 'install' | 'start' | 'stop' | 'remove') => post<SmartSettings>(`/api/smart/laya/${action}`),
+  testSmart: (body: { prompt?: string; has_tools?: boolean } = {}) => post<Decision>('/api/smart/test', body),
   suggestions: () => get<Suggestion[]>('/api/rules/suggestions'),
   suggestionAction: (task: string, action: 'accept' | 'ignore') => post<Rules>(`/api/rules/suggestions/${encodeURIComponent(task)}`, { action }),
   exportRules: () => get<string>('/api/rules/export'),
@@ -87,6 +92,7 @@ export const api = {
   hostTiers: (id: IntegrationId) => get<HostTiers>(`/api/integrations/${id}/tiers`),
   /** 某档给空数组表示跟全局 */
   setHostTiers: (id: IntegrationId, picks: Partial<Record<PickTier, string[]>>) => put<HostTiers>(`/api/integrations/${id}/tiers`, picks),
+  setBaseline: (id: IntegrationId, body: { model: string; price?: Price }) => put<AppBaseline>(`/api/integrations/${id}/baseline`, body),
   settings: () => get<Settings>('/api/settings'),
   saveSettings: (s: Partial<Settings>) => put<Settings>('/api/settings', s),
   themes: () => get<Theme[]>('/api/themes'),

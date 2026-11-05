@@ -34,6 +34,35 @@ type respTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
+	Tools       []respTool      `json:"tools"` // type 为 namespace 时：Codex 把一个 MCP 服务器的工具包成一组
+}
+
+// nsSep 连接工具组名和工具名：上游只认平铺的函数，回给 Codex 时再拆成 namespace 和 name。
+const nsSep = "__"
+
+// flatToolName 是工具组里一个工具在上游的名字；超过 64 个字符（函数名上限）就截短加校验串，同一对输入永远得到同一个名字。
+func flatToolName(ns, name string) string {
+	flat := ns + nsSep + name
+	if len(flat) <= 64 {
+		return flat
+	}
+	return flat[:55] + "_" + hash(flat)
+}
+
+// namespaceNames 记下平铺名对应的 [工具组, 工具名]，回工具调用时还原。
+func namespaceNames(tools []respTool) map[string][2]string {
+	m := map[string][2]string{}
+	for _, tl := range tools {
+		if tl.Type != "namespace" {
+			continue
+		}
+		for _, sub := range tl.Tools {
+			if sub.Type == "function" && sub.Name != "" {
+				m[flatToolName(tl.Name, sub.Name)] = [2]string{tl.Name, sub.Name}
+			}
+		}
+	}
+	return m
 }
 
 type respItem struct {
@@ -42,6 +71,7 @@ type respItem struct {
 	Content   json.RawMessage `json:"content"`
 	CallID    string          `json:"call_id"`
 	Name      string          `json:"name"`
+	Namespace string          `json:"namespace"`
 	Arguments string          `json:"arguments"`
 	Output    json.RawMessage `json:"output"`
 }
@@ -87,15 +117,29 @@ func (s *Server) respToTask(req respReq, r *http.Request) (*core.Task, error) {
 	}
 	t.System = req.Instructions
 	var tools []map[string]any
-	for _, tl := range req.Tools {
-		if tl.Type != "function" || tl.Name == "" {
-			continue // local_shell、web_search 这类内置工具这里没有
-		}
-		fn := map[string]any{"name": tl.Name, "description": tl.Description}
+	addFn := func(name string, tl respTool) {
+		fn := map[string]any{"name": name, "description": tl.Description}
 		if len(tl.Parameters) > 0 {
 			fn["parameters"] = tl.Parameters
 		}
 		tools = append(tools, map[string]any{"type": "function", "function": fn})
+	}
+	for _, tl := range req.Tools {
+		switch {
+		case tl.Type == "function" && tl.Name != "":
+			addFn(tl.Name, tl)
+		case tl.Type == "namespace":
+			// MCP 服务器的工具（Switchboard 自己的 generate_image 也在这里）：拍平成普通函数，组的说明放进系统提示
+			for _, sub := range tl.Tools {
+				if sub.Type == "function" && sub.Name != "" {
+					addFn(flatToolName(tl.Name, sub.Name), sub)
+				}
+			}
+			if d := strings.TrimSpace(tl.Description); d != "" && len(tl.Tools) > 0 {
+				t.System = strings.TrimSpace(t.System + "\n\n## " + tl.Name + nsSep + "* 工具\n" + d)
+			}
+		}
+		// local_shell、web_search 这类内置工具这里没有
 	}
 	if len(tools) > 0 {
 		t.Tools, _ = json.Marshal(tools)
@@ -137,7 +181,11 @@ func (s *Server) respToTask(req respReq, r *http.Request) (*core.Task, error) {
 			}
 			switch {
 			case it.Type == "function_call":
-				t.Messages = appendToolCall(t.Messages, map[string]any{"id": it.CallID, "type": "function", "function": map[string]string{"name": it.Name, "arguments": it.Arguments}})
+				name := it.Name
+				if it.Namespace != "" {
+					name = flatToolName(it.Namespace, it.Name)
+				}
+				t.Messages = appendToolCall(t.Messages, map[string]any{"id": it.CallID, "type": "function", "function": map[string]string{"name": name, "arguments": it.Arguments}})
 			case it.Type == "function_call_output":
 				out, imgs := partsText(it.Output)
 				// 并发调用的结果顺序不一定和调用顺序相同，图片又是一起放的：写明哪张归哪个调用，模型才不会对错号
@@ -174,6 +222,7 @@ func (s *Server) respToTask(req respReq, r *http.Request) (*core.Task, error) {
 			t.Prompt = t.Messages[i].Content
 			if len(t.Messages[i].Images) > 0 {
 				t.ImagePath = t.Messages[i].Images[0]
+				t.RefImages = t.Messages[i].Images[1:] // 出图时第二张起也当参考图
 			}
 			break
 		}
@@ -187,6 +236,7 @@ func (s *Server) respToTask(req respReq, r *http.Request) (*core.Task, error) {
 	if t.SessionID == "" && len(t.Messages) > 1 {
 		t.SessionID = "facade:" + hash(t.Messages[0].Content)
 	}
+	t.HostModel = req.Model
 	applyModelName(t, req.Model, s.accountModel)
 	return t, nil
 }
@@ -205,7 +255,7 @@ func appendToolCall(msgs []core.Message, call map[string]any) []core.Message {
 }
 
 // respOutput 把结果变成 Responses 的 output 数组。
-func respOutput(res *core.Result) []map[string]any {
+func respOutput(res *core.Result, ns map[string][2]string) []map[string]any {
 	var out []map[string]any
 	if res.Text != "" {
 		out = append(out, map[string]any{"type": "message", "id": "msg_" + core.NewID("")[1:], "status": "completed", "role": "assistant",
@@ -228,7 +278,11 @@ func respOutput(res *core.Result) []map[string]any {
 		if args == "" {
 			args = "{}"
 		}
-		out = append(out, map[string]any{"type": "function_call", "id": "fc_" + core.NewID("")[1:], "call_id": id, "name": c.Function.Name, "arguments": args, "status": "completed"})
+		item := map[string]any{"type": "function_call", "id": "fc_" + core.NewID("")[1:], "call_id": id, "name": c.Function.Name, "arguments": args, "status": "completed"}
+		if nn, ok := ns[c.Function.Name]; ok {
+			item["namespace"], item["name"] = nn[0], nn[1]
+		}
+		out = append(out, item)
 	}
 	return out
 }
@@ -252,6 +306,7 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 		oaiErr(w, 400, "invalid_request_error", "请求体不是合法 JSON")
 		return
 	}
+	ns := namespaceNames(req.Tools)
 	t, err := s.respToTask(req, r)
 	if err != nil {
 		oaiErr(w, 400, "invalid_request_error", err.Error())
@@ -283,7 +338,7 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-IMLS-Call-Id", call.ID)
 		w.Header().Set("X-IMLS-Model", call.Model)
-		_ = json.NewEncoder(w).Encode(respObject(id, call.Model, "completed", respOutput(res), call))
+		_ = json.NewEncoder(w).Encode(respObject(id, call.Model, "completed", respOutput(res, ns), call))
 		return
 	}
 
@@ -342,7 +397,7 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 		send("response.output_item.done", map[string]any{"output_index": outIndex, "item": item})
 		output = append(output, item)
 	}
-	for _, fc := range respOutput(&core.Result{ToolCalls: res.ToolCalls}) {
+	for _, fc := range respOutput(&core.Result{ToolCalls: res.ToolCalls}, ns) {
 		outIndex++
 		pending := map[string]any{}
 		for k, v := range fc {

@@ -312,8 +312,15 @@ const mediaAskLimit = 400
 // StripInjected 去掉宿主注入的提示块（<system-reminder>…</system-reminder>），只留用户自己说的话。
 // 智能体宿主常把技能清单、系统提醒整段塞进用户消息，里面随便一个「动画」「视频」都不该参与路由判断。
 func StripInjected(prompt string) string {
-	return strings.TrimSpace(wrapperRe.ReplaceAllString(reminderRe.ReplaceAllString(prompt, ""), ""))
+	s := wrapperRe.ReplaceAllString(reminderRe.ReplaceAllString(prompt, ""), "")
+	// Codex 把附件说明（# Files mentioned by the user）、编辑器上下文放在原话前面，原话跟在这个标题后面
+	if i := strings.LastIndex(s, codexRequestMark); i >= 0 {
+		s = s[i+len(codexRequestMark):]
+	}
+	return strings.TrimSpace(s)
 }
+
+const codexRequestMark = "## My request for Codex:"
 
 // IsQuoted 判断这段话是不是宿主转述的会话内容（包在 <session> 里）：那是给模型看的上下文，不是一句直接的请求。
 func IsQuoted(prompt string) bool {

@@ -343,3 +343,45 @@ func (m *Manager) setHermesTakeover(on bool) error {
 	}
 	return os.WriteFile(path, buf.Bytes(), 0o600)
 }
+
+// OriginalModel 是应用不经过 Switchboard 时自己用的型号，算「应用原价」用：接管前存下来的那份，
+// 没接管就读它现在的配置；路由型号（router-*）不算。认不出返回空，调用方按 Opus 算。
+func (m *Manager) OriginalModel(host string) string {
+	pick := func(v string) string {
+		v = strings.Trim(strings.TrimSpace(v), `"`)
+		if v == "" || strings.HasPrefix(strings.ToLower(v), "router-") {
+			return ""
+		}
+		return v
+	}
+	switch host {
+	case "workbuddy":
+		return "workbuddy:" + WorkBuddyDefaultModel
+	case "codex":
+		if b, err := os.ReadFile(takeoverSavePath("codex")); err == nil {
+			var orig map[string]string
+			if json.Unmarshal(b, &orig) == nil {
+				return pick(orig["model"])
+			}
+		}
+		if b, err := os.ReadFile(m.codexConfig()); err == nil {
+			return pick(topLevelValue(string(b), "model"))
+		}
+	case "hermes":
+		src := strings.TrimSuffix(takeoverSavePath("hermes"), ".json") + ".yaml"
+		if _, err := os.Stat(src); err != nil {
+			src = m.hermesCfg()
+		}
+		if b, err := os.ReadFile(src); err == nil {
+			var doc struct {
+				Model struct {
+					Default string `yaml:"default"`
+				} `yaml:"model"`
+			}
+			if yaml.Unmarshal(b, &doc) == nil {
+				return pick(doc.Model.Default)
+			}
+		}
+	}
+	return ""
+}

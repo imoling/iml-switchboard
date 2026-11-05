@@ -94,7 +94,7 @@ export function Quick() {
   const first = preview?.candidates.find((c) => !c.skipped) ?? preview?.candidates[0];
   const shown = picked ?? (first ? { label: '', lane: first.lane, provider: first.provider ?? '', model: first.model, display: first.display, est_cost_usd: first.est_cost_usd } : null);
   const isMedia = preview && preview.kind !== 'text';
-  const tierLabel = (a: Alt | null) => (isMedia ? MEDIA_TIER_LABEL[a?.media_tier ?? preview?.media_tier ?? 'default'] : a?.tier ? <TierChip tier={a.tier} /> : <TierChip tier={preview?.tier ?? 'low'} />);
+  const tierLabel = (a: Alt | null) => (isMedia ? (a && !a.media_tier ? a.label : MEDIA_TIER_LABEL[a?.media_tier ?? preview?.media_tier ?? 'default']) : a?.tier ? <TierChip tier={a.tier} /> : <TierChip tier={preview?.tier ?? 'low'} />);
   const call = result?.call;
   const elapsed = call ? secs(call.latency_ms) : running ? secs(Date.now() - startedAt) : '';
 
@@ -140,7 +140,7 @@ export function Quick() {
             {shown ? <>
               <span className="muted">将使用</span>{isMedia ? <LaneChip lane="media" /> : tierLabel(picked)}
               <b><Vendor provider={shown.provider} />{shown.display ?? shown.model}</b>
-              <span className="muted">· {isMedia ? MEDIA_TIER_LABEL[picked?.media_tier ?? preview?.media_tier ?? 'default'] : shown.lane.endsWith('_sub') ? '订阅' : '按量'}{shown.est_cost_usd !== undefined ? ` · 约 ${usd(shown.est_cost_usd)}` : shown.note ? ` · ${shown.note}` : ''}</span>
+              <span className="muted">· {isMedia ? (picked && !picked.media_tier ? picked.label : MEDIA_TIER_LABEL[picked?.media_tier ?? preview?.media_tier ?? 'default']) : shown.lane.endsWith('_sub') ? '订阅' : '按量'}{shown.est_cost_usd !== undefined ? ` · 约 ${usd(shown.est_cost_usd)}` : shown.note ? ` · ${shown.note}` : ''}</span>
               {preview && preview.alternatives.length > 0 && (
                 <select className="sel" style={{ marginLeft: 'auto' }} value={picked?.model ?? ''} onChange={(e) => setPicked(preview.alternatives.find((a) => a.model === e.target.value) ?? null)}>
                   <option value="">换模型 ▾</option>{preview.alternatives.map((a) => <option key={a.model} value={a.model}>{a.display ?? a.model}</option>)}

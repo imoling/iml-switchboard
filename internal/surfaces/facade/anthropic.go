@@ -192,6 +192,7 @@ func (s *Server) toTask(req anthReq, r *http.Request) (*core.Task, error) {
 			t.Prompt = t.Messages[i].Content
 			if len(t.Messages[i].Images) > 0 {
 				t.ImagePath = t.Messages[i].Images[0]
+				t.RefImages = t.Messages[i].Images[1:] // 出图时第二张起也当参考图
 			}
 			break
 		}
@@ -205,6 +206,7 @@ func (s *Server) toTask(req anthReq, r *http.Request) (*core.Task, error) {
 	if t.SessionID == "" && len(t.Messages) > 1 {
 		t.SessionID = "facade:" + hash(t.Messages[0].Content)
 	}
+	t.HostModel = req.Model
 	applyModelName(t, req.Model, s.accountModel)
 	return t, nil
 }
@@ -225,6 +227,8 @@ func applyModelName(t *core.Task, model string, known func(string) bool) {
 	m := strings.ToLower(model)
 	switch {
 	case m == "" || m == "router-auto":
+	case m == "router-smart":
+		t.Smart = true
 	case m == "router-high":
 		t.Tier = core.TierHigh
 	case m == "router-mid":

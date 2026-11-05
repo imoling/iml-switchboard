@@ -66,9 +66,16 @@ func HTTPHandler(baseURL, version string, key func() string) http.Handler {
 	})
 }
 
+// Instructions 随工具一起交给宿主，宿主会放进系统提示：比宿主 CLAUDE.md 里那段更新得及时，每次升级都跟着换。
+const Instructions = `需要一张成品图时（插画、头像、封面、海报、像素画、照片风格的图），先调 generate_image，不要用 SVG、HTML、Canvas 或 Python 脚本自己画。
+用户给了参考图（照着这张头像画、按这张的风格、把这张改成…），把图片的本地路径放进 image_paths 一起传。
+只有用户明确要 SVG 或矢量源文件、要数据图表、流程图或界面里的小图标时，才自己画。
+generate_image 报「没有可用的模型」说明还没配出图账号：这时再自己画，并告诉用户。
+需要视频用 generate_video；标题动效、转场用 make_animation。不需要读写本地文件的杂活（分类、摘要、改写、翻译、抽取）用 ask_model。工具返回的路径和费用原样告诉用户。`
+
 // NewServer 组装五个工具；每次调用都转发给后台的 /api/internal/tool。
 func NewServer(baseURL, version, host, cwd string) *sdk.Server {
-	srv := sdk.NewServer(&sdk.Implementation{Name: "iml-switchboard", Version: version}, nil)
+	srv := sdk.NewServer(&sdk.Implementation{Name: "iml-switchboard", Version: version}, &sdk.ServerOptions{Instructions: Instructions})
 	call := func(name string, args any) (*sdk.CallToolResult, any, error) {
 		raw, _ := json.Marshal(args)
 		body, _ := json.Marshal(map[string]any{"name": name, "args": json.RawMessage(raw), "project_dir": cwd, "host": host})
@@ -89,16 +96,19 @@ func NewServer(baseURL, version, host, cwd string) *sdk.Server {
 	}
 
 	type imageArgs struct {
-		Prompt string `json:"prompt" jsonschema:"要画什么，越具体越好"`
-		Tier   string `json:"tier,omitempty" jsonschema:"档位：cheap 便宜 / default 默认 / best 最好 / free 用 ChatGPT 订阅出图"`
-		Size   string `json:"size,omitempty" jsonschema:"尺寸，如 1024x1024、1536x1024"`
-		OutDir string `json:"out_dir,omitempty" jsonschema:"保存目录，默认项目下的 assets"`
+		Prompt     string   `json:"prompt" jsonschema:"要画什么，越具体越好；有参考图时写清要保留什么、改成什么"`
+		ImagePaths []string `json:"image_paths,omitempty" jsonschema:"参考图，可以多张：用户贴的图或项目里的图片的本地路径（相对路径按项目目录算），也可以是 http 地址"`
+		Model      string   `json:"model,omitempty" jsonschema:"点名用哪个出图型号（工具说明里列了能用的）；不填按档位选"`
+		Tier       string   `json:"tier,omitempty" jsonschema:"档位：cheap 便宜 / default 默认 / best 最好 / free 用 ChatGPT 订阅出图"`
+		Size       string   `json:"size,omitempty" jsonschema:"尺寸，如 1024x1024、1536x1024"`
+		OutDir     string   `json:"out_dir,omitempty" jsonschema:"保存目录，默认项目下的 assets"`
 	}
 	type videoArgs struct {
 		Prompt    string `json:"prompt" jsonschema:"视频内容描述"`
 		Seconds   int    `json:"seconds,omitempty" jsonschema:"时长秒数，默认 5"`
 		Tier      string `json:"tier,omitempty" jsonschema:"档位：cheap / default / best"`
 		ImagePath string `json:"image_path,omitempty" jsonschema:"图生视频时的首帧图片路径"`
+		Model     string `json:"model,omitempty" jsonschema:"点名用哪个出视频型号（工具说明里列了能用的）；不填按档位选"`
 	}
 	type animArgs struct {
 		Spec    string `json:"spec" jsonschema:"动画要表现什么：画面、文字、节奏"`
@@ -112,11 +122,11 @@ func NewServer(baseURL, version, host, cwd string) *sdk.Server {
 	type jobArgs struct {
 		JobID string `json:"job_id" jsonschema:"任务号"`
 	}
-	sdk.AddTool(srv, &sdk.Tool{Name: "generate_image", Description: "生成图片并保存到项目里。需要封面、配图、插图、海报时用它，不要自己写 SVG 冒充插图。"},
+	sdk.AddTool(srv, &sdk.Tool{Name: "generate_image", Description: "生成图片并保存到项目里。需要插画、头像、封面、海报、像素画这类成品图时先用它，不要自己写 SVG、HTML 或脚本画图冒充；用户给了参考图（照着这张画、按这个风格）就把路径放进 image_paths。" + modelHint(baseURL, "image")},
 		func(ctx context.Context, r *sdk.CallToolRequest, a imageArgs) (*sdk.CallToolResult, any, error) {
 			return call("generate_image", a)
 		})
-	sdk.AddTool(srv, &sdk.Tool{Name: "generate_video", Description: "生成短视频。90 秒内没完成会返回任务号，之后用 get_job 查询。"},
+	sdk.AddTool(srv, &sdk.Tool{Name: "generate_video", Description: "生成短视频。90 秒内没完成会返回任务号，之后用 get_job 查询。" + modelHint(baseURL, "video")},
 		func(ctx context.Context, r *sdk.CallToolRequest, a videoArgs) (*sdk.CallToolResult, any, error) {
 			return call("generate_video", a)
 		})
@@ -169,4 +179,38 @@ func ensureBackend(baseURL string) error {
 		}
 	}
 	return errors.New("后台 10 秒内没有就绪")
+}
+
+// modelHint 是工具说明里「能点名的型号」那一句：向后台要一次，要不到就不写（按档位选照样能用）。
+func modelHint(baseURL, kind string) string {
+	req, _ := http.NewRequest("GET", baseURL+"/api/media/models?kind="+kind, nil)
+	req.Header.Set("X-IMLS-Client", "mcp")
+	resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var list []struct {
+		Model   string `json:"model"`
+		Display string `json:"display"`
+		Skipped string `json:"skipped"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&list) != nil {
+		return ""
+	}
+	var names []string
+	for _, m := range list {
+		if m.Skipped != "" {
+			continue
+		}
+		n := m.Model
+		if m.Display != "" && m.Display != m.Model {
+			n += "（" + m.Display + "）"
+		}
+		names = append(names, n)
+	}
+	if len(names) < 2 {
+		return ""
+	}
+	return "用户点名型号时填 model，能用的有：" + strings.Join(names, "、") + "。"
 }

@@ -59,12 +59,10 @@ func (p *OpenRouterImage) Generate(ctx context.Context, req ImageRequest) (Image
 	if req.Size != "" {
 		body["size"] = req.Size
 	}
-	if req.ImagePath != "" {
-		u, err := imageDataURL(req.ImagePath)
-		if err != nil {
-			return ImageResult{}, err
-		}
-		body["image"] = u
+	if us, err := refDataURLs(req.Refs); err != nil {
+		return ImageResult{}, err
+	} else if len(us) > 0 {
+		body["image"] = oneOrMany(us)
 	}
 	raw, err := doJSON(ctx, p.Client, p.Name(), http.MethodPost, joinURL(base, "/images"), headers, body)
 	if err != nil {

@@ -24,8 +24,8 @@ type ImageRequest struct {
 	Model   string
 	Size    string
 	Quality string
-	// ImagePath 是参考图（图生图），本地路径或 URL。
-	ImagePath string
+	// Refs 是参考图（图生图），本地路径、data URL 或 http 地址；可以有多张。
+	Refs []string
 }
 
 // ImageResult 是出图结果：Data 与 URL 至少一个有值。
@@ -120,6 +120,29 @@ func bearer(acct api.Account) (map[string]string, error) {
 		h[k] = v
 	}
 	return h, nil
+}
+
+// refDataURLs 把每张参考图转成 data URL（http 地址原样留着）；一张也没有返回 nil。
+func refDataURLs(refs []string) ([]string, error) {
+	var out []string
+	for _, p := range refs {
+		u, err := imageDataURL(p)
+		if err != nil {
+			return nil, err
+		}
+		if u != "" {
+			out = append(out, u)
+		}
+	}
+	return out, nil
+}
+
+// oneOrMany 只有一张时给字符串，多张给数组：火山方舟、OpenRouter 的 image 字段两种都认，老型号只认字符串。
+func oneOrMany(us []string) any {
+	if len(us) == 1 {
+		return us[0]
+	}
+	return us
 }
 
 // imageDataURL 把本地图片转成 data URL；URL 原样返回。

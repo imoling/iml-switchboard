@@ -248,7 +248,7 @@ func (d *MediaDriver) runImage(ctx context.Context, task *core.Task, target core
 	var res ImageResult
 	err = withBusyRetry(ctx, func() error {
 		var e error
-		res, e = p.Generate(ctx, ImageRequest{Prompt: task.Prompt, Model: target.Model, Size: task.Size, Quality: quality, ImagePath: task.ImagePath})
+		res, e = p.Generate(ctx, ImageRequest{Prompt: task.Prompt, Model: target.Model, Size: task.Size, Quality: quality, Refs: task.ImageRefs()})
 		return e
 	})
 	if err != nil {

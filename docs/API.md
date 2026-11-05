@@ -133,8 +133,8 @@ interface Evaluation { id: string; status: 'running'|'done'|'failed'; started_at
 
 | 工具 | 参数 | 返回 |
 |---|---|---|
-| `generate_image` | `prompt, tier?=default, size?=1024x1024, out_dir?=assets` | `已生成 <路径>（<模型> · <费用>）` |
-| `generate_video` | `prompt, seconds?=5, tier?=cheap, image_path?` | 90 秒内完成返回路径；否则 `任务 <job_id> 进行中，用 get_job 查询` |
+| `generate_image` | `prompt, image_paths?, model?, tier?=default, size?=1024x1024, out_dir?=assets`；`image_paths` 是参考图（本地路径按项目目录算，或 http 地址），只能文生图的型号会被跳过；`model` 点名出图型号（工具说明里列出能用的），没配置的直接报错 | `已生成 <路径>（<模型> · <费用>）` |
+| `generate_video` | `prompt, seconds?=5, tier?=cheap, image_path?, model?` | 90 秒内完成返回路径；否则 `任务 <job_id> 进行中，用 get_job 查询` |
 | `make_animation` | `spec, seconds?=8, engine?=remotion` | 同上 |
 | `ask_model` | `prompt, tier?=low` | 结果文本 + 末行 `（<模型> · <费用>）` |
 | `get_job` | `job_id` | 进度或结果路径 |

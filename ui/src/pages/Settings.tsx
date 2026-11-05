@@ -88,7 +88,7 @@ export function Settings() {
           <SetRow title="快速面板快捷键" desc={recording ? '按下新的组合键，Esc 取消' : undefined}>
             <button className={`hotkey ${recording ? 'rec' : ''}`} title="点一下换一个" onClick={() => setRecording(true)}>{recording ? '正在录…' : hotkeyParts.map((p, i) => <kbd key={i}>{p}</kbd>)}</button>
           </SetRow>
-          <SetRow title="开机启动" desc="关闭后，宿主调用时才启动，首次约慢 2 秒">
+          <SetRow title="开机启动" desc="关闭后，应用调用时才启动，首次约慢 2 秒">
             <Toggle on={data.launch_at_login} onChange={(v) => save({ launch_at_login: v })} />
           </SetRow>
           <SetRow title="通知" desc="额度、预算、媒体完成或失败、规则建议、新版本">

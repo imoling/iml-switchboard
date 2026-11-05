@@ -46,7 +46,7 @@ export function HostTiersDialog({ host, hostName, onClose, onSaved }: { host: In
       {!data && !err && <div className="hint">正在读取…</div>}
       {data && (
         <div className="hm-scroll">
-          <div className="hint mb12">只对这个宿主生效；没自己排的档跟全局</div>
+          <div className="hint mb12">只对这个应用生效；没自己排的档跟全局</div>
           {TIERS.map((k) => (
             <div key={k} className="mb12">
               <div className="row mb6">

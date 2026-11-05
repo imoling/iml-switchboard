@@ -198,6 +198,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if req.Model == "router-sub" {
 		t.Lane = core.LaneClaudeSub
 	}
+	t.HostModel = req.Model
 	if req.Model != "router-sub" {
 		applyModelName(t, req.Model, s.accountModel) // 宿主在自己的模型列表里选了什么，就按什么来
 	}
@@ -219,6 +220,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 			t.Prompt = t.Messages[i].Content
 			if len(t.Messages[i].Images) > 0 {
 				t.ImagePath = t.Messages[i].Images[0]
+				t.RefImages = t.Messages[i].Images[1:] // 出图时第二张起也当参考图
 			}
 			break
 		}
@@ -409,6 +411,7 @@ func hostOf(r *http.Request) string {
 
 func (s *Server) images(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Model          string `json:"model"`
 		Prompt         string `json:"prompt"`
 		Size           string `json:"size"`
 		Quality        string `json:"quality"`
@@ -419,7 +422,7 @@ func (s *Server) images(w http.ResponseWriter, r *http.Request) {
 		oaiErr(w, 400, "invalid_request_error", "请求体不是合法 JSON")
 		return
 	}
-	tier := "default"
+	tier := "" // 没说要什么质量就照分派里排的出图顺序
 	switch strings.ToLower(req.Quality) {
 	case "hd", "high":
 		tier = "best"
@@ -427,6 +430,13 @@ func (s *Server) images(w http.ResponseWriter, r *http.Request) {
 		tier = "cheap"
 	}
 	t := &core.Task{Kind: core.KindImage, Prompt: req.Prompt, Size: req.Size, MediaTier: tier, Source: "facade", Host: hostOf(r)}
+	// 点名了配置过的出图型号就用它；dall-e-3、router-* 这些通用名字照旧按档位
+	for _, c := range s.router.MediaModels(core.KindImage) {
+		if req.Model != "" && c.Model == req.Model {
+			t.Model = req.Model
+			break
+		}
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	call, res, err := s.router.Run(ctx, t, nil)

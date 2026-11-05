@@ -106,8 +106,42 @@ func TestJudgeMediaOnlyForShortAsks(t *testing.T) {
 	if d.Kind != KindImage {
 		t.Fatalf("短请求判为生图应进媒体渠道，got %s", d.Kind)
 	}
-	d = r.Decide(&Task{Prompt: "Generate a flat-style illustration of a cat", Judged: "image", Tools: []byte(`[{"type":"function"}]`)})
+	// 接管后的智能体回合：用户刚说的这句要图就交给画师，否则宿主的模型只会自己写 SVG
+	tools := []byte(`[{"type":"function"}]`)
+	d = r.Decide(&Task{Prompt: "Generate a flat-style illustration of a cat", Judged: "image", Tools: tools,
+		Messages: []Message{{Role: "user", Content: "Generate a flat-style illustration of a cat"}}})
+	if d.Kind != KindImage {
+		t.Fatalf("带工具、用户刚说的要图请求应进媒体渠道，got %s", d.Kind)
+	}
+	// 工具结果回来的后续回合：最后一条用户消息还是开头那句，不能每轮再出一张
+	d = r.Decide(&Task{Prompt: "Generate a flat-style illustration of a cat", Judged: "image", Tools: tools,
+		Messages: []Message{{Role: "user", Content: "Generate a flat-style illustration of a cat"}, {Role: "assistant", ToolCalls: []byte(`[{}]`)}, {Role: "tool", Content: "ok"}}})
 	if d.Kind != KindText {
-		t.Fatalf("带工具的请求不能被判成媒体，got %s", d.Kind)
+		t.Fatalf("工具结果回来的后续回合不能被判成媒体，got %s", d.Kind)
+	}
+	d = r.Decide(&Task{Prompt: "帮我画一张海浪的图", Tools: tools,
+		Messages: []Message{{Role: "user", Content: "帮我画一张海浪的图"}, {Role: "tool", Content: "ok"}}})
+	if d.Kind != KindText {
+		t.Fatalf("规则命中媒体，但是工具结果回来的后续回合，也不该再出图，got %s", d.Kind)
+	}
+}
+
+// Claude Code 接管后的工具回合：最后一条用户消息只有提醒块，剥掉后是空的，不能当成一句新请求去出图
+func TestReminderOnlyTurnIsNotFresh(t *testing.T) {
+	r, j := newJudgeRouter(t, "image")
+	tools := []byte(`[{"type":"function"}]`)
+	task := &Task{Prompt: "<system-reminder>todo 列表有变化</system-reminder>", Judged: "image", Tools: tools, Source: "facade",
+		Messages: []Message{{Role: "user", Content: "帮我画一张海浪的图"}, {Role: "assistant", ToolCalls: []byte(`[{}]`)}, {Role: "tool", Content: "ok"},
+			{Role: "user", Content: "<system-reminder>todo 列表有变化</system-reminder>"}}}
+	if d := r.Decide(task); d.Kind != KindText {
+		t.Fatalf("只有提醒块的回合不该判成媒体，got %s", d.Kind)
+	}
+	task.Judged = ""
+	before := j.judged
+	if _, _, err := r.Run(context.Background(), task, nil); err != nil {
+		t.Fatal(err)
+	}
+	if j.judged != before {
+		t.Fatal("剥掉提醒块是空的，不该请判档员")
 	}
 }

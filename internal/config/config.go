@@ -66,10 +66,40 @@ func moneyDigits(v float64) string {
 	case v == 0:
 		return "0"
 	case v < 0.01 && v > -0.01:
-		return strconv.FormatFloat(v, 'f', 4, 64)
+		return strconv.FormatFloat(v, 'f', 4, 64) // 不到一分的小额多留两位，免得全是 0.00
+	case v >= 1e5 || v <= -1e5:
+		return strconv.FormatFloat(v/1e4, 'f', 2, 64) + " 万"
 	default:
-		return strconv.FormatFloat(v, 'f', 2, 64)
+		return group(strconv.FormatFloat(v, 'f', 2, 64))
 	}
+}
+
+// Count 是界面上的次数、条数：千分位，10 万起用「万」。
+func Count(n int) string {
+	if n >= 100000 || n <= -100000 {
+		return strconv.FormatFloat(float64(n)/1e4, 'f', 1, 64) + " 万"
+	}
+	return group(strconv.Itoa(n))
+}
+
+// group 给数字串的整数部分加千分位：1234567.89 → 1,234,567.89。
+func group(s string) string {
+	sign := ""
+	if strings.HasPrefix(s, "-") {
+		sign, s = "-", s[1:]
+	}
+	intPart, frac, hasFrac := strings.Cut(s, ".")
+	var b strings.Builder
+	for i, r := range intPart {
+		if i > 0 && (len(intPart)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(r)
+	}
+	if hasFrac {
+		return sign + b.String() + "." + frac
+	}
+	return sign + b.String()
 }
 
 // Notifications 是四类系统通知的开关。
@@ -199,6 +229,31 @@ type Routing struct {
 	Ignored      []string      `yaml:"ignored_suggestions,omitempty" json:"ignored_suggestions,omitempty"`
 	// Tiers 是每档手排的候选表：按顺序试，前一个出错才换下一个；没有这一档的表就按内置规则排。只认低中高三档
 	Tiers map[string][]TierPick `yaml:"tiers,omitempty" json:"tiers,omitempty"`
+	// MediaOrder 是出图、出视频手排的先后：image / video → 候选标识（账号或供应商/型号），按顺序试，表外的不用；
+	// 没有这一类的表就照内置排法。调用方指定了档位（tier=best 之类）时那一档配的型号仍然先上
+	MediaOrder map[string][]string `yaml:"media_order,omitempty" json:"media_order,omitempty"`
+	// Smart 是智能分派：打开后自动分档的对话和出图出视频都请判官挑（应用点名 router-smart 也一样）；默认关
+	Smart SmartDispatch `yaml:"smart,omitempty" json:"smart,omitempty"`
+}
+
+// SmartDispatch 是智能分派的设置。
+type SmartDispatch struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Judge 是谁来判：laya（本机，默认）、jev（TypeSafe 的云端接口）、model（从已有的按量付费型号里挑一个快的）
+	Judge        string `yaml:"judge,omitempty" json:"judge,omitempty"`
+	JudgeAccount string `yaml:"judge_account,omitempty" json:"judge_account,omitempty"`
+	JudgeModel   string `yaml:"judge_model,omitempty" json:"judge_model,omitempty"`
+	// LayaAutostart 是用户点过「启动」：Switchboard 重启后接着把 Laya 拉起来
+	LayaAutostart bool `yaml:"laya_autostart,omitempty" json:"laya_autostart,omitempty"`
+}
+
+// JudgeOrDefault 是实际用的判官。
+func (s SmartDispatch) JudgeOrDefault() string {
+	switch s.Judge {
+	case "jev", "model":
+		return s.Judge
+	}
+	return "laya"
 }
 
 // TierPick 是档位候选表里的一条：订阅渠道只写 lane（型号跟着「模型与账号」里这一档的选择走），按量付费写 api、账号和型号。
@@ -247,6 +302,18 @@ type Integration struct {
 	Models []string `yaml:"models,omitempty" json:"models,omitempty"`
 	// Tiers 是这个宿主自己的档位候选表，档位 → 按顺序的条目；没有这一档的表就用全局的（Routing.Tiers），再没有按内置规则
 	Tiers map[string][]TierPick `yaml:"tiers,omitempty" json:"tiers,omitempty"`
+	// BaselineModel 是「应用原价」按哪个型号算：不经过 Switchboard、应用自己调时用的型号；空表示按接管前的型号，再没有按 Opus
+	BaselineModel string `yaml:"baseline_model,omitempty" json:"baseline_model,omitempty"`
+	// BaselinePrice 是这个型号的单价；空表示用内置价目表
+	BaselinePrice *Price `yaml:"baseline_price,omitempty" json:"baseline_price,omitempty"`
+}
+
+// Price 是每百万 token 的单价；Currency 为 CNY 时按汇率折成美元。
+type Price struct {
+	InputPerM     float64 `yaml:"input_per_m" json:"input_per_m"`
+	OutputPerM    float64 `yaml:"output_per_m" json:"output_per_m"`
+	CacheReadPerM float64 `yaml:"cache_read_per_m,omitempty" json:"cache_read_per_m,omitempty"`
+	Currency      string  `yaml:"currency,omitempty" json:"currency,omitempty"`
 }
 
 // Config 是整份配置。
@@ -387,12 +454,21 @@ func Validate(c *Config) error {
 			return fmt.Errorf("task_table 里 %q 重复", t.Type)
 		}
 		seen[t.Type] = true
-		if t.Kind == "" {
+		switch t.Kind {
+		case "":
 			switch t.Tier {
 			case "low", "mid", "high":
 			default:
 				return fmt.Errorf("任务类型 %q 的档位只能是 low、mid、high", t.Type)
 			}
+		case "image", "video", "animation":
+			switch t.MediaTier {
+			case "", "cheap", "default", "best", "free":
+			default:
+				return fmt.Errorf("任务类型 %q 的媒体档位只能是 cheap、default、best、free", t.Type)
+			}
+		default:
+			return fmt.Errorf("任务类型 %q 的模态只能是 image、video、animation 或留空", t.Type)
 		}
 	}
 	for _, e := range c.Routing.Explicit {
@@ -402,6 +478,9 @@ func Validate(c *Config) error {
 	}
 	return nil
 }
+
+// CustomOrder 是用户新建的任务类型的顺序：排在所有内置行前面，同为 0 的按表里的先后。
+const CustomOrder = 0
 
 // rulesAddedIn 记录每一版新增的内置任务类型：只在升级那一次补进去，用户之后删掉的不再补。
 var rulesAddedIn = map[int][]string{2: {"hard_problem", "code_write", "tech_issue", "explain"}, 3: {"writing", "automation", "housekeeping"}}
@@ -429,6 +508,19 @@ func mergeRules(c, d *Config) {
 		} else if len(t.Match.Exclude) == 0 {
 			c.Routing.TaskTable[i].Match.Exclude = dt.Match.Exclude
 		}
+	}
+	if c.Routing.RulesVersion < 4 {
+		// 4 之前用户新建的行排在 100 以后，落在「短问答」后面，短句永远轮不到它：挪到最前，用户自己写的规则先看
+		var mine, rest []TaskType
+		for _, t := range c.Routing.TaskTable {
+			if _, ok := defs[t.Type]; !ok {
+				t.Order = CustomOrder
+				mine = append(mine, t)
+			} else {
+				rest = append(rest, t)
+			}
+		}
+		c.Routing.TaskTable = append(mine, rest...)
 	}
 	for v := c.Routing.RulesVersion + 1; v <= RulesVersion; v++ {
 		for _, typ := range rulesAddedIn[v] {

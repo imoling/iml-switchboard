@@ -17,8 +17,16 @@ type Price struct {
 
 // priceTable 按「更长的关键字优先」排列，归一化后用子串匹配。
 var priceTable = []Price{
+	// gpt-image 按 1024×1024 一张算（2026-11-05 官方出图指南）。2.5 Flare / Sunburst 和 gpt-image-2 的 token 单价相同，按 gpt-image-2 的张价
 	{Key: "gpt.image.2.5:low", Unit: "image", USD: 0.006},
-	{Key: "gpt.image.2.5:high", Unit: "image", USD: 0.17},
+	{Key: "gpt.image.2.5:medium", Unit: "image", USD: 0.053},
+	{Key: "gpt.image.2.5:high", Unit: "image", USD: 0.211},
+	{Key: "gpt.image.1.5:low", Unit: "image", USD: 0.009},
+	{Key: "gpt.image.1.5:medium", Unit: "image", USD: 0.034},
+	{Key: "gpt.image.1.5:high", Unit: "image", USD: 0.133},
+	{Key: "gpt.image.1:low", Unit: "image", USD: 0.011},
+	{Key: "gpt.image.1:medium", Unit: "image", USD: 0.042},
+	{Key: "gpt.image.1:high", Unit: "image", USD: 0.167},
 	{Key: "nano.banana.2.1", Unit: "image", USD: 0.045},
 	{Key: "seedream.5.0.flash", Unit: "image", CNY: 0.12},
 	{Key: "seedream.5.0.pro", Unit: "image", CNY: 0.30},
@@ -39,7 +47,7 @@ func normalizeModel(s string) string {
 	return s
 }
 
-// PriceFor 查模型单价；quality 只对 gpt-image 系列有意义（low/high，空则按模型名后缀，再默认 high）。
+// PriceFor 查模型单价；quality 只对 gpt-image 系列有意义（low/medium/high，空则按模型名后缀，再默认 high）。
 func PriceFor(model, quality string) (Price, bool) {
 	n := normalizeModel(model)
 	if strings.Contains(n, "gpt.image") {
@@ -52,11 +60,18 @@ func PriceFor(model, quality string) (Price, bool) {
 				q = "high"
 			}
 		}
-		if q != "low" {
+		if q != "low" && q != "medium" {
 			q = "high"
 		}
+		family := "gpt.image.2.5" // gpt-image-2 和 2.5 同价
+		switch {
+		case strings.Contains(n, "gpt.image.1.5"):
+			family = "gpt.image.1.5"
+		case strings.Contains(n, "gpt.image.1"):
+			family = "gpt.image.1"
+		}
 		for _, p := range priceTable {
-			if p.Key == "gpt.image.2.5:"+q {
+			if p.Key == family+":"+q {
 				return p, true
 			}
 		}

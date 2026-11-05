@@ -34,6 +34,9 @@ type Registry struct {
 	usdPerCNY float64
 }
 
+// PriceTableVersion 是内置价目表的版本：改了价就改它，启动时按新价把历史记录的应用原价重算一次。
+const PriceTableVersion = "2026-11-05b" // b：WorkBuddy 按积分折算
+
 // NewRegistry 用内置表创建注册表。
 func NewRegistry(usdPerCNY float64) *Registry {
 	r := &Registry{models: map[string]ModelInfo{}, usdPerCNY: usdPerCNY}
@@ -54,16 +57,45 @@ func NewRegistry(usdPerCNY float64) *Registry {
 		m.ID = p[0]
 		add(m)
 	}
-	// OpenAI
-	add(ModelInfo{ID: "gpt-5.4", Provider: "openai", Display: "GPT-5.4", InputPerM: 2.5, OutputPerM: 15, CacheReadPerM: 0.25, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
-	add(ModelInfo{ID: "gpt-5.4-mini", Provider: "openai", Display: "GPT-5.4 mini", InputPerM: 0.5, OutputPerM: 3, CacheReadPerM: 0.05, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
-	add(ModelInfo{ID: "gpt-5.4-nano", Provider: "openai", Display: "GPT-5.4 nano", InputPerM: 0.2, OutputPerM: 1.25, CacheReadPerM: 0.02, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
-	add(ModelInfo{ID: "gpt-6.1-sol", Provider: "openai", Display: "GPT-6.1 Sol", InputPerM: 2, OutputPerM: 10, CacheReadPerM: 0.2, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
-	add(ModelInfo{ID: "gpt-6-astra", Provider: "openai", Display: "GPT-6 Astra", InputPerM: 10, OutputPerM: 40, CacheReadPerM: 1, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
-	// Codex（ChatGPT 登录可用的型号；订阅不计费，价格只用于基线对比）
-	add(ModelInfo{ID: "gpt-5.6-sol", Provider: "openai", Display: "GPT-5.6 Sol", InputPerM: 2.5, OutputPerM: 15, CacheReadPerM: 0.25, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
-	add(ModelInfo{ID: "gpt-5.6-terra", Provider: "openai", Display: "GPT-5.6 Terra", InputPerM: 1, OutputPerM: 6, CacheReadPerM: 0.1, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
-	add(ModelInfo{ID: "gpt-5.6-luna", Provider: "openai", Display: "GPT-5.6 Luna", InputPerM: 0.3, OutputPerM: 2, CacheReadPerM: 0.03, Currency: "USD", Context: 400000, Vision: true, Tools: true, NeedsProxy: true})
+	// OpenAI（2026-11-05 官方价目页 developers.openai.com/api/docs/pricing，标准档、272K 以内）。
+	// Token Factory 网关的账单按这套价算，抽了 gpt-5.6-luna、gpt-6-luna 三条对过，分毫不差
+	oai := func(id, display string, in, cached, out float64, ctx int) {
+		add(ModelInfo{ID: id, Provider: "openai", Display: display, InputPerM: in, OutputPerM: out, CacheReadPerM: cached, Currency: "USD", Context: ctx, Vision: true, Tools: true, NeedsProxy: true})
+	}
+	oai("gpt-6.1-sol", "GPT-6.1 Sol", 2, 0.10, 10, 400000)
+	oai("gpt-6.1-terra", "GPT-6.1 Terra", 1, 0.05, 5, 400000)
+	oai("gpt-6-sol", "GPT-6 Sol", 2, 0.20, 10, 400000)
+	oai("gpt-6-luna", "GPT-6 Luna", 0.10, 0.01, 0.50, 400000)
+	oai("gpt-6-astra", "GPT-6 Astra", 10, 1, 50, 400000)
+	oai("gpt-5.6-sol", "GPT-5.6 Sol", 4, 0.40, 20, 400000)
+	oai("gpt-5.6-terra", "GPT-5.6 Terra", 2, 0.20, 12, 400000)
+	oai("gpt-5.6-luna", "GPT-5.6 Luna", 0.20, 0.02, 1.20, 400000)
+	oai("gpt-5.5", "GPT-5.5", 5, 0.50, 30, 1050000)
+	oai("gpt-5.5-pro", "GPT-5.5 Pro", 30, 30, 180, 1050000) // 官方没有缓存价：缓存按原价算
+	oai("gpt-5.4", "GPT-5.4", 2.5, 0.25, 15, 400000)
+	oai("gpt-5.4-mini", "GPT-5.4 mini", 0.75, 0.075, 4.5, 400000)
+	oai("gpt-5.4-nano", "GPT-5.4 nano", 0.2, 0.02, 1.25, 400000) // 2026-10 录入，这次官方页没列，沿用
+	oai("gpt-5.3-codex", "GPT-5.3 Codex", 1.75, 0.175, 14, 400000)
+	oai("gpt-5.2", "GPT-5.2", 1.75, 0.175, 14, 400000)
+	oai("gpt-5.2-pro", "GPT-5.2 Pro", 21, 21, 168, 400000)
+	// 同一型号的别名和带日期的快照：价格跟本体一样（网关报的名字里写明了是哪个型号）
+	for _, a := range []string{"gpt-6:gpt-6-astra", "gpt-5.6:gpt-5.6-sol", "gpt-5.4-2026-03-05:gpt-5.4", "gpt-5.2-2025-12-11:gpt-5.2", "gpt-5.2-pro-2025-12-11:gpt-5.2-pro"} {
+		p := strings.Split(a, ":")
+		m := r.models[p[1]]
+		m.ID = p[0]
+		add(m)
+	}
+	// 官方没公布价格的，按最接近的型号估（2026-11-05）：
+	// codex-auto-review 是 Codex 自动审批用的内部名字，Token Factory 账单按 gpt-5.6-luna 收（399 输入 + 103.8K 缓存 + 292 输出 = $0.002506）；
+	// gpt-5.3-codex-spark 是 gpt-5.3-codex 的快速版，三方价目站都按本体价列；
+	// gpt-5.2-chat-latest 按 gpt-5.2；gpt-6-chat-thinking 按同代的 gpt-6-sol
+	for _, a := range []string{"codex-auto-review:gpt-5.6-luna", "gpt-5.3-codex-spark:gpt-5.3-codex", "gpt-5.2-chat-latest:gpt-5.2", "gpt-6-chat-thinking:gpt-6-sol"} {
+		p := strings.Split(a, ":")
+		m := r.models[p[1]]
+		m.ID, m.Display = p[0], m.Display+"（估）"
+		add(m)
+	}
+	r.models["codex-auto-review"] = func(m ModelInfo) ModelInfo { m.Display = "Codex 自动审批"; return m }(r.models["codex-auto-review"])
 	// Antigravity（Google AI 订阅里可选的型号；订阅不计费，价格只用于额度权重与基线）
 	add(ModelInfo{ID: "gemini-3.8-flash-high", Provider: "google", Display: "Gemini 3.8 Flash（高）", InputPerM: 0.5, OutputPerM: 3, CacheReadPerM: 0.05, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "gemini-3.8-flash-medium", Provider: "google", Display: "Gemini 3.8 Flash（中）", InputPerM: 0.3, OutputPerM: 2, CacheReadPerM: 0.03, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
@@ -96,8 +128,12 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "agnes-video-2.5", Provider: "agnes", Display: "Agnes Video 2.5", PerSecond: cny(0.25), Currency: "CNY", MediaKind: "video"})
 	// 媒体
 	add(ModelInfo{ID: "google/gemini-nano-banana-2.1", Provider: "openrouter", Display: "Nano Banana 2.1", PerImage: 0.045, Currency: "USD", NeedsProxy: true})
-	add(ModelInfo{ID: "gpt-image-2.5-sunburst", Provider: "openai", Display: "GPT Image 2.5", PerImage: 0.17, Currency: "USD", NeedsProxy: true})
-	add(ModelInfo{ID: "gpt-image-2.5-flare", Provider: "openai", Display: "GPT Image 2.5 Flare", PerImage: 0.04, Currency: "USD", NeedsProxy: true})
+	// 出图按 1024×1024 默认档（medium）一张估，用来排候选；实际记账按 media/prices.go 里分质量的价
+	add(ModelInfo{ID: "gpt-image-2.5-sunburst", Provider: "openai", Display: "GPT Image 2.5 Sunburst", PerImage: 0.053, Currency: "USD", NeedsProxy: true, MediaKind: "image"})
+	add(ModelInfo{ID: "gpt-image-2.5-flare", Provider: "openai", Display: "GPT Image 2.5 Flare", PerImage: 0.053, Currency: "USD", NeedsProxy: true, MediaKind: "image"})
+	add(ModelInfo{ID: "gpt-image-2", Provider: "openai", Display: "GPT Image 2", PerImage: 0.053, Currency: "USD", NeedsProxy: true, MediaKind: "image"})
+	add(ModelInfo{ID: "gpt-image-1.5", Provider: "openai", Display: "GPT Image 1.5", PerImage: 0.034, Currency: "USD", NeedsProxy: true, MediaKind: "image"})
+	add(ModelInfo{ID: "gpt-image-1", Provider: "openai", Display: "GPT Image 1", PerImage: 0.042, Currency: "USD", NeedsProxy: true, MediaKind: "image"})
 	add(ModelInfo{ID: "doubao-seedream-5-0-flash-260915", Provider: "ark", Display: "Seedream 5.0 Flash", PerImage: cny(0.12), Currency: "CNY"})
 	add(ModelInfo{ID: "doubao-seedream-5-0-pro-260628", Provider: "ark", Display: "Seedream 5.0 Pro", PerImage: cny(0.30), Currency: "CNY"})
 	add(ModelInfo{ID: "qwen-image-2.1-turbo", Provider: "dashscope", Display: "Qwen-Image 2.1 Turbo", PerImage: cny(0.10), Currency: "CNY"})
@@ -187,6 +223,18 @@ func (r *Registry) TextCost(model string, in, out, cached int) float64 {
 func (r *Registry) EstimateText(model string, inTokens int) float64 {
 	return r.TextCost(model, inTokens, int(float64(inTokens)*0.6)+200, 0)
 }
+
+// Priced 只认名字完全相同、而且标了价的型号：Lookup 会模糊匹配，账号里自动发现的型号也以 0 价登记过，
+// 拿它们算原价会悄悄变成 0。
+func (r *Registry) Priced(id string) (ModelInfo, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m, ok := r.models[id]
+	return m, ok && (m.InputPerM > 0 || m.OutputPerM > 0)
+}
+
+// USDPerCNY 是折算汇率。
+func (r *Registry) USDPerCNY() float64 { return r.usdPerCNY }
 
 // Baseline 是「同一请求全用 Opus 5.5」的估算，账本里的节省以它为基准。
 func (r *Registry) Baseline(in, out, cached int) float64 {

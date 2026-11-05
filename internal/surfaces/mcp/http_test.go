@@ -14,6 +14,10 @@ import (
 // 假后台：只回 /api/internal/tool，证明 HTTP 入口和工具转发是通的。
 func TestHTTPHandlerRoundTrip(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/media/models" {
+			_ = json.NewEncoder(w).Encode([]map[string]string{{"model": "gpt-image-2.5-flare", "display": "GPT Image 2.5 Flare"}, {"model": "agnes-image-2.5-flash"}, {"model": "dall-e-3", "skipped": "未添加 OpenAI 账号"}})
+			return
+		}
 		if r.URL.Path != "/api/internal/tool" || r.Header.Get("X-IMLS-Client") != "mcp" {
 			t.Errorf("意外请求 %s", r.URL.Path)
 		}
@@ -49,6 +53,21 @@ func TestHTTPHandlerRoundTrip(t *testing.T) {
 	}
 	if len(tools.Tools) != 5 {
 		t.Fatalf("应有 5 个工具，得到 %d", len(tools.Tools))
+	}
+	// 宿主靠这两样知道该把图交给画师、能带参考图
+	if ins := sess.InitializeResult().Instructions; !strings.Contains(ins, "generate_image") || !strings.Contains(ins, "image_paths") {
+		t.Fatalf("服务器说明里要讲清什么时候出图、怎么带参考图：%q", ins)
+	}
+	for _, tl := range tools.Tools {
+		if tl.Name == "generate_image" {
+			b, _ := json.Marshal(tl.InputSchema)
+			if !strings.Contains(string(b), `"image_paths"`) || !strings.Contains(string(b), `"model"`) {
+				t.Fatalf("generate_image 应接参考图和点名型号：%s", b)
+			}
+			if !strings.Contains(tl.Description, "gpt-image-2.5-flare（GPT Image 2.5 Flare）") || !strings.Contains(tl.Description, "agnes-image-2.5-flash") || strings.Contains(tl.Description, "dall-e-3") {
+				t.Fatalf("工具说明里应列出能用的出图型号、不列用不了的：%s", tl.Description)
+			}
+		}
 	}
 	res, err := sess.CallTool(context.Background(), &sdk.CallToolParams{Name: "get_job", Arguments: map[string]any{"job_id": "j1"}})
 	if err != nil {

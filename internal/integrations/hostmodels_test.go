@@ -46,7 +46,7 @@ func TestHostModelsDefault(t *testing.T) {
 	if list.Custom {
 		t.Fatal("没改过不算自定义")
 	}
-	want := []string{"router-auto", "router-high", "router-mid", "router-low", "router-sub", "winwork-snt-5.5", "winwork-ds-v4.1-flash", "gpt-5.5"}
+	want := []string{"router-auto", "router-smart", "router-high", "router-mid", "router-low", "router-sub", "winwork-snt-5.5", "winwork-ds-v4.1-flash", "gpt-5.5"}
 	if got := ids(list.Models, true); !slices.Equal(got, want) {
 		t.Fatalf("默认选中：%v", got)
 	}
@@ -123,7 +123,7 @@ func TestSetHostModelsWritesHosts(t *testing.T) {
 	}
 
 	// 回到默认：空表，或者和默认一模一样
-	for _, back := range [][]string{nil, {"router-auto", "router-high", "router-mid", "router-low", "router-sub", "winwork-snt-5.5", "winwork-ds-v4.1-flash", "gpt-5.5"}} {
+	for _, back := range [][]string{nil, {"router-auto", "router-smart", "router-high", "router-mid", "router-low", "router-sub", "winwork-snt-5.5", "winwork-ds-v4.1-flash", "gpt-5.5"}} {
 		v, _ = m.SetHostModels("workbuddy", back)
 		if v.(HostModelList).Custom || m.cfg.Get().Integrations["workbuddy"].Models != nil {
 			t.Fatalf("%v 应算回到默认", back)
@@ -187,5 +187,22 @@ func TestNotInstalledHostsStayDisconnected(t *testing.T) {
 		if v["available"] != false || v["status"] != "disconnected" {
 			t.Fatalf("%s 没装命令就不该算接入：%v", id, v)
 		}
+	}
+}
+
+// 新加的路由型号补进自己排过的表：插在 after 后面；表里没有 after 的不动
+func TestAddRouterModel(t *testing.T) {
+	m, _ := setup(t)
+	_ = m.cfg.Update(func(c *config.Config) error {
+		c.Integrations["workbuddy"] = config.Integration{Models: []string{"gpt-5.5", "router-auto", "router-low"}}
+		c.Integrations["pi"] = config.Integration{Models: []string{"gpt-5.5"}}
+		return nil
+	})
+	m.AddRouterModel("router-smart", "router-auto")
+	if got := m.cfg.Get().Integrations["workbuddy"].Models; !slices.Equal(got, []string{"gpt-5.5", "router-auto", "router-smart", "router-low"}) {
+		t.Fatalf("应插在自动分档后面：%v", got)
+	}
+	if got := m.cfg.Get().Integrations["pi"].Models; !slices.Equal(got, []string{"gpt-5.5"}) {
+		t.Fatalf("不用路由型号的表不动：%v", got)
 	}
 }

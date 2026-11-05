@@ -3,9 +3,11 @@ import { api, ApiError } from '../api/client';
 import type { Integration, IntegrationId } from '../api/types';
 import { HostModelDialog } from '../components/HostModels';
 import { HostTiersDialog } from '../components/HostTiers';
+import { HostBaselineRow } from '../components/HostBaseline';
 import { Dot, ErrorLine, SetRow, Toggle, toast } from '../components/ui';
 import { Vendor, VendorLogo } from '../components/Vendor';
 import { errText, useLoad } from '../hooks';
+import { num } from '../format';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop } from '../tauri';
 
@@ -117,6 +119,9 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
         </SetRow>,
       );
     }
+    if (it.baseline && (connected || !!it.options?.takeover || !!it.calls_7d)) {
+      rows.push(<HostBaselineRow key="baseline" host={it.id} value={it.baseline} onSaved={(b) => setData((old) => old?.map((x) => (x.id === it.id ? { ...x, baseline: b } : x)) ?? old)} />);
+    }
     if (MODEL_LIST_HOSTS.has(it.id) && (it.id === 'codex' ? !!it.options?.takeover : connected)) {
       rows.push(
         <SetRow key="models" title="模型列表">
@@ -138,7 +143,7 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
 
   const activity = (it: Integration) => {
     if (it.calls_7d === undefined) return null;
-    if (it.calls_7d > 0) return <span className="hint" title={it.last_call ? `最近一次：${new Date(it.last_call).toLocaleString()}` : undefined}>近 7 天 {it.calls_7d} 次</span>;
+    if (it.calls_7d > 0) return <span className="hint" title={it.last_call ? `最近一次：${new Date(it.last_call).toLocaleString()}` : undefined}>近 7 天 {num(it.calls_7d)} 次</span>;
     if (it.status === 'connected') return <span className="hint warn-text">7 天没派活</span>;
     return null;
   };

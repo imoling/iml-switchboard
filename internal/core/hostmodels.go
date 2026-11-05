@@ -2,9 +2,10 @@ package core
 
 import "strings"
 
-// RouterModels 是公布给宿主的路由型号：自动分档和三个档位。
+// RouterModels 是公布给宿主的路由型号：自动分档、智能分派和三个档位。
 var RouterModels = []struct{ ID, Name string }{
 	{"router-auto", "Switchboard 自动分档"},
+	{"router-smart", "Switchboard 智能分派"},
 	{"router-high", "Switchboard 高档"},
 	{"router-mid", "Switchboard 中档"},
 	{"router-low", "Switchboard 低档"},
@@ -33,6 +34,17 @@ func GuessMediaKind(id string) string {
 		}
 	}
 	return ""
+}
+
+// RefImageUnsupported 认出只能文生图、不接参考图的型号：DALL·E 3、名字带 t2i 的、Imagen。
+func RefImageUnsupported(id string) bool {
+	m := strings.ToLower(id)
+	for _, w := range []string{"dall-e-3", "t2i", "imagen"} {
+		if strings.Contains(m, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // DesktopRoute 把 Claude Desktop 选的型号名换成路由型号；不是借的名字就原样返回。

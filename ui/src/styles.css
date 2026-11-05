@@ -86,9 +86,7 @@ select.sel { border: 1px solid #CFC9BE; border-radius: 5px; padding: 1px 6px; ba
 .sect { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 8px; }
 .sect h5 { margin: 0; font-size: 14px; }
 .sect .tools { display: flex; gap: 8px; align-items: center; }
-.topo-strip { padding: 8px 12px; margin-bottom: 10px; }
-.topo-toggle { display: flex; align-items: center; gap: 4px; width: 100%; background: none; border: 0; padding: 0; font-size: 12.5px; color: var(--fg); text-align: left; cursor: pointer; }
-.topo-toggle .muted { margin-right: 4px; } .topo-toggle .gap { width: 14px; } .topo-toggle .chev { margin-left: auto; color: var(--muted); }
+.topo-strip { margin-bottom: 10px; }
 .split.embedded { height: 520px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); overflow: hidden; margin-bottom: 14px; }
 .split.embedded .grow { padding: 0 12px; }
 .card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--card); }
@@ -105,9 +103,6 @@ select.sel { border: 1px solid #CFC9BE; border-radius: 5px; padding: 1px 6px; ba
 .stack { display: flex; height: 22px; border-radius: 5px; overflow: hidden; margin: 6px 0; font-size: 11px; color: #fff; text-align: center; line-height: 22px; }
 .legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
 .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
-.spark { display: flex; align-items: flex-end; gap: 5px; height: 90px; padding-top: 6px; }
-.spark div { flex: 1; background: #E6DCD3; border-radius: 3px 3px 0 0; position: relative; }
-.spark div b { display: block; position: absolute; bottom: 0; left: 0; right: 0; background: var(--accent); border-radius: 3px 3px 0 0; }
 .days { display: flex; gap: 5px; font-size: 11px; color: var(--faint); } .days span { flex: 1; text-align: center; }
 
 /* 表格 */
@@ -238,8 +233,6 @@ details.raw { margin-top: 6px; font-size: 12px; color: var(--muted); } details.r
 .acct .plan { position: relative; display: inline-block; margin-left: 8px; padding: 1px 8px 1px 15px; background: #F3E6C6; color: #7A5212; font-size: 11.5px; font-weight: 550; vertical-align: 1px; clip-path: polygon(0 50%, 9px 0, 100% 0, 100% 100%, 9px 100%); }
 .acct .plan::before { content: ''; position: absolute; left: 7px; top: 50%; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: var(--card); }
 .setrow .path { display: block; font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); margin-bottom: 2px; }
-.spark.dense { gap: 2px; }
-.spark.dense div { border-radius: 2px 2px 0 0; }
 .days span { white-space: nowrap; overflow: visible; }
 .days.dense { gap: 2px; }
 .acct details.cfg { flex-basis: 100%; margin: 4px 0 0; } .acct details.cfg summary { cursor: pointer; color: var(--muted); font-size: 12px; } .acct details.cfg pre { max-height: 260px; }
@@ -341,3 +334,57 @@ details.raw { margin-top: 6px; font-size: 12px; color: var(--muted); } details.r
 .acct .quota-row { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--muted); }
 .acct .qw { display: flex; align-items: center; gap: 8px; min-width: 200px; }
 .acct .qw em { font-style: normal; white-space: nowrap; } .acct .qw .bar { flex: 1; margin: 0; } .acct .qw b { color: var(--fg); font-weight: 600; min-width: 34px; text-align: right; }
+
+/* 翻页 */
+.pager { display: flex; gap: 10px; align-items: center; justify-content: center; padding: 10px 0 4px; }
+/* 拓扑嵌在接入栏卡片里：分隔线隔开，不再套第二层边框 */
+.topo.bare, .topo-wait.bare { margin: 10px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); }
+/* 记录页：一页铺满窗口，表格固定列宽，放不下的省略；详情浮在右侧，不挤表格 */
+.calls-page { display: flex; flex-direction: column; height: calc(100vh - 36px); }
+.calls-box { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+table.t.calls { table-layout: fixed; }
+table.t.calls td.ell { overflow: hidden; text-overflow: ellipsis; }
+table.t.calls .num { font-variant-numeric: tabular-nums; }
+table.t.calls col.c-time { width: 52px; } table.t.calls col.c-host { width: 124px; } table.t.calls col.c-task { width: 118px; }
+table.t.calls col.c-tier { width: 66px; } table.t.calls col.c-use { width: 104px; } table.t.calls col.c-cost { width: 58px; }
+table.t.calls col.c-price { width: 112px; } table.t.calls col.c-base { width: 64px; }
+.drawer.float { position: absolute; top: 0; right: 0; bottom: 0; width: 320px; box-shadow: -8px 0 24px color-mix(in srgb, var(--fg) 10%, transparent); z-index: 2; }
+.drawer-x { position: absolute; top: 8px; right: 10px; font-size: 18px; line-height: 1; color: var(--muted); }
+.calls-page .pager { padding: 8px 0 0; }
+/* 总览的接入汇总：两组「标签 数字 图标」，右边是渠道构成 */
+.topo-strip { padding: 10px 14px 12px; }
+.topo-sum { display: flex; align-items: center; gap: 22px; font-size: 12.5px; }
+.topo-sum .grp { display: inline-flex; align-items: center; gap: 6px; }
+.topo-sum .k { color: var(--muted); }
+.topo-sum b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; margin-right: 2px; }
+.topo-sum .icons { display: inline-flex; gap: 3px; padding: 3px 6px; border-radius: 999px; background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.topo-sum .split-note { margin-left: auto; color: var(--faint); }
+
+/* 每天省下与调度量：两排共用日期，各用各的刻度 */
+.dc-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 4px; }
+.dc-key { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.dc-key .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-left: 6px; }
+.dc-key .sw:first-child { margin-left: 0; }
+.sw.saved { background: color-mix(in srgb, var(--accent) 32%, var(--card)); }
+.sw.cost { background: var(--accent); }
+.dc-bars { display: flex; align-items: flex-end; gap: 5px; }
+.dc-bars.dense { gap: 2px; }
+.dc-bars.money, .dc-bars.calls { height: 104px; }
+.dc-bars .col { flex: 1; height: 100%; display: flex; align-items: flex-end; cursor: default; border-radius: 3px; }
+.dc-bars .col.on { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.dc-bars .bar { width: 100%; position: relative; border-radius: 3px 3px 0 0; }
+.dc-bars.money .bar { background: color-mix(in srgb, var(--accent) 32%, var(--card)); }
+.dc-bars.money .bar b { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); border-radius: 0; }
+.dc-bars.calls .bar { background: color-mix(in srgb, var(--fg) 28%, var(--card)); }
+.dc-read { margin-top: 4px; min-height: 16px; }
+.dc-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.dc-title h5 { margin: 0; }
+
+/* 试一句：规则分派和智能分派两个结果并排 */
+.try-res { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.try-card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--card); min-width: 0; }
+.try-card.diff { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.try-top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.try-top .hint { margin-left: auto; font-variant-numeric: tabular-nums; }
+.try-top .grow + .hint { margin-left: 0; }
+.try-pick { font-size: 14px; font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/imoling/iml-switchboard/internal/config"
 	"strings"
 	"time"
 
@@ -12,45 +13,52 @@ import (
 
 // Call 是账本里的一行，字段名与 docs/API.md 一致。
 type Call struct {
-	ID              string    `json:"id"`
-	TS              time.Time `json:"ts"`
-	Source          string    `json:"source"`
-	Host            string    `json:"host,omitempty"`
-	SessionID       string    `json:"session_id,omitempty"`
-	Kind            Kind      `json:"kind"`
-	TaskType        string    `json:"task_type"`
-	Tier            Tier      `json:"tier,omitempty"`
-	MediaTier       string    `json:"media_tier,omitempty"`
-	Lane            LaneID    `json:"lane"`
-	Provider        string    `json:"provider"`
-	Model           string    `json:"model"`
-	Reason          []string  `json:"reason"`
-	Candidates      []Target  `json:"candidates"`
-	FallbackFrom    string    `json:"fallback_from,omitempty"`
-	InputTokens     int       `json:"input_tokens,omitempty"`
-	OutputTokens    int       `json:"output_tokens,omitempty"`
-	CacheReadTokens int       `json:"cache_read_tokens,omitempty"`
-	Units           float64   `json:"units,omitempty"`
-	Unit            string    `json:"unit,omitempty"`
-	CostUSD         float64   `json:"cost_usd"`
-	CostNative      float64   `json:"cost_native,omitempty"`
-	Currency        string    `json:"currency,omitempty"`
-	QuotaUnits      float64   `json:"quota_units,omitempty"`
-	BaselineCostUSD float64   `json:"baseline_cost_usd"`
-	UserEscalated   bool      `json:"user_escalated"`
-	LatencyMS       int       `json:"latency_ms"`
-	OK              bool      `json:"ok"`
-	Error           string    `json:"error,omitempty"`
-	PromptExcerpt   string    `json:"prompt_excerpt,omitempty"`
-	ResultPath      string    `json:"result_path,omitempty"`
-	JobID           string    `json:"job_id,omitempty"`
-	ResultText      string    `json:"result_text,omitempty"`
+	ID               string    `json:"id"`
+	TS               time.Time `json:"ts"`
+	Source           string    `json:"source"`
+	Host             string    `json:"host,omitempty"`
+	SessionID        string    `json:"session_id,omitempty"`
+	Kind             Kind      `json:"kind"`
+	TaskType         string    `json:"task_type"`
+	Tier             Tier      `json:"tier,omitempty"`
+	MediaTier        string    `json:"media_tier,omitempty"`
+	Lane             LaneID    `json:"lane"`
+	Provider         string    `json:"provider"`
+	Model            string    `json:"model"`
+	Reason           []string  `json:"reason"`
+	Candidates       []Target  `json:"candidates"`
+	FallbackFrom     string    `json:"fallback_from,omitempty"`
+	InputTokens      int       `json:"input_tokens,omitempty"`
+	OutputTokens     int       `json:"output_tokens,omitempty"`
+	CacheReadTokens  int       `json:"cache_read_tokens,omitempty"`
+	Units            float64   `json:"units,omitempty"`
+	Unit             string    `json:"unit,omitempty"`
+	CostUSD          float64   `json:"cost_usd"`
+	CostNative       float64   `json:"cost_native,omitempty"`
+	Currency         string    `json:"currency,omitempty"`
+	QuotaUnits       float64   `json:"quota_units,omitempty"`
+	BaselineCostUSD  float64   `json:"baseline_cost_usd"`
+	HostModel        string    `json:"host_model,omitempty"`        // 应用原样送来的型号名
+	BaselineModel    string    `json:"baseline_model,omitempty"`    // 应用原价按哪个型号算
+	BaselineUnpriced bool      `json:"baseline_unpriced,omitempty"` // 那个型号没有单价：原价记成实际花费
+	UserEscalated    bool      `json:"user_escalated"`
+	LatencyMS        int       `json:"latency_ms"`
+	OK               bool      `json:"ok"`
+	Error            string    `json:"error,omitempty"`
+	PromptExcerpt    string    `json:"prompt_excerpt,omitempty"`
+	ResultPath       string    `json:"result_path,omitempty"`
+	JobID            string    `json:"job_id,omitempty"`
+	ResultText       string    `json:"result_text,omitempty"`
 	// 完整的提问和回答，只给评估用：重做和盲评要看到原话，摘录会截断。不进接口输出
 	PromptFull string `json:"-"`
 	ResultFull string `json:"-"`
 	// 下面两个只在接口输出时填，不入库
-	TaskName     string `json:"task_name,omitempty"`
-	ModelDisplay string `json:"model_display,omitempty"`
+	TaskName        string `json:"task_name,omitempty"`
+	ModelDisplay    string `json:"model_display,omitempty"`
+	BaselineDisplay string `json:"baseline_display,omitempty"`
+	// BaselinePrice 是原价的单价（每百万 token）；媒体记录用 BaselinePerUnitUSD（每张、每秒）。只在接口输出时填
+	BaselinePrice      *config.Price `json:"baseline_price,omitempty"`
+	BaselinePerUnitUSD float64       `json:"baseline_per_unit_usd,omitempty"`
 }
 
 // Ledger 是 SQLite 账本。
@@ -83,8 +91,8 @@ CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 		return nil, err
 	}
 	// 后加的列：老账本补上，已有就跳过
-	for _, col := range []string{"prompt_full", "result_full"} {
-		if _, err := db.Exec(`ALTER TABLE calls ADD COLUMN ` + col + ` TEXT`); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+	for _, col := range []string{"prompt_full TEXT", "result_full TEXT", "host_model TEXT", "baseline_model TEXT", "baseline_unpriced INTEGER DEFAULT 0"} {
+		if _, err := db.Exec(`ALTER TABLE calls ADD COLUMN ` + col); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return nil, err
 		}
 	}
@@ -96,7 +104,7 @@ func (l *Ledger) Close() error { return l.db.Close() }
 
 // CleanExcerpts 把记录和媒体任务摘录里宿主注入的内容剥掉；给升级后清一次历史用，返回改了几条。
 func (l *Ledger) CleanExcerpts(clean func(string) string) (int, error) {
-	rows, err := l.db.Query(`SELECT id, prompt_excerpt, coalesce(prompt_full,'') FROM calls WHERE prompt_excerpt LIKE '%<system-reminder%' OR prompt_excerpt LIKE '%<session>%' OR prompt_excerpt LIKE '%<user_query>%'`)
+	rows, err := l.db.Query(`SELECT id, prompt_excerpt, coalesce(prompt_full,'') FROM calls WHERE prompt_excerpt LIKE '%<system-reminder%' OR prompt_excerpt LIKE '%<session>%' OR prompt_excerpt LIKE '%<user_query>%' OR prompt_excerpt LIKE '# Files mentioned by the user%' OR prompt_excerpt LIKE '# Context from my IDE%'`)
 	if err != nil {
 		return 0, err
 	}
@@ -141,12 +149,76 @@ func js(v any) string { b, _ := json.Marshal(v); return string(b) }
 
 // Insert 写入一行。
 func (l *Ledger) Insert(c *Call) error {
-	_, err := l.db.Exec(`INSERT INTO calls (`+callCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := l.db.Exec(`INSERT INTO calls (`+callCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		c.ID, c.TS.UTC().Format(time.RFC3339Nano), c.Source, c.Host, c.SessionID, string(c.Kind), c.TaskType, string(c.Tier), c.MediaTier,
 		string(c.Lane), c.Provider, c.Model, js(c.Reason), js(c.Candidates), c.FallbackFrom,
 		c.InputTokens, c.OutputTokens, c.CacheReadTokens, c.Units, c.Unit, c.CostUSD, c.CostNative, c.Currency,
-		c.QuotaUnits, c.BaselineCostUSD, boolInt(c.UserEscalated), c.LatencyMS, boolInt(c.OK), c.Error, c.PromptExcerpt, c.ResultPath, c.JobID, c.ResultText, c.PromptFull, c.ResultFull)
+		c.QuotaUnits, c.BaselineCostUSD, boolInt(c.UserEscalated), c.LatencyMS, boolInt(c.OK), c.Error, c.PromptExcerpt, c.ResultPath, c.JobID, c.ResultText, c.PromptFull, c.ResultFull,
+		c.HostModel, c.BaselineModel, boolInt(c.BaselineUnpriced))
 	return err
+}
+
+// RewriteBaselines 按 fn 重算文字记录的应用原价并写回；host 为空表示全部。评估、失败和媒体记录不动。
+func (l *Ledger) RewriteBaselines(host string, fn func(*Call)) (int, error) {
+	q := `SELECT ` + callCols + ` FROM calls WHERE kind='text' AND ok=1 AND coalesce(source,'')<>'evaluation'`
+	args := []any{}
+	if host != "" {
+		q += ` AND host=?`
+		args = append(args, host)
+	}
+	rows, err := l.db.Query(q, args...)
+	if err != nil {
+		return 0, err
+	}
+	var calls []*Call
+	for rows.Next() {
+		if c, err := scanCall(rows); err == nil {
+			calls = append(calls, c)
+		}
+	}
+	rows.Close()
+	tx, err := l.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, c := range calls {
+		before := *c
+		fn(c)
+		if c.BaselineCostUSD == before.BaselineCostUSD && c.BaselineModel == before.BaselineModel && c.BaselineUnpriced == before.BaselineUnpriced {
+			continue
+		}
+		if _, err := tx.Exec(`UPDATE calls SET baseline_cost_usd=?, baseline_model=?, baseline_unpriced=? WHERE id=?`, c.BaselineCostUSD, c.BaselineModel, boolInt(c.BaselineUnpriced), c.ID); err != nil {
+			_ = tx.Rollback()
+			return 0, err
+		}
+		n++
+	}
+	return n, tx.Commit()
+}
+
+// RewriteTiers 按 fn 重算点名型号的文字记录的档位并写回（host_model 就是实际用的型号的那些）。返回改了几条。
+func (l *Ledger) RewriteTiers(fn func(*Call) Tier) (int, error) {
+	rows, err := l.db.Query(`SELECT ` + callCols + ` FROM calls WHERE kind='text' AND ok=1 AND coalesce(host_model,'')<>'' AND host_model=model`)
+	if err != nil {
+		return 0, err
+	}
+	var calls []*Call
+	for rows.Next() {
+		if c, err := scanCall(rows); err == nil {
+			calls = append(calls, c)
+		}
+	}
+	rows.Close()
+	n := 0
+	for _, c := range calls {
+		if tier := fn(c); tier != c.Tier {
+			if _, err := l.db.Exec(`UPDATE calls SET tier=? WHERE id=?`, string(tier), c.ID); err == nil {
+				n++
+			}
+		}
+	}
+	return n, nil
 }
 
 // UpdateResult 任务完成后回填产物与费用。
@@ -162,15 +234,16 @@ func boolInt(b bool) int {
 	return 0
 }
 
-const callCols = `id,ts,source,host,session_id,kind,task_type,tier,media_tier,lane,provider,model,reason,candidates,fallback_from,input_tokens,output_tokens,cache_read_tokens,units,unit,cost_usd,cost_native,currency,quota_units,baseline_cost_usd,user_escalated,latency_ms,ok,error,prompt_excerpt,result_path,job_id,result_text,prompt_full,result_full`
+const callCols = `id,ts,source,host,session_id,kind,task_type,tier,media_tier,lane,provider,model,reason,candidates,fallback_from,input_tokens,output_tokens,cache_read_tokens,units,unit,cost_usd,cost_native,currency,quota_units,baseline_cost_usd,user_escalated,latency_ms,ok,error,prompt_excerpt,result_path,job_id,result_text,prompt_full,result_full,host_model,baseline_model,baseline_unpriced`
 
 func scanCall(r interface{ Scan(...any) error }) (*Call, error) {
 	var c Call
 	var ts, reason, cands string
 	var esc, ok int
-	var host, sess, tier, mtier, fb, unit, cur, errs, pe, rp, jid, rt, pf, rf sql.NullString
+	var host, sess, tier, mtier, fb, unit, cur, errs, pe, rp, jid, rt, pf, rf, hm, bm sql.NullString
+	var unpriced sql.NullInt64
 	err := r.Scan(&c.ID, &ts, &c.Source, &host, &sess, (*string)(&c.Kind), &c.TaskType, &tier, &mtier, (*string)(&c.Lane), &c.Provider, &c.Model, &reason, &cands, &fb,
-		&c.InputTokens, &c.OutputTokens, &c.CacheReadTokens, &c.Units, &unit, &c.CostUSD, &c.CostNative, &cur, &c.QuotaUnits, &c.BaselineCostUSD, &esc, &c.LatencyMS, &ok, &errs, &pe, &rp, &jid, &rt, &pf, &rf)
+		&c.InputTokens, &c.OutputTokens, &c.CacheReadTokens, &c.Units, &unit, &c.CostUSD, &c.CostNative, &cur, &c.QuotaUnits, &c.BaselineCostUSD, &esc, &c.LatencyMS, &ok, &errs, &pe, &rp, &jid, &rt, &pf, &rf, &hm, &bm, &unpriced)
 	if err != nil {
 		return nil, err
 	}
@@ -178,6 +251,7 @@ func scanCall(r interface{ Scan(...any) error }) (*Call, error) {
 	c.Host, c.SessionID, c.Tier, c.MediaTier, c.FallbackFrom, c.Unit, c.Currency = host.String, sess.String, Tier(tier.String), mtier.String, fb.String, unit.String, cur.String
 	c.Error, c.PromptExcerpt, c.ResultPath, c.JobID, c.ResultText = errs.String, pe.String, rp.String, jid.String, rt.String
 	c.PromptFull, c.ResultFull = pf.String, rf.String
+	c.HostModel, c.BaselineModel, c.BaselineUnpriced = hm.String, bm.String, unpriced.Int64 == 1
 	c.UserEscalated, c.OK = esc == 1, ok == 1
 	_ = json.Unmarshal([]byte(reason), &c.Reason)
 	_ = json.Unmarshal([]byte(cands), &c.Candidates)
@@ -200,16 +274,19 @@ type ListFilter struct {
 	Source, Lane, Tier, Query, Kind, Host string
 	Before                                time.Time
 	Limit                                 int
+	Offset                                int // 分页：跳过前多少条
 	Since                                 time.Time
 	OnlyOK                                bool
+	OnlyFailed                            bool
 }
 
-// List 按时间倒序列出。
-func (l *Ledger) List(f ListFilter) ([]*Call, error) {
+// where 把筛选条件拼成 SQL。来源一栏既认入口（quick、cli）也认应用（codex、workbuddy）。
+func (f ListFilter) where() ([]string, []any) {
 	where, args := []string{"1=1"}, []any{}
 	add := func(cond string, v any) { where = append(where, cond); args = append(args, v) }
 	if f.Source != "" {
-		add("source=?", f.Source)
+		where = append(where, "(source=? OR host=?)")
+		args = append(args, f.Source, f.Source)
 	}
 	if f.Lane != "" {
 		if f.Lane == "sub" {
@@ -241,11 +318,28 @@ func (l *Ledger) List(f ListFilter) ([]*Call, error) {
 	if f.OnlyOK {
 		where = append(where, "ok=1")
 	}
+	if f.OnlyFailed {
+		where = append(where, "ok=0")
+	}
+	return where, args
+}
+
+// Count 是符合筛选条件的总条数（分页用）。
+func (l *Ledger) Count(f ListFilter) (int, error) {
+	where, args := f.where()
+	var n int
+	err := l.db.QueryRow(`SELECT count(*) FROM calls WHERE `+strings.Join(where, " AND "), args...).Scan(&n)
+	return n, err
+}
+
+// List 按时间倒序列出。
+func (l *Ledger) List(f ListFilter) ([]*Call, error) {
+	where, args := f.where()
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := l.db.Query(`SELECT `+callCols+` FROM calls WHERE `+strings.Join(where, " AND ")+` ORDER BY ts DESC LIMIT ?`, append(args, limit)...)
+	rows, err := l.db.Query(`SELECT `+callCols+` FROM calls WHERE `+strings.Join(where, " AND ")+` ORDER BY ts DESC LIMIT ? OFFSET ?`, append(args, limit, max(f.Offset, 0))...)
 	if err != nil {
 		return nil, err
 	}
@@ -274,6 +368,9 @@ func (l *Ledger) Escalate(id string) (taskType string, n int, err error) {
 	return
 }
 
+// EvaluationSource 是回看评估发出的请求的来源名。
+const EvaluationSource = "evaluation"
+
 // Overview 是概览页的聚合结果。
 type Overview struct {
 	Calls           int            `json:"calls"`
@@ -289,6 +386,8 @@ type Overview struct {
 	TopTasks        []TopTask      `json:"top_tasks"`
 	PrevCalls       int            `json:"prev_calls"`
 	MonthAPICostUSD float64        `json:"month_api_cost_usd"`
+	// BaselineUnpriced 是原价型号没有单价的记录数：它们按实际花费算，没算进省下的钱
+	BaselineUnpriced int `json:"baseline_unpriced"`
 }
 
 // DailyPoint 是每天的花费与基线。
@@ -296,6 +395,7 @@ type DailyPoint struct {
 	Date            string  `json:"date"`
 	CostUSD         float64 `json:"cost_usd"`
 	BaselineCostUSD float64 `json:"baseline_cost_usd"`
+	Calls           int     `json:"calls"` // 调度次数（不含回看评估）
 }
 
 // TopTask 是花得最多的任务类型。
@@ -337,6 +437,16 @@ func (l *Ledger) Aggregate(days int, loc *time.Location) (*Overview, error) {
 	esc := 0
 	escBy := map[string]int{}
 	for _, c := range calls {
+		if c.Source == EvaluationSource {
+			// 回看评估是 Switchboard 自己发的请求，不是应用派的活：不算次数、不算原价，只记实际花掉的钱
+			if !c.TS.Before(start) {
+				o.APICostUSD += c.CostUSD
+				if p, ok := daily[c.TS.In(loc).Format(bucketFmt)]; ok {
+					p.CostUSD += c.CostUSD
+				}
+			}
+			continue
+		}
 		if c.TS.Before(start) {
 			o.PrevCalls++
 			continue
@@ -344,6 +454,9 @@ func (l *Ledger) Aggregate(days int, loc *time.Location) (*Overview, error) {
 		o.Calls++
 		o.APICostUSD += c.CostUSD
 		o.BaselineCostUSD += c.BaselineCostUSD
+		if c.BaselineUnpriced {
+			o.BaselineUnpriced++
+		}
 		if c.UserEscalated {
 			esc++
 			escBy[c.TaskType]++
@@ -365,6 +478,7 @@ func (l *Ledger) Aggregate(days int, loc *time.Location) (*Overview, error) {
 		if p, ok := daily[day]; ok {
 			p.CostUSD += c.CostUSD
 			p.BaselineCostUSD += c.BaselineCostUSD
+			p.Calls++
 		}
 		t := tasks[c.TaskType]
 		if t == nil {

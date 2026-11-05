@@ -1,13 +1,19 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/imoling/iml-switchboard/internal/core"
 )
@@ -19,6 +25,8 @@ type ImageGenRequest struct {
 	Size    string
 	Quality string
 	N       int
+	// Refs 是参考图：有就改走 /images/edits（gpt-image 系列支持多张）。
+	Refs []string
 	// OutPath 非空时把第一张图写到该路径。
 	OutPath string
 }
@@ -63,8 +71,14 @@ func (d *APIDriver) GenerateImage(ctx context.Context, acct Account, req ImageGe
 	if !isGPTImage(req.Model) {
 		body.ResponseFormat = "b64_json"
 	}
-	raw, _ := json.Marshal(body)
-	hreq, err := acct.newRequest(ctx, http.MethodPost, endpoint(acct.BaseURL, "/images/generations"), raw)
+	var hreq *http.Request
+	var err error
+	if len(req.Refs) > 0 {
+		hreq, err = d.editsRequest(ctx, acct, body, req.Refs)
+	} else {
+		raw, _ := json.Marshal(body)
+		hreq, err = acct.newRequest(ctx, http.MethodPost, endpoint(acct.BaseURL, "/images/generations"), raw)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +119,79 @@ func (d *APIDriver) GenerateImage(ctx context.Context, acct Account, req ImageGe
 		out.Path = req.OutPath
 	}
 	return out, nil
+}
+
+// editsRequest 拼 /images/edits 的 multipart 请求：参考图放进 image[]，其余参数照 generations。
+func (d *APIDriver) editsRequest(ctx context.Context, acct Account, body imagesRequest, refs []string) (*http.Request, error) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	field := "image"
+	if len(refs) > 1 {
+		field = "image[]"
+	}
+	for i, ref := range refs {
+		data, err := d.loadRef(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		mt := http.DetectContentType(data)
+		ext := map[string]string{"image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}[mt]
+		if ext == "" {
+			ext = ".png"
+		}
+		h := textproto.MIMEHeader{}
+		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="ref%d%s"`, field, i+1, ext))
+		h.Set("Content-Type", mt)
+		w, _ := mw.CreatePart(h)
+		_, _ = w.Write(data)
+	}
+	_ = mw.WriteField("model", body.Model)
+	_ = mw.WriteField("prompt", body.Prompt)
+	_ = mw.WriteField("n", strconv.Itoa(body.N))
+	for k, v := range map[string]string{"size": body.Size, "quality": body.Quality, "response_format": body.ResponseFormat} {
+		if v != "" {
+			_ = mw.WriteField(k, v)
+		}
+	}
+	_ = mw.Close()
+	hreq, err := acct.newRequest(ctx, http.MethodPost, endpoint(acct.BaseURL, "/images/edits"), buf.Bytes())
+	if err != nil {
+		return nil, err
+	}
+	hreq.Header.Set("Content-Type", mw.FormDataContentType())
+	return hreq, nil
+}
+
+// loadRef 读一张参考图的字节：本地路径、data URL、http 地址都认。
+func (d *APIDriver) loadRef(ctx context.Context, ref string) ([]byte, error) {
+	switch {
+	case strings.HasPrefix(ref, "data:"):
+		_, b64, ok := strings.Cut(ref, ",")
+		data, err := base64.StdEncoding.DecodeString(b64)
+		if !ok || err != nil {
+			return nil, &core.ErrProvider{Summary: "参考图数据损坏"}
+		}
+		return data, nil
+	case strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://"):
+		hreq, err := http.NewRequestWithContext(ctx, http.MethodGet, ref, nil)
+		if err != nil {
+			return nil, &core.ErrProvider{Summary: "参考图地址不对：" + ref, Raw: err.Error()}
+		}
+		resp, err := d.client().Do(hreq)
+		if err != nil {
+			return nil, &core.ErrProvider{Summary: "下载参考图失败：" + ref, Raw: err.Error(), Retryable: true}
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			return nil, &core.ErrProvider{Summary: fmt.Sprintf("下载参考图失败：HTTP %d", resp.StatusCode), Raw: ref}
+		}
+		return io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	}
+	data, err := os.ReadFile(ref)
+	if err != nil {
+		return nil, &core.ErrProvider{Summary: "读取参考图失败：" + ref, Raw: err.Error()}
+	}
+	return data, nil
 }
 
 func isGPTImage(model string) bool {

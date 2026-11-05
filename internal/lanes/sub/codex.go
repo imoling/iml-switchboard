@@ -101,7 +101,14 @@ func (d *CodexDriver) switchboardRegistered() bool {
 
 // BuildArgs 生成 codex 的命令行参数与 stdin 内容（导出以便测试断言）。
 func (d *CodexDriver) BuildArgs(task *core.Task, target core.Target) (args []string, stdin string) {
-	args = []string{"exec", "--json", "--skip-git-repo-check"}
+	args = []string{"exec"}
+	if isImageTask(task, target) {
+		// --image 后面能跟好几个文件：紧跟 exec、后面接别的选项，免得把末尾表示 stdin 的 - 也当成图
+		for _, p := range task.RefImages {
+			args = append(args, "--image="+p)
+		}
+	}
+	args = append(args, "--json", "--skip-git-repo-check")
 	model := target.Model
 	if isImageTask(task, target) {
 		model = "" // 虚拟模型名不能传给 -m
@@ -131,7 +138,11 @@ func (d *CodexDriver) BuildArgs(task *core.Task, target core.Target) (args []str
 		prompt = task.System + "\n\n" + prompt
 	}
 	if isImageTask(task, target) {
-		prompt = imagegenPrefix + task.Prompt + "，保存后告诉我文件路径"
+		ref := ""
+		if len(task.RefImages) > 0 {
+			ref = "参照附带的图片，"
+		}
+		prompt = imagegenPrefix + ref + task.Prompt + "，保存后告诉我文件路径"
 	}
 	return args, prompt
 }

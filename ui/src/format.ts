@@ -12,14 +12,23 @@ export const moneySymbol = () => (display === 'CNY' ? '¥' : '$');
 export const toDisplay = (usdAmount: number) => (display === 'CNY' ? usdAmount / usdPerCny : usdAmount);
 export const fromDisplay = (v: number) => (display === 'CNY' ? v * usdPerCny : v);
 
+/** 给数字串的整数部分加千分位：1234567.89 → 1,234,567.89 */
+const group = (s: string) => { const [i, f] = s.split('.'); const g = i.replace(/\B(?=(\d{3})+(?!\d))/g, ','); return f === undefined ? g : `${g}.${f}`; };
+
 function digits(n: number) {
   if (n === 0) return '0';
   if (Math.abs(n) < 0.01) return n.toFixed(4); // 不到一分的小额多留两位，免得全是 0.00
-  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  if (Math.abs(n) >= 1e5) return `${(n / 1e4).toFixed(2)} 万`; // 太长看不清：十万起用万
+  return group(Number.isInteger(n) ? String(n) : n.toFixed(2));
 }
+
+/** 次数、条数：千分位，十万起用万 */
+export const num = (n: number) => (Math.abs(n) >= 1e5 ? `${(n / 1e4).toFixed(1)} 万` : group(String(Math.round(n))));
 /** 美元金额按显示币种格式化 */
 export const usd = (usdAmount: number) => moneySymbol() + digits(toDisplay(usdAmount));
 const cny = (n: number) => `¥${digits(n)}`;
+/** 单价按显示币种格式化：人民币单价在显示人民币时不来回换算 */
+export const unitPrice = (v: number, currency?: string) => (currency === 'CNY' ? (display === 'CNY' ? cny(v) : usd(v * usdPerCny)) : usd(v));
 
 type Priced = { cost_usd?: number; cost_native?: number; currency?: string };
 /** 显示人民币时，人民币账号直接用账单原价，不来回换算 */
@@ -43,7 +52,7 @@ export const LANE_CHIP: Record<LaneGroup, string> = { sub: 'c-s', api: 'c-a', me
 export const TIER_CHIP: Record<Tier, string> = { low: 'c-lo', mid: 'c-mid', high: 'c-hi', top: 'c-top' };
 export const MEDIA_TIER_LABEL: Record<string, string> = { cheap: '便宜档', default: '默认档', best: '最好档', free: '订阅出图' };
 
-export const HOST_LABEL: Record<string, string> = { claude_code: 'Claude Code', claude_desktop: 'Claude Desktop', codex: 'Codex', gemini_cli: 'Gemini CLI', pi: 'pi', openclaw: 'OpenClaw', deepseek_harness: 'DeepSeek Harness', doubao_work: '豆包工作', hermes: 'Hermes', workbuddy: 'WorkBuddy', winwork: 'WinWork', quick: '快速面板', cli: '命令行', redo: '重做', facade: '兼容接口', mcp: '宿主' };
+export const HOST_LABEL: Record<string, string> = { claude_code: 'Claude Code', claude_desktop: 'Claude Desktop', codex: 'Codex', gemini_cli: 'Gemini CLI', pi: 'pi', openclaw: 'OpenClaw', deepseek_harness: 'DeepSeek Harness', doubao_work: '豆包工作', hermes: 'Hermes', workbuddy: 'WorkBuddy', winwork: 'WinWork', quick: '快速面板', cli: '命令行', redo: '重做', facade: '兼容接口', mcp: '其他应用' };
 export const hostLabel = (c: Pick<Call, 'source' | 'host'>) => HOST_LABEL[c.host ?? ''] ?? HOST_LABEL[c.source] ?? c.source;
 
 export const hhmm = (iso: string) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };

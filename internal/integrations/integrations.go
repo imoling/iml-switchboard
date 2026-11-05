@@ -236,7 +236,7 @@ func (m *Manager) Connect(id string, opts map[string]bool) (map[string]any, erro
 	case "doubao_work":
 		err = nil // 豆包工作只能在它自己的界面里填，这里只记一笔
 	default:
-		return nil, errors.New("不认识的宿主")
+		return nil, errors.New("不认识的应用")
 	}
 	if err != nil {
 		return nil, err
@@ -281,7 +281,7 @@ func (m *Manager) Disconnect(id string) (map[string]any, error) {
 	case "doubao_work":
 		err = nil
 	default:
-		return nil, errors.New("不认识的宿主")
+		return nil, errors.New("不认识的应用")
 	}
 	if err != nil {
 		return nil, err

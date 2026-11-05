@@ -18,21 +18,27 @@ import (
 
 // Router 是调度核心：决策、执行、回退、记账。
 type Router struct {
-	cfg       *config.Store
-	ledger    *Ledger
-	reg       *Registry
-	quota     *QuotaManager
-	sticky    *Sticky
-	drivers   map[LaneID]Driver
-	mu        sync.RWMutex
-	mode      Mode
-	paused    bool
-	onCall    func(*Call)
-	onAttempt func(*Task, Target)
-	onNotice  func(title, body, level string)
-	loc       *time.Location
-	clsCache  classifyCache
-	inflight  atomic.Int64
+	cfg        *config.Store
+	ledger     *Ledger
+	reg        *Registry
+	quota      *QuotaManager
+	sticky     *Sticky
+	drivers    map[LaneID]Driver
+	mu         sync.RWMutex
+	mode       Mode
+	paused     bool
+	onCall     func(*Call)
+	onAttempt  func(*Task, Target)
+	onNotice   func(title, body, level string)
+	loc        *time.Location
+	clsCache   classifyCache
+	smartJudge SmartJudge
+	smartCache classifyCache
+	inflight   atomic.Int64
+	// baselineDefault 给出应用接管前自己用的型号，算应用原价用；由 app 层接到接入面
+	baselineDefault func(host string) string
+	// appBilling 给自己按量计价的应用（WorkBuddy 按积分）换算这次请求的计价型号；不是这类应用返回空
+	appBilling func(host, hostModel string) string
 }
 
 // NewRouter 创建调度器。
@@ -106,12 +112,14 @@ func (r *Router) Decide(t *Task) *Decision {
 	} else if hit.Tier != "" {
 		d.Reason = append(d.Reason, fmt.Sprintf("显式指令「%s」→ %s", hit.Word, TierLabel(hit.Tier)))
 	}
+	prompt0, mediaTier0 := t.Prompt, t.MediaTier
 	if hit.MediaBest && t.MediaTier == "" {
 		t.MediaTier = "best"
 	}
 
 	// 2. 模态
 	tt, matched := config.TaskType{}, false
+	autoMedia := false // 媒体是规则或判档员认出来的，不是调用方点名要的：没配画师时可以退回文字模型
 	if t.Kind == "" || t.Kind == KindText {
 		ask := StripInjected(t.Prompt)
 		tt, matched = MatchTaskType(cfg.Routing.TaskTable, ask, sig)
@@ -121,13 +129,18 @@ func (r *Router) Decide(t *Task) *Decision {
 		}
 		if matched && tt.Kind != "" && IsQuoted(t.Prompt) {
 			// WorkBuddy 每轮都会把用户原话包在 <session> 里另发一次辅助请求；按它出图就会一张变两张
-			d.Reason = append(d.Reason, "宿主转述的会话内容，不当媒体任务")
+			d.Reason = append(d.Reason, "应用转述的会话内容，不当媒体任务")
+			tt, matched = config.TaskType{}, false
+		}
+		if matched && tt.Kind != "" && !t.FreshTurn() {
+			d.Reason = append(d.Reason, "工具结果回来的后续回合，不再出图")
 			tt, matched = config.TaskType{}, false
 		}
 		if !matched || tt.Type == "qa_short" {
 			switch t.Judged {
 			case "image", "video", "animation":
-				if IsMediaAsk(ask) && !t.HasTools() && !IsQuoted(t.Prompt) {
+				// 带工具的智能体回合也认：接管后宿主的模型拿不到画师，只会自己写 SVG
+				if IsMediaAsk(ask) && t.FreshTurn() && !IsQuoted(t.Prompt) {
 					tt, matched = config.TaskType{Type: t.Judged, Kind: t.Judged}, true
 					for _, row := range cfg.Routing.TaskTable {
 						if row.Type == t.Judged {
@@ -141,6 +154,7 @@ func (r *Router) Decide(t *Task) *Decision {
 		if matched && tt.Kind != "" {
 			t.Kind = Kind(tt.Kind)
 			d.Kind = t.Kind
+			autoMedia = true
 			t.Prompt = ask // 媒体提示词、产物文件名、媒体库标题都用剥干净的这句
 		} else {
 			t.Kind = KindText
@@ -170,7 +184,15 @@ func (r *Router) Decide(t *Task) *Decision {
 		}
 		d.Reason = append(d.Reason, "模态："+kindLabel(t.Kind)+"，进入媒体渠道")
 		d.Candidates = r.mediaCandidates(cfg, t, d.MediaTier)
-		return d
+		r.pinMedia(cfg, t, d)
+		if !autoMedia || len(live(d.Candidates)) > 0 || t.Kind == KindAnimation {
+			return d
+		}
+		// 没配出图、出视频账号：这句话照常交给文字模型，不报错
+		d.Reason = append(d.Reason, "没有可用的"+kindLabel(t.Kind)+"渠道，交给文字模型")
+		t.Kind, t.Prompt, t.MediaTier = KindText, prompt0, mediaTier0
+		d.Kind, d.TaskType, d.MediaTier, d.Candidates = KindText, "", "", nil
+		tt, matched = config.TaskType{}, false
 	}
 
 	// 3. 上下文规则
@@ -304,6 +326,28 @@ func (r *Router) Decide(t *Task) *Decision {
 		}
 	}
 	d.Candidates = r.textCandidates(cfg, t, tier, prefer, sig.HasImage, &d.Reason)
+	d.Auto = explicitTier == "" && t.Model == "" && t.Lane == "" && !hit.SubOnly
+	if d.Auto {
+		// 自动分档：这一档都用不了（不能看图、带工具、被限流、额度用完）时依次往上提，最多到高档；顶配只由显式指令和质量模式触发
+		added := false
+		for _, up := range []Tier{TierMid, TierHigh} {
+			if tierRank(up) <= tierRank(d.Tier) {
+				continue
+			}
+			var ignore []string
+			for _, c := range r.textCandidates(cfg, t, up, preferFor(up, prefer), sig.HasImage, &ignore) {
+				if c.Skipped != "" || hasTarget(d.Candidates, c) {
+					continue
+				}
+				c.Tier = up
+				d.Candidates = append(d.Candidates, c)
+				added = true
+			}
+		}
+		if added {
+			d.Reason = append(d.Reason, TierLabel(d.Tier)+"都用不了时往上提档")
+		}
+	}
 	if t.HasTools() && len(live(d.Candidates)) == 0 {
 		// 带工具只能走按量付费；这一档没配按量付费模型时往下找，总比整轮报错强
 		for _, down := range []Tier{TierMid, TierLow} {
@@ -312,6 +356,9 @@ func (r *Router) Decide(t *Task) *Decision {
 			}
 			var ignore []string
 			alt := r.textCandidates(cfg, t, down, prefer, sig.HasImage, &ignore)
+			for i := range alt {
+				alt[i].Tier = down
+			}
 			if len(live(alt)) > 0 {
 				d.Reason = append(d.Reason, fmt.Sprintf("请求带工具，%s没有可用的按量付费模型，改用%s", TierLabel(d.Tier), TierLabel(down)))
 				d.Candidates = append(alt, d.Candidates...)
@@ -583,11 +630,13 @@ func (r *Router) subTarget(cfg *config.Config, lane string, tier Tier, subAllowe
 		tgt.Skipped = "带工具"
 	} else if _, ok := r.drivers[lid]; !ok {
 		tgt.Skipped = "未接入"
+		tgt.NoService = true
 	} else {
 		h := r.drivers[lid].Health(context.Background())
 		r.quota.Observe(lid, h.Quota)
 		if h.Status == "missing" || h.Status == "error" || h.Status == "disabled" || h.SignedOut {
 			tgt.Skipped = h.Detail
+			tgt.NoService = h.Status != "error"
 		} else if ok, why := r.quota.Healthy(lid, tier, sl.Models); !ok {
 			tgt.Skipped = why
 		}
@@ -623,7 +672,7 @@ func defaultPrefer(tier Tier) []string {
 func tierPicks(cfg *config.Config, host string, tier Tier) ([]config.TierPick, string) {
 	if host != "" {
 		if picks := cfg.Integrations[host].Tiers[string(tier)]; len(picks) > 0 {
-			return picks, "宿主"
+			return picks, "这个应用"
 		}
 	}
 	if picks := cfg.Routing.Tiers[string(tier)]; len(picks) > 0 {
@@ -733,8 +782,63 @@ func providerOf(l LaneID) string {
 	return string(l)
 }
 
-// mediaCandidates 返回媒体任务的候选：先是所选档位，再是其它档位作为回退。
+// mediaCandidates 返回媒体任务的候选。用户手排过这一类的先后（分派 → 档位候选），又没指定档位，就照手排的；
+// 否则先是所选档位，再是其它档位作为回退。
 func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) []Target {
+	out := r.mediaBase(cfg, t, mediaTier)
+	if order := cfg.Routing.MediaOrder[string(t.Kind)]; len(order) > 0 && t.MediaTier == "" && t.Kind != KindAnimation {
+		pool := append(out, r.discoveredMedia(cfg, t.Kind, out)...)
+		var picked []Target
+		for _, id := range order {
+			for _, c := range pool {
+				if MediaID(c) == id && !hasTarget(picked, c) {
+					picked = append(picked, c)
+					break
+				}
+			}
+		}
+		if len(live(picked)) > 0 {
+			return r.skipRefUnsupported(t, picked)
+		}
+	}
+	// 排序：能用的付费渠道在前，ChatGPT 订阅出图当兜底，没账号的放最后只作提示
+	rank := func(c Target) int {
+		switch {
+		case c.Skipped != "":
+			return 2
+		case c.Provider == "codex":
+			return 1
+		}
+		return 0
+	}
+	out = r.skipRefUnsupported(t, out)
+	sort.SliceStable(out, func(i, j int) bool { return rank(out[i]) < rank(out[j]) })
+	return out
+}
+
+// MediaID 是媒体候选在手排表里的标识：账号（没有账号就是供应商）/型号。
+func MediaID(c Target) string {
+	k := c.AccountID
+	if k == "" {
+		k = c.Provider
+	}
+	return k + "/" + c.Model
+}
+
+// skipRefUnsupported：带参考图时，只能文生图的型号出的图跟参考图无关，钱照收：跳过，一个都不剩就直接报错
+func (r *Router) skipRefUnsupported(t *Task, out []Target) []Target {
+	if t.Kind == KindImage && len(t.ImageRefs()) > 0 {
+		for i := range out {
+			if out[i].Skipped == "" && RefImageUnsupported(out[i].Model) {
+				out[i].Skipped = "不接参考图"
+			}
+		}
+	}
+	return out
+}
+
+// mediaBase 是各档配的型号加账号自己选的出图出视频型号，没排序。
+func (r *Router) mediaBase(cfg *config.Config, t *Task, mediaTier string) []Target {
 	var table map[string]config.MediaTarget
 	switch t.Kind {
 	case KindImage:
@@ -766,8 +870,9 @@ func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) 
 		if i > 0 {
 			tgt.Skipped = "" // 回退候选，不算跳过
 		}
-		if !r.mediaProviderReady(cfg, mt.Provider) {
-			tgt.Skipped = "未添加 " + providerLabel(mt.Provider) + " 账号"
+		if ready, why := r.mediaProviderReady(cfg, mt.Provider); !ready {
+			tgt.Skipped = why
+			tgt.NoService = true
 		} else if acc := r.accountFor(cfg, mt.Provider, mt.AccountID); acc != nil && !acc.AllowPaid && len(r.reg.FreeModels(acc.Provider)) > 0 && !r.reg.IsFree(mt.Model) {
 			tgt.Skipped = "只用免费型号"
 		}
@@ -800,17 +905,6 @@ func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) 
 			out = append(out, Target{Lane: LaneMedia, Provider: acc.Provider, Model: model, EstCostUSD: usd, AccountID: acc.ID})
 		}
 	}
-	// 排序：能用的付费渠道在前，ChatGPT 订阅出图当兜底，没账号的放最后只作提示
-	rank := func(c Target) int {
-		switch {
-		case c.Skipped != "":
-			return 2
-		case c.Provider == "codex":
-			return 1
-		}
-		return 0
-	}
-	sort.SliceStable(out, func(i, j int) bool { return rank(out[i]) < rank(out[j]) })
 	return out
 }
 
@@ -851,17 +945,23 @@ func providerLabel(p string) string {
 // ProviderLabel 导出给接入面用。
 func ProviderLabel(p string) string { return providerLabel(p) }
 
-func (r *Router) mediaProviderReady(cfg *config.Config, provider string) bool {
-	if provider == "codex" {
+func (r *Router) mediaProviderReady(cfg *config.Config, provider string) (bool, string) {
+	if provider == "codex" { // 订阅出图走本机 Codex：没装或没登录都画不了
 		d, ok := r.drivers[LaneCodexSub]
-		return ok && d.Health(context.Background()).Status != "missing"
+		if !ok {
+			return false, "没装 Codex"
+		}
+		if h := d.Health(context.Background()); h.Status == "missing" || h.SignedOut {
+			return false, h.Detail
+		}
+		return true, ""
 	}
 	for _, a := range cfg.API {
 		if a.Enabled && a.Provider == provider {
-			return true
+			return true, ""
 		}
 	}
-	return false
+	return false, "未添加 " + providerLabel(provider) + " 账号"
 }
 
 // Run 决策并执行，带回退与记账。emit 可为 nil。
@@ -877,7 +977,12 @@ func (r *Router) Run(ctx context.Context, t *Task, emit func(Event)) (*Call, *Re
 	}
 	kind, prompt := t.Kind, t.Prompt
 	d := r.Decide(t)
-	if d.Unsure && !d.Sticky && !r.cfg.Get().Settings.RulesOnly && t.Source != "classifier" && t.Model == "" && t.Lane == "" {
+	if d.Kind == KindText && (t.Smart || (d.Auto && r.cfg.Get().Routing.Smart.Enabled)) {
+		r.smartPick(ctx, t, d) // 分派方式选了智能分派：自动分档的请求都请判官挑，替代低档判档员，不串行等两次
+	} else if d.Kind == KindImage || d.Kind == KindVideo {
+		r.withMediaContext(ctx, t, d)      // 「根据这个文案画一张」：先把上文并进提示词，判官挑型号时也看得到
+		r.smartPickMedia(ctx, t, d, false) // 出图出视频不经过应用的模型菜单：打开智能分派就生效
+	} else if d.Unsure && !d.Sticky && !r.cfg.Get().Settings.RulesOnly && t.Source != "classifier" && t.Model == "" && t.Lane == "" && StripInjected(prompt) != "" {
 		label, c, model := r.classify(ctx, prompt)
 		if label != "" {
 			t.JudgeCostUSD = c
@@ -902,7 +1007,11 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 	call := &Call{ID: t.ID, TS: start, Source: t.Source, Host: t.Host, SessionID: t.SessionID, Kind: t.Kind, TaskType: d.TaskType,
 		Tier: d.Tier, MediaTier: d.MediaTier, Reason: d.Reason, Candidates: d.Candidates, JobID: ""}
 	if cfg.Settings.SavePrompts {
-		call.PromptExcerpt = excerpt(StripInjected(t.Prompt), 200)
+		ask := t.Prompt
+		if t.Ask != "" {
+			ask = t.Ask
+		}
+		call.PromptExcerpt = excerpt(StripInjected(ask), 200)
 	}
 	var lastErr error
 	var fallbackFrom string
@@ -934,7 +1043,7 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 		if err == nil {
 			r.finish(call, t, *c, res, start, fallbackFrom)
 			if t.SessionID != "" && t.Kind == KindText {
-				r.sticky.Set(t.SessionID, *c, d.Tier)
+				r.sticky.Set(t.SessionID, *c, call.Tier)
 			}
 			return call, res, nil
 		}
@@ -997,6 +1106,23 @@ func skippedSummary(cs []Target) string {
 
 func (r *Router) finish(call *Call, t *Task, tgt Target, res *Result, start time.Time, fallbackFrom string) {
 	call.Lane, call.Provider, call.Model = tgt.Lane, tgt.Provider, tgt.Model
+	if t.Kind == KindText && t.Model != "" && tgt.Model == t.Model {
+		// 应用点名了型号：档位记这个型号在配置里所在的那一档，不记规则判的（规则判低档、点名的是高档型号时记成低档会误导）
+		if tier := r.TierOfModel(tgt); tier != call.Tier {
+			if tier != "" {
+				call.Reason = append(call.Reason, "点名的型号在"+TierLabel(tier)+"，按"+TierLabel(tier)+"记")
+			}
+			call.Tier = tier
+		}
+	} else if tgt.Tier != "" && tgt.Tier != call.Tier {
+		// 记实际用到的那一档：提档、降档后统计和「判低了」都按它算
+		why := tgt.Why
+		if why == "" {
+			why = fmt.Sprintf("%s都用不了，改用%s", TierLabel(call.Tier), TierLabel(tgt.Tier))
+		}
+		call.Reason = append(call.Reason, why)
+		call.Tier = tgt.Tier
+	}
 	if res.Model != "" {
 		call.Model = res.Model
 	}
@@ -1011,13 +1137,15 @@ func (r *Router) finish(call *Call, t *Task, tgt Target, res *Result, start time
 			call.QuotaUnits = usd
 		}
 	}
+	call.HostModel = t.HostModel
 	if t.Kind == KindText {
-		call.BaselineCostUSD = r.reg.Baseline(res.Usage.InputTokens, res.Usage.OutputTokens, res.Usage.CacheReadTokens)
-		if call.BaselineCostUSD == 0 {
-			call.BaselineCostUSD = r.reg.EstimateText("opus", t.EstTokens)
+		in, out, cached := res.Usage.InputTokens, res.Usage.OutputTokens, res.Usage.CacheReadTokens
+		if in == 0 && out == 0 { // 订阅命令行没报 token 数：按估的算
+			in, out = t.EstTokens, int(float64(t.EstTokens)*0.6)+200
 		}
+		r.applyBaseline(call, in, out, cached)
 	} else {
-		call.BaselineCostUSD = call.CostUSD
+		call.BaselineCostUSD, call.BaselineModel = call.CostUSD, call.Model
 	}
 	call.LatencyMS = int(time.Since(start).Milliseconds())
 	call.OK = true
@@ -1099,6 +1227,10 @@ func (r *Router) Decorate(c *Call) *Call {
 	}
 	c.TaskName = r.TaskName(c.TaskType)
 	c.ModelDisplay = r.reg.Display(c.Model)
+	if c.BaselineModel != "" {
+		c.BaselineDisplay = r.reg.Display(c.BaselineModel)
+	}
+	r.decorateBaselinePrice(c)
 	return c
 }
 
@@ -1214,4 +1346,63 @@ func (r *Router) DefaultMediaModel(provider, kind string) string {
 		return "agnes-video-2.5-flash"
 	}
 	return "agnes-image-2.5-flash"
+}
+
+// preferFor 是某一档的渠道顺序：高档和顶配先用 Claude 订阅（跟 Decide 里的规则一样）。
+func preferFor(tier Tier, prefer []string) []string {
+	if tier != TierHigh && tier != TierTop {
+		return prefer
+	}
+	out := []string{"claude_sub"}
+	for _, p := range prefer {
+		if p != "claude_sub" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// hasTarget 判断候选里是不是已经有同一个渠道、账号、型号。
+func hasTarget(ts []Target, c Target) bool {
+	for _, x := range ts {
+		if x.Lane == c.Lane && x.Model == c.Model && x.AccountID == c.AccountID {
+			return true
+		}
+	}
+	return false
+}
+
+// TierOfModel 是这个候选在配置里所在的档位：按量付费看账号分的档，订阅看各档配的型号；
+// 同一个型号在好几档里取最高的；哪档都没有就按型号名认（Luna、mini、Haiku 低档，Terra、Sonnet 中档，Sol、pro、Opus 高档），
+// 名字也认不出返回空（界面显示「指定」）。
+func (r *Router) TierOfModel(c Target) Tier {
+	cfg := r.cfg.Get()
+	for _, tier := range []Tier{TierHigh, TierMid, TierLow} {
+		if c.Lane == LaneAPI {
+			for _, a := range cfg.API {
+				if (c.AccountID == "" || a.ID == c.AccountID) && slices.Contains(a.Models[string(tier)], c.Model) {
+					return tier
+				}
+			}
+			continue
+		}
+		if sl, ok := cfg.Sub[string(c.Lane)]; ok && sl.Models[string(tier)] == c.Model {
+			return tier
+		}
+	}
+	return TierByName(c.Model)
+}
+
+// TierByName 按型号名猜档位，和兼容接口理解 Codex、Claude 自家型号名的规则一致。
+func TierByName(model string) Tier {
+	m := strings.ToLower(model)
+	switch {
+	case strings.Contains(m, "haiku"), strings.Contains(m, "luna"), strings.Contains(m, "mini"), strings.Contains(m, "nano"), strings.Contains(m, "flash"):
+		return TierLow
+	case strings.Contains(m, "opus"), strings.Contains(m, "fable"), strings.Contains(m, "-sol"), strings.Contains(m, "-pro"), strings.HasSuffix(m, "pro"):
+		return TierHigh
+	case strings.Contains(m, "sonnet"), strings.Contains(m, "terra"):
+		return TierMid
+	}
+	return ""
 }

@@ -20,6 +20,7 @@ import (
 
 	"github.com/imoling/iml-switchboard/internal/config"
 	"github.com/imoling/iml-switchboard/internal/core"
+	"github.com/imoling/iml-switchboard/internal/lanes/laya"
 	"github.com/imoling/iml-switchboard/internal/themes"
 )
 
@@ -70,6 +71,7 @@ type Deps struct {
 	Build         string                                             // 程序文件指纹，见 app.BuildID
 	Quit          func()                                             // 让后台自己退出；客户端「重启」先调它，再拉起安装包里的那份
 	Update        func(ctx context.Context, force bool) (any, error) // 查新版本；nil 表示不支持
+	Laya          *laya.Manager                                      // 本机 Laya；nil 表示不支持
 }
 
 // Server 是 /api 处理器。
@@ -141,6 +143,11 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	h("GET /api/rules", s.rules)
 	h("PUT /api/rules", s.putRules)
 	h("POST /api/rules/try", s.tryRule)
+	h("GET /api/smart", s.smartGet)
+	h("PUT /api/smart", s.smartPut)
+	h("POST /api/smart/test", s.smartTest)
+	h("POST /api/smart/laya/{action}", s.smartLaya)
+	h("GET /api/media/models", s.mediaModels)
 	h("GET /api/rules/suggestions", s.suggestions)
 	h("POST /api/rules/suggestions/{task}", s.applySuggestion)
 	h("GET /api/rules/export", s.exportRules)
@@ -173,6 +180,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	h("PUT /api/integrations/{id}/models", s.integrationSetModels)
 	h("GET /api/integrations/{id}/tiers", s.integrationTiers)
 	h("PUT /api/integrations/{id}/tiers", s.integrationSetTiers)
+	h("PUT /api/integrations/{id}/baseline", s.integrationSetBaseline)
 	h("GET /api/settings", s.settings)
 	h("PUT /api/settings", s.putSettings)
 	h("GET /api/themes", func(w http.ResponseWriter, r *http.Request) (any, error) { return themes.All(), nil })
@@ -408,7 +416,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) (any, error) {
 func (s *Server) namedTasks(ts []core.TopTask) []map[string]any {
 	out := []map[string]any{}
 	for _, t := range ts {
-		metric := fmt.Sprintf("%d 次", t.Count)
+		metric := config.Count(t.Count) + " 次"
 		if t.CostUSD > 0 {
 			metric = s.d.Router.Config().Get().Settings.Money(t.CostUSD)
 		}
@@ -486,14 +494,31 @@ func (s *Server) calls(w http.ResponseWriter, r *http.Request) (any, error) {
 	q := r.URL.Query()
 	f := core.ListFilter{Source: q.Get("source"), Lane: q.Get("lane"), Tier: q.Get("tier"), Query: q.Get("q"), Host: q.Get("host"), Kind: q.Get("kind")}
 	f.Limit, _ = strconv.Atoi(q.Get("limit"))
+	f.OnlyFailed = q.Get("failed") == "1"
 	if b := q.Get("before"); b != "" {
 		f.Before, _ = time.Parse(time.RFC3339Nano, b)
 	}
+	// 带 page 时分页：每页 size 条（默认 50，最多 200），回 {items, total, page, size}；不带照旧回数组
+	page, _ := strconv.Atoi(q.Get("page"))
+	size, _ := strconv.Atoi(q.Get("size"))
+	if page > 0 {
+		if size <= 0 || size > 200 {
+			size = 50
+		}
+		f.Limit, f.Offset = size, (page-1)*size
+	}
 	calls, err := s.d.Router.Ledger().List(f)
+	if err != nil {
+		return nil, err
+	}
 	for _, c := range calls {
 		s.d.Router.Decorate(c)
 	}
-	return calls, err
+	if page <= 0 {
+		return calls, nil
+	}
+	total, err := s.d.Router.Ledger().Count(f)
+	return map[string]any{"items": calls, "total": total, "page": page, "size": size}, err
 }
 
 func (s *Server) call(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -627,7 +652,68 @@ func (s *Server) rulesBody(cfg *config.Config) map[string]any {
 	for _, c := range cfg.Routing.ContextRules {
 		ctxRules = append(ctxRules, map[string]any{"id": c.ID, "title": c.Title, "off_effect": c.Note, "enabled": c.Enabled})
 	}
-	return map[string]any{"task_table": rows, "explicit": explicit, "context_rules": ctxRules, "sticky": cfg.Routing.Sticky, "tiers": s.tierTables(cfg, "")}
+	return map[string]any{"task_table": rows, "explicit": explicit, "context_rules": ctxRules, "sticky": cfg.Routing.Sticky, "tiers": s.tierTables(cfg, ""), "media_order": s.mediaOrderTables(cfg)}
+}
+
+// mediaOrderTables 是出图、出视频的先后表：生效的在前（on），其余能选的跟在后面；custom 表示手排过。
+func (s *Server) mediaOrderTables(cfg *config.Config) map[string]any {
+	reg := s.d.Router.Registry()
+	tierOf := map[string]string{}
+	for _, tb := range []map[string]config.MediaTarget{cfg.Media.Image, cfg.Media.Video} {
+		for k, mt := range tb {
+			if key := mt.Provider + "/" + mt.Model; tierOf[key] == "" {
+				tierOf[key] = mediaTierLabel(k) // 按供应商加型号认：网关里同名的型号不是这一档配的那个
+			}
+		}
+	}
+	accLabel := map[string]string{}
+	for _, a := range cfg.API {
+		accLabel[a.ID] = a.Label
+	}
+	out := map[string]any{}
+	for _, kind := range []core.Kind{core.KindImage, core.KindVideo} {
+		pool := s.d.Router.MediaModels(kind)
+		order := cfg.Routing.MediaOrder[string(kind)]
+		var on []string
+		if len(order) > 0 {
+			on = order
+		} else {
+			for _, c := range s.d.Router.MediaOrderNow(kind) {
+				if c.Skipped == "" {
+					on = append(on, core.MediaID(c))
+				}
+			}
+		}
+		pick := func(c core.Target, enabled bool) map[string]any {
+			group := accLabel[c.AccountID]
+			if group == "" {
+				group = core.ProviderLabel(c.Provider)
+			}
+			note := c.Skipped
+			if note == "" {
+				note = tierOf[c.Provider+"/"+c.Model]
+			}
+			return map[string]any{"id": core.MediaID(c), "lane": core.LaneMedia, "account_id": c.AccountID, "model": c.Model, "name": reg.Display(c.Model), "group": group, "icon": c.Provider, "on": enabled, "note": note}
+		}
+		picks := []map[string]any{}
+		used := map[string]bool{}
+		for _, id := range on {
+			for _, c := range pool {
+				if core.MediaID(c) == id && !used[id] && !c.NoService { // 勾着但没了模型服务的也不列：保存时顺手从顺序里去掉
+					used[id] = true
+					picks = append(picks, pick(c, true))
+				}
+			}
+		}
+		for _, c := range pool {
+			if id := core.MediaID(c); !used[id] && !c.NoService {
+				used[id] = true
+				picks = append(picks, pick(c, false))
+			}
+		}
+		out[string(kind)] = map[string]any{"custom": len(order) > 0, "picks": picks}
+	}
+	return out
 }
 
 // tierTables 是某个宿主（host 为空是全局）低中高三档的候选表：生效顺序在前（on 为真），这一档其余可选的候选跟在后面；
@@ -662,10 +748,14 @@ func (s *Server) tierTables(cfg *config.Config, host string) map[string]any {
 				"name": s.d.Router.Registry().Display(tg.Model), "group": group, "icon": icon, "on": on, "note": tg.Skipped})
 		}
 		for _, tg := range chosen {
-			add(tg, true)
+			if !tg.NoService {
+				add(tg, true)
+			}
 		}
 		for _, tg := range avail {
-			add(tg, false)
+			if !tg.NoService { // 没有模型服务的不列：勾了也用不上
+				add(tg, false)
+			}
 		}
 		inh := []string{}
 		for _, tg := range inherited {
@@ -699,11 +789,63 @@ func (s *Server) parseTierPicks(host string, in map[string][]string) (map[string
 	return out, nil
 }
 
+func (s *Server) baselineBody(host string) map[string]any {
+	b := s.d.Router.AppBaselineOf(host)
+	reg := s.d.Router.Registry()
+	return map[string]any{"model": b.Model, "display": reg.Display(b.Model), "default_model": b.Default, "default_display": reg.Display(b.Default), "price": b.Price, "source": b.Source}
+}
+
+// integrationSetBaseline 改一个应用的原价型号和单价，并按新设置重算它的历史记录。
+// model 为空回到默认（接管前的型号）；price 为空或全是 0 用内置价目表。
+func (s *Server) integrationSetBaseline(w http.ResponseWriter, r *http.Request) (any, error) {
+	id := r.PathValue("id")
+	if !s.knownHost(id) {
+		return nil, &httpError{404, "没有这个应用"}
+	}
+	var in struct {
+		Model string        `json:"model"`
+		Price *config.Price `json:"price"`
+	}
+	if err := decode(r, &in); err != nil {
+		return nil, err
+	}
+	if p := in.Price; p != nil {
+		if p.InputPerM < 0 || p.OutputPerM < 0 || p.CacheReadPerM < 0 {
+			return nil, &httpError{400, "单价不能是负数"}
+		}
+		if p.Currency != "" && p.Currency != "USD" && p.Currency != "CNY" {
+			return nil, &httpError{400, "币种只能是 USD 或 CNY"}
+		}
+		if p.InputPerM == 0 && p.OutputPerM == 0 {
+			in.Price = nil
+		}
+	}
+	err := s.d.Router.Config().Update(func(c *config.Config) error {
+		if c.Integrations == nil {
+			c.Integrations = map[string]config.Integration{}
+		}
+		it := c.Integrations[id]
+		it.BaselineModel, it.BaselinePrice = strings.TrimSpace(in.Model), in.Price
+		c.Integrations[id] = it
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	n, err := s.d.Router.RecomputeBaselines(id)
+	if err != nil {
+		return nil, err
+	}
+	out := s.baselineBody(id)
+	out["recomputed"] = n
+	return out, nil
+}
+
 // integrationTiers 是一个宿主自己的档位候选表。
 func (s *Server) integrationTiers(w http.ResponseWriter, r *http.Request) (any, error) {
 	id := r.PathValue("id")
 	if !s.knownHost(id) {
-		return nil, &httpError{404, "没有这个宿主"}
+		return nil, &httpError{404, "没有这个应用"}
 	}
 	return s.tierTables(s.d.Router.Config().Get(), id), nil
 }
@@ -712,7 +854,7 @@ func (s *Server) integrationTiers(w http.ResponseWriter, r *http.Request) (any, 
 func (s *Server) integrationSetTiers(w http.ResponseWriter, r *http.Request) (any, error) {
 	id := r.PathValue("id")
 	if !s.knownHost(id) {
-		return nil, &httpError{404, "没有这个宿主"}
+		return nil, &httpError{404, "没有这个应用"}
 	}
 	var in map[string][]string
 	if err := decode(r, &in); err != nil {
@@ -767,12 +909,13 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 type uiTaskRow struct {
-	TaskType string   `json:"task_type"`
-	Name     string   `json:"name"`
-	How      string   `json:"how"`
-	Tier     string   `json:"tier"`
-	Lanes    []string `json:"lanes"`
-	Kind     string   `json:"kind"`
+	TaskType  string   `json:"task_type"`
+	Name      string   `json:"name"`
+	How       string   `json:"how"`
+	Tier      string   `json:"tier"`
+	Lanes     []string `json:"lanes"`
+	Kind      string   `json:"kind"`       // 空是文字；image video 交给画师、影师。只有用户新建的行能改
+	MediaTier string   `json:"media_tier"` // 媒体行用哪一档：cheap default best
 }
 
 type uiExplicit struct {
@@ -828,7 +971,8 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) (any, error) {
 		TaskTable    []uiTaskRow         `json:"task_table"`
 		Explicit     []uiExplicit        `json:"explicit"`
 		ContextRules []uiContext         `json:"context_rules"`
-		TierPicks    map[string][]string `json:"tier_picks"` // 档位 → 候选标识，按顺序；空表示回到内置排法
+		TierPicks    map[string][]string `json:"tier_picks"`  // 档位 → 候选标识，按顺序；空表示回到内置排法
+		MediaPicks   map[string][]string `json:"media_picks"` // image / video → 候选标识，按顺序；空表示回到内置排法（GET 回的 media_order 是表，名字错开）
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
@@ -838,7 +982,34 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	mediaOrder := map[string][]string{}
+	for kind, ids := range in.MediaPicks {
+		if kind != "image" && kind != "video" {
+			return nil, &httpError{400, "媒体顺序只认 image 和 video"}
+		}
+		known := map[string]bool{}
+		for _, c := range s.d.Router.MediaModels(core.Kind(kind)) {
+			known[core.MediaID(c)] = true
+		}
+		keep := []string{}
+		for _, id := range ids {
+			if known[id] && !slices.Contains(keep, id) {
+				keep = append(keep, id)
+			}
+		}
+		mediaOrder[kind] = keep
+	}
 	err = s.d.Router.Config().Update(func(c *config.Config) error {
+		for kind, list := range mediaOrder {
+			if c.Routing.MediaOrder == nil {
+				c.Routing.MediaOrder = map[string][]string{}
+			}
+			if len(list) == 0 {
+				delete(c.Routing.MediaOrder, kind)
+			} else {
+				c.Routing.MediaOrder[kind] = list
+			}
+		}
 		for tier, list := range tierPicks {
 			if c.Routing.Tiers == nil {
 				c.Routing.Tiers = map[string][]config.TierPick{}
@@ -854,14 +1025,40 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) (any, error) {
 			for _, t := range c.Routing.TaskTable {
 				byType[t.Type] = t
 			}
+			builtin := map[string]bool{}
+			for _, t := range config.Default().Routing.TaskTable {
+				builtin[t.Type] = true
+			}
 			var table []config.TaskType
-			for i, row := range in.TaskTable {
+			for _, row := range in.TaskTable {
 				t, ok := byType[row.TaskType]
 				if !ok {
-					// 新建的行：用说明里的词做关键词
-					t = config.TaskType{Type: row.TaskType, Name: row.TaskType, Order: 100 + i, Match: config.Match{Keywords: keywordsFromHow(row.How)}}
+					// 新建的行：用说明里的词做关键词，排在内置行前面，用户自己写的先看
+					t = config.TaskType{Type: row.TaskType, Name: row.TaskType, Order: config.CustomOrder, Match: config.Match{Keywords: keywordsFromHow(row.How)}}
 					if row.Name != "" {
 						t.Name = row.Name
+					}
+				}
+				if !builtin[t.Type] && row.Kind != t.Kind && (row.Kind == "" || row.Kind == "image" || row.Kind == "video") {
+					wasMedia := t.Kind != ""
+					t.Kind = row.Kind
+					switch {
+					case t.Kind != "" && len(t.Match.Exclude) == 0:
+						t.Match.Exclude = config.MediaTechWords() // 「图片接口报 500」不是要出图
+					case t.Kind == "" && wasMedia && slices.Equal(t.Match.Exclude, config.MediaTechWords()):
+						t.Match.Exclude = nil
+					}
+					if t.Kind == "" && t.Tier == "" {
+						t.Tier = "low"
+					}
+				}
+				if t.Kind == "image" || t.Kind == "video" {
+					switch row.MediaTier {
+					case "cheap", "default", "best":
+						t.MediaTier = row.MediaTier
+					}
+					if t.MediaTier == "" {
+						t.MediaTier = "default"
 					}
 				}
 				if row.How != "" && row.How != t.Hint {
@@ -934,6 +1131,7 @@ func (s *Server) tryRule(w http.ResponseWriter, r *http.Request) (any, error) {
 		HasTools  bool   `json:"has_tools"`
 		EstTokens int    `json:"est_tokens"`
 		SessionID string `json:"session_id"`
+		Smart     bool   `json:"smart"` // 按智能分派试：会真的请 Jev 选一次
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
@@ -942,8 +1140,16 @@ func (s *Server) tryRule(w http.ResponseWriter, r *http.Request) (any, error) {
 	if in.HasTools {
 		t.Tools = json.RawMessage(`[{"type":"function"}]`)
 	}
+	start := time.Now()
+	if in.Smart {
+		out := s.decorate(s.d.Router.DecideSmart(r.Context(), t, false))
+		out["latency_ms"] = time.Since(start).Milliseconds()
+		return out, nil
+	}
 	d := s.d.Router.Decide(t)
-	return s.decorate(d), nil
+	out := s.decorate(d)
+	out["latency_ms"] = time.Since(start).Milliseconds() // 规则只在本机比对，通常是 0
+	return out, nil
 }
 
 // decorate 给决策加上展示名和档位中文。
@@ -958,7 +1164,166 @@ func (s *Server) decorate(d *core.Decision) map[string]any {
 		reason = append(append([]string(nil), reason...), "规则拿不准，执行时先请低档模型判档")
 	}
 	return map[string]any{"task_type": d.TaskType, "task_name": s.d.Router.TaskName(d.TaskType), "kind": d.Kind, "tier": d.Tier, "tier_label": core.TierLabel(d.Tier),
-		"media_tier": d.MediaTier, "candidates": cands, "reason": reason, "sticky": d.Sticky, "unsure": d.Unsure}
+		"media_tier": d.MediaTier, "candidates": cands, "reason": reason, "sticky": d.Sticky, "unsure": d.Unsure, "smart": d.Smart}
+}
+
+// mediaModels 列出能点名的出图（kind=image）或出视频（kind=video）型号：MCP 工具说明、快速面板都用它。
+func (s *Server) mediaModels(w http.ResponseWriter, r *http.Request) (any, error) {
+	kind := core.Kind(r.URL.Query().Get("kind"))
+	if kind != core.KindImage && kind != core.KindVideo {
+		return nil, &httpError{400, "kind 只能是 image 或 video"}
+	}
+	reg := s.d.Router.Registry()
+	out := []map[string]any{}
+	for _, c := range s.d.Router.MediaModels(kind) {
+		out = append(out, map[string]any{"model": c.Model, "display": reg.Display(c.Model), "provider": c.Provider, "account_id": c.AccountID, "est_cost_usd": c.EstCostUSD, "skipped": c.Skipped})
+	}
+	return out, nil
+}
+
+// SmartKeyID 是 Jev 密钥在钥匙串里的名字；账号 id 都是「供应商-随机串」，撞不上。
+const SmartKeyID = "smart:jev"
+
+func (s *Server) smartBody() map[string]any {
+	key, _ := s.d.Secrets.Get(SmartKeyID)
+	tail := ""
+	if n := len(key); n >= 4 {
+		tail = key[n-4:]
+	}
+	sm := s.d.Router.Config().Get().Routing.Smart
+	out := map[string]any{"enabled": sm.Enabled, "has_key": key != "", "key_tail": tail,
+		"judge": sm.JudgeOrDefault(), "judge_account": sm.JudgeAccount, "judge_model": sm.JudgeModel, "judge_models": s.judgeModels()}
+	if s.d.Laya != nil {
+		out["laya"] = s.d.Laya.Status()
+	}
+	return out
+}
+
+// judgeModels 是能当判官的型号：启用的按量付费账号分进档位的文本型号，低档在前（快、便宜）。
+func (s *Server) judgeModels() []map[string]any {
+	reg := s.d.Router.Registry()
+	out := []map[string]any{}
+	seen := map[string]bool{}
+	for _, tier := range []string{"low", "mid", "high"} {
+		for _, acc := range s.d.Router.Config().Get().API {
+			if !acc.Enabled {
+				continue
+			}
+			label := acc.Label
+			if label == "" {
+				label = core.ProviderLabel(acc.Provider)
+			}
+			for _, m := range acc.Models[tier] {
+				if k := acc.ID + "/" + m; !seen[k] {
+					seen[k] = true
+					out = append(out, map[string]any{"account": acc.ID, "account_label": label, "provider": acc.Provider, "model": m, "display": reg.Display(m), "tier": tier})
+				}
+			}
+		}
+	}
+	return out
+}
+
+// smartLaya 管本机 Laya：install（装运行环境并下载模型，后台跑）、start、stop、remove。
+func (s *Server) smartLaya(w http.ResponseWriter, r *http.Request) (any, error) {
+	if s.d.Laya == nil {
+		return nil, &httpError{400, "这台电脑上不支持本机 Laya"}
+	}
+	setAuto := func(on bool) {
+		_ = s.d.Router.Config().Update(func(c *config.Config) error { c.Routing.Smart.LayaAutostart = on; return nil })
+	}
+	var err error
+	switch r.PathValue("action") {
+	case "install":
+		err = s.d.Laya.Install(nil)
+	case "start":
+		if err = s.d.Laya.Start(); err == nil {
+			setAuto(true)
+		}
+	case "stop":
+		err = s.d.Laya.Stop()
+		setAuto(false)
+	case "remove":
+		if err = s.d.Laya.Remove(); err == nil {
+			setAuto(false)
+		}
+	default:
+		return nil, notFound("不认识的操作")
+	}
+	if err != nil {
+		return nil, &httpError{400, err.Error()}
+	}
+	return s.smartBody(), nil
+}
+
+func (s *Server) smartGet(w http.ResponseWriter, r *http.Request) (any, error) {
+	return s.smartBody(), nil
+}
+
+// smartPut 改智能分派：enabled 开关；key 非空就换密钥；clear_key 删掉密钥。
+func (s *Server) smartPut(w http.ResponseWriter, r *http.Request) (any, error) {
+	var in struct {
+		Enabled      *bool   `json:"enabled"`
+		Key          string  `json:"key"`
+		ClearKey     bool    `json:"clear_key"`
+		Judge        *string `json:"judge"`
+		JudgeAccount *string `json:"judge_account"`
+		JudgeModel   *string `json:"judge_model"`
+	}
+	if err := decode(r, &in); err != nil {
+		return nil, err
+	}
+	if k := strings.TrimSpace(in.Key); k != "" {
+		if err := s.d.Secrets.Set(SmartKeyID, k); err != nil {
+			return nil, err
+		}
+	}
+	if in.ClearKey {
+		_ = s.d.Secrets.Delete(SmartKeyID)
+	}
+	if in.Judge != nil && *in.Judge != "laya" && *in.Judge != "jev" && *in.Judge != "model" {
+		return nil, &httpError{400, "判官只能是 laya、jev 或 model"}
+	}
+	if err := s.d.Router.Config().Update(func(c *config.Config) error {
+		sm := &c.Routing.Smart
+		if in.Enabled != nil {
+			sm.Enabled = *in.Enabled
+		}
+		if in.Judge != nil {
+			sm.Judge = *in.Judge
+		}
+		if in.JudgeAccount != nil {
+			sm.JudgeAccount = *in.JudgeAccount
+		}
+		if in.JudgeModel != nil {
+			sm.JudgeModel = *in.JudgeModel
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return s.smartBody(), nil
+}
+
+// smartTest 用一句合成的话请 Jev 选一次，不看开关：填完密钥点「测试」用。
+func (s *Server) smartTest(w http.ResponseWriter, r *http.Request) (any, error) {
+	var in struct {
+		Prompt   string `json:"prompt"`
+		HasTools bool   `json:"has_tools"`
+	}
+	_ = decode(r, &in)
+	if strings.TrimSpace(in.Prompt) == "" {
+		in.Prompt = "帮我写一个函数，把 CSV 里的日期列统一成 YYYY-MM-DD"
+	}
+	t := &core.Task{Prompt: in.Prompt, Source: "try"}
+	if in.HasTools {
+		t.Tools = json.RawMessage(`[{"type":"function"}]`)
+	}
+	start := time.Now()
+	d := s.d.Router.DecideSmart(r.Context(), t, true)
+	out := s.decorate(d)
+	out["latency_ms"] = time.Since(start).Milliseconds()
+	return out, nil
 }
 
 func (s *Server) suggestions(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -1662,6 +2027,7 @@ func (s *Server) integrations(w http.ResponseWriter, r *http.Request) (any, erro
 	ever, _ := s.d.Router.Ledger().HostActivity(time.Time{})
 	for _, it := range list {
 		id, _ := it["id"].(string)
+		it["baseline"] = s.baselineBody(id)
 		if !hostTagged[id] {
 			continue
 		}
@@ -1850,14 +2216,30 @@ func (s *Server) quickPreview(w http.ResponseWriter, r *http.Request) (any, erro
 			table = cfg.Media.Video
 			units = 5
 		}
+		// 能用的型号都列出来（各档配的、账号报上来的同类型号），按 Tab 挨个换；第一个是这次会用的，不重复列
+		first := ""
+		for _, c := range d.Candidates {
+			if c.Skipped == "" {
+				first = c.Model
+				break
+			}
+		}
+		tierOf := map[string]string{}
 		for _, k := range []string{"cheap", "default", "best", "free"} {
-			if k == d.MediaTier {
+			if mt, ok := table[k]; ok && tierOf[mt.Model] == "" {
+				tierOf[mt.Model] = k
+			}
+		}
+		for _, c := range s.d.Router.MediaModels(d.Kind) {
+			if c.Skipped != "" || c.Model == first {
 				continue
 			}
-			if mt, ok := table[k]; ok {
-				usd, native, cur := reg.MediaCost(mt.Model, units)
-				alts = append(alts, map[string]any{"media_tier": k, "label": mediaTierLabel(k), "model": mt.Model, "display": reg.Display(mt.Model), "provider": mt.Provider, "est_cost_usd": usd, "est_cost_native": native, "currency": cur})
+			usd, native, cur := reg.MediaCost(c.Model, units)
+			alt := map[string]any{"label": "其他型号", "model": c.Model, "display": reg.Display(c.Model), "provider": c.Provider, "lane": core.LaneMedia, "est_cost_usd": usd, "est_cost_native": native, "currency": cur}
+			if k := tierOf[c.Model]; k != "" {
+				alt["media_tier"], alt["label"] = k, mediaTierLabel(k)
 			}
+			alts = append(alts, alt)
 		}
 	case core.KindText:
 		for _, tier := range []core.Tier{core.TierLow, core.TierMid, core.TierHigh, core.TierTop} {

@@ -50,6 +50,7 @@ func (m *Manager) hostCandidates(host string) []HostModel {
 		}
 	}
 	tiers["router-auto"] = slices.Concat(tiers["router-high"], tiers["router-mid"], tiers["router-low"])
+	tiers["router-smart"] = tiers["router-auto"]
 	var out []HostModel
 	for _, r := range core.RouterModels {
 		// 路由型号的窗口取它可能落到的型号里最小的，免得宿主压缩得太晚
@@ -162,7 +163,7 @@ func (m *Manager) selectedHostModels(host string) []HostModel {
 // HostModels 返回宿主的型号表。
 func (m *Manager) HostModels(id string) (any, error) {
 	if !modelListHosts[id] {
-		return nil, errors.New("这个宿主没有型号表")
+		return nil, errors.New("这个应用没有型号表")
 	}
 	return m.hostModels(id), nil
 }
@@ -171,7 +172,7 @@ func (m *Manager) HostModels(id string) (any, error) {
 // 和默认一样的选择也按「没改过」存，这样新账号的型号还能自动进表。
 func (m *Manager) SetHostModels(id string, ids []string) (any, error) {
 	if !modelListHosts[id] {
-		return nil, errors.New("这个宿主没有型号表")
+		return nil, errors.New("这个应用没有型号表")
 	}
 	known := map[string]bool{}
 	var def []string
@@ -232,4 +233,24 @@ func contextOr(c, def int) int {
 		return c
 	}
 	return def
+}
+
+// AddRouterModel 把新加的路由型号补进各应用：自己排过型号表的，插在 after 后面（表里没有 after 就不动，说明用户不用路由型号）；
+// 然后把型号表重新写进已接入的应用。只在升级时跑一次。
+func (m *Manager) AddRouterModel(id, after string) {
+	_ = m.cfg.Update(func(c *config.Config) error {
+		for host, it := range c.Integrations {
+			if len(it.Models) == 0 || slices.Contains(it.Models, id) {
+				continue
+			}
+			if i := slices.Index(it.Models, after); i >= 0 {
+				it.Models = slices.Insert(it.Models, i+1, id)
+				c.Integrations[host] = it
+			}
+		}
+		return nil
+	})
+	for host := range modelListHosts {
+		_ = m.rewriteHostModels(host)
+	}
 }

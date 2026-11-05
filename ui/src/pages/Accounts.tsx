@@ -103,7 +103,7 @@ export function Accounts() {
                 <div className="quota-row">
                   {a.quota.map((q) => (
                     <span key={q.window} className="qw" title={q.resets_at ? `${new Date(q.resets_at).toLocaleString()} 重置` : undefined}>
-                      <em>{q.label ?? q.window}{q.estimated && <span className="chip" title="按本应用的记录估的；没标的由官方命令回报">估算</span>}</em><Bar pct={q.pct} tone={q.pct >= 80 ? 'amber' : undefined} /><b>{Math.round(q.pct)}%</b>
+                      <em>{q.label ?? q.window}{q.estimated && <span className="chip" title="按 Switchboard 的记录估的；没标的由官方命令回报">估算</span>}</em><Bar pct={q.pct} tone={q.pct >= 80 ? 'amber' : undefined} /><b>{Math.round(q.pct)}%</b>
                     </span>
                   ))}
                 </div>

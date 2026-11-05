@@ -48,6 +48,8 @@ func TestNaturalMediaPhrases(t *testing.T) {
 		"做一个 5 秒的海浪视频": "video",
 		"生成一段海浪的视频":    "video",
 		"帮我画一张海浪的图":    "image",
+		"画一只海边的猫":      "image",
+		"画一幅水墨山水":      "image",
 		"来个春天主题的海报":    "image",
 	}
 	for prompt, want := range cases {
@@ -58,5 +60,13 @@ func TestNaturalMediaPhrases(t *testing.T) {
 	}
 	if tt, ok := MatchTaskType(table, "帮我看看这个视频脚本写得怎么样", Extract("帮我看看这个视频脚本写得怎么样", 0, 0)); ok && tt.Kind == "video" {
 		t.Errorf("讨论视频脚本不该当成出视频")
+	}
+}
+
+// Codex 接管时原话前面带着附件说明，只留「My request for Codex」后面那句
+func TestStripCodexContext(t *testing.T) {
+	p := "# Files mentioned by the user:\n\n## 头像.png: /Users/x/头像.png\nImage attachment: true\n\n## My request for Codex:\n绘制成 3d 软胶风格的全身 Q 版形象图\n"
+	if got := StripInjected(p); got != "绘制成 3d 软胶风格的全身 Q 版形象图" {
+		t.Fatalf("没剥干净：%q", got)
 	}
 }

@@ -18,7 +18,7 @@ export interface Call {
   input_tokens?: number; output_tokens?: number; cache_read_tokens?: number;
   units?: number; unit?: 'image' | 'second';
   cost_usd: number; cost_native?: number; currency?: 'USD' | 'CNY';
-  quota_units?: number; baseline_cost_usd: number;
+  quota_units?: number; baseline_cost_usd: number; host_model?: string; baseline_model?: string; baseline_display?: string; baseline_unpriced?: boolean; baseline_price?: Price; baseline_per_unit_usd?: number;
   user_escalated: boolean; latency_ms: number; ok: boolean; error?: string;
   prompt_excerpt?: string; result_path?: string; job_id?: string;
   task_name?: string; model_display?: string;
@@ -27,7 +27,15 @@ export interface Call {
 export interface Decision {
   task_type: string; task_name?: string; tier_label?: string; tier: Tier | null; media_tier?: MediaTier; kind: Kind;
   candidates: Candidate[]; reason: string[]; sticky?: boolean;
+  /** 智能分派的明细：note 非空表示没请 Jev（没打开、没密钥、沿用上次…） */
+  smart?: { options?: SmartOption[]; note?: string };
+  latency_ms?: number;
 }
+export interface SmartOption { model: string; display: string; tier?: Tier; lane: string; provider: string; prob: number; weight: number; score: number; rank?: number }
+export interface LayaStatus { installed: boolean; downloaded: boolean; running: boolean; busy?: 'installing' | 'downloading' | 'starting'; progress?: number; device?: string; error?: string; disk_mb: number }
+export interface JudgeModel { account: string; account_label: string; provider: string; model: string; display: string; tier: Tier }
+export type Judge = 'laya' | 'jev' | 'model';
+export interface SmartSettings { enabled: boolean; has_key: boolean; key_tail: string; judge: Judge; judge_account?: string; judge_model?: string; judge_models: JudgeModel[]; laya?: LayaStatus }
 
 export type JobStatus = 'queued' | 'submitted' | 'running' | 'done' | 'failed' | 'canceled' | 'timeout';
 export interface Job {
@@ -63,16 +71,16 @@ export interface UpdateInfo { current: string; latest: string; has_update: boole
 export interface Quota { account_id: string; label: string; provider?: string; window: string; pct: number; resets_at?: string; sub?: boolean; sub_label?: string; estimated?: boolean; observed_at?: string }
 
 export interface Overview {
-  calls: number; calls_delta_pct?: number; api_cost_usd: number; baseline_cost_usd: number; saved_usd: number; saved_pct: number;
+  calls: number; calls_delta_pct?: number; api_cost_usd: number; baseline_cost_usd: number; saved_usd: number; saved_pct: number; baseline_unpriced?: number;
   escalation_rate: number; escalation_hot_task?: string;
   tier_dist: { low: number; mid: number; high: number; top: number; media: number };
   lane_dist: { sub: number; api: number; media: number };
-  daily: { date: string; cost_usd: number; baseline_cost_usd: number }[];
+  daily: { date: string; cost_usd: number; baseline_cost_usd: number; calls: number }[];
   quotas: Quota[]; budget: { month_usd: number; limit_usd: number };
   top_tasks: { task_type: string; name?: string; lane: 'sub' | 'api' | 'media'; metric: string }[];
 }
 
-export interface TaskRule { task_type: string; name?: string; kind?: string; how: string; tier: Tier; lanes: ('sub' | 'api')[]; count_7d: number; suggest?: Tier; builtin?: boolean }
+export interface TaskRule { task_type: string; name?: string; kind?: string; media_tier?: MediaTier; how: string; tier: Tier; lanes: ('sub' | 'api')[]; count_7d: number; suggest?: Tier; builtin?: boolean }
 export interface ExplicitRule { id: string; triggers: string[]; effect: string; tier?: Tier; builtin: boolean; enabled: boolean }
 export interface ContextRule { id: string; title: string; off_effect: string; enabled: boolean }
 /** 档位候选表里的一条；on 是现在生效的，note 是跳过原因（未接入、冷却中） */
@@ -85,6 +93,9 @@ export type HostTiers = Record<PickTier, TierTable>;
 export interface Rules {
   task_table: TaskRule[]; explicit: ExplicitRule[]; context_rules: ContextRule[]; classifier?: Record<string, unknown>;
   tiers?: Record<'low' | 'mid' | 'high', TierTable>;
+  /** 出图、出视频的先后表；保存时用 media_picks */
+  media_order?: Record<'image' | 'video', TierTable>;
+  media_picks?: Partial<Record<'image' | 'video', string[]>>;
   /** 保存时用：档位 → 候选标识，按顺序；空数组回到内置排法 */
   tier_picks?: Partial<Record<'low' | 'mid' | 'high', string[]>>;
 }
@@ -99,7 +110,12 @@ export interface Integration {
   models_count?: number;
   /** 这个宿主自己排过几档的候选表 */
   tiers_custom?: number;
+  /** 应用原价按哪个型号、什么单价算；source 是 custom（手填）、builtin（内置价目表）或 none（没有价） */
+  baseline?: AppBaseline;
 }
+
+export interface Price { input_per_m: number; output_per_m: number; cache_read_per_m?: number; currency?: 'USD' | 'CNY' }
+export interface AppBaseline { model: string; display: string; default_model: string; default_display: string; price?: Price; source: 'custom' | 'builtin' | 'none'; recomputed?: number }
 
 /** 宿主型号表里的一个候选；on 是现在写进宿主的，default 是跟着默认走时会选上的 */
 export interface HostModel { id: string; name: string; group: string; icon?: string; on: boolean; default?: boolean }

@@ -117,8 +117,8 @@ func TestWorkBuddy(t *testing.T) {
 	}
 	b, _ := os.ReadFile(filepath.Join(home, ".workbuddy", "models.json"))
 	s := string(b)
-	// 没有按量付费账号时写进去的是五个路由型号：自动分档、三个档位、订阅优先
-	if !strings.Contains(s, `"router-auto"`) || !strings.Contains(s, `"router-sub"`) || !strings.Contains(s, `"deepseek-v4-pro"`) || strings.Count(s, `"apiKey": "imls-key"`) != 5 {
+	// 没有按量付费账号时写进去的是六个路由型号：自动分档、智能分派、三个档位、订阅优先
+	if !strings.Contains(s, `"router-auto"`) || !strings.Contains(s, `"router-smart"`) || !strings.Contains(s, `"router-sub"`) || !strings.Contains(s, `"deepseek-v4-pro"`) || strings.Count(s, `"apiKey": "imls-key"`) != 6 {
 		t.Fatalf("%s", s)
 	}
 	_, _ = m.Connect("workbuddy", nil) // 幂等

@@ -18,10 +18,11 @@ export const DEFAULT_WORDS: Record<string, string> = {
   pause: '暂停调度',
   resume: '恢复调度',
   'nav.overview': '概览',
+  'nav.calls': '记录',
   'nav.rules': '路由规则',
   'nav.eval': '评估',
   'nav.accounts': '模型与账号',
   'nav.media': '媒体库',
-  'nav.integrations': '接入',
+  'nav.integrations': '应用',
   'nav.settings': '设置',
 };
