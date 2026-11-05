@@ -24,14 +24,15 @@ func TestCheckPicksPlatformAssetAndCaches(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
 		w.Write([]byte(`[
+		 {"tag_name":"v0.1.0","draft":false,"html_url":"https://x/v0.1.0","assets":[]},
 		 {"tag_name":"v0.3.0","draft":true,"html_url":"https://x/draft","assets":[]},
-		 {"tag_name":"v0.2.0","draft":false,"prerelease":true,"html_url":"https://x/v0.2.0","body":"修了托盘","published_at":"2026-10-21T00:00:00Z",
+		 {"tag_name":"v0.2.1-pre","draft":false,"prerelease":true,"html_url":"https://x/pre","assets":[]},
+		 {"tag_name":"v0.2.0","draft":false,"html_url":"https://x/v0.2.0","body":"修了托盘","published_at":"2026-10-21T00:00:00Z",
 		  "assets":[{"name":"Switchboard_0.2.0_x64.dmg","browser_download_url":"https://x/x64.dmg"},
 		            {"name":"Switchboard_0.2.0_aarch64.dmg","browser_download_url":"https://x/arm.dmg"},
 		            {"name":"Switchboard_0.2.0_x64-setup.exe","browser_download_url":"https://x/setup.exe"},
 		            {"name":"Switchboard_0.2.0_amd64.AppImage","browser_download_url":"https://x/app.AppImage"},
-		            {"name":"Switchboard_0.2.0_amd64.deb","browser_download_url":"https://x/app.deb"}]},
-		 {"tag_name":"v0.1.0","draft":false,"html_url":"https://x/v0.1.0","assets":[]}]`))
+		            {"name":"Switchboard_0.2.0_amd64.deb","browser_download_url":"https://x/app.deb"}]}]`))
 	}))
 	defer ts.Close()
 	now := time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC)
@@ -66,7 +67,7 @@ func TestFallsBackToGitee(t *testing.T) {
 	defer dead.Close()
 	gitee := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Gitee 的回包：没有 draft、html_url、published_at
-		w.Write([]byte(`[{"tag_name":"v0.2.0","name":"Switchboard v0.2.0","prerelease":true,"body":"修了托盘","created_at":"2026-10-21T08:00:00+08:00",
+		w.Write([]byte(`[{"tag_name":"v0.2.0","name":"Switchboard v0.2.0","prerelease":false,"body":"修了托盘","created_at":"2026-10-21T08:00:00+08:00",
 		  "assets":[{"name":"Switchboard_0.2.0_aarch64.dmg","browser_download_url":"https://gitee.com/x/arm.dmg"},{"name":"v0.2.0.zip","browser_download_url":"https://gitee.com/x/src.zip"}]}]`))
 	}))
 	defer gitee.Close()
@@ -84,5 +85,30 @@ func TestFallsBackToGitee(t *testing.T) {
 	both := &Checker{Current: "0.1.0", Sources: []Source{{Name: "github", API: dead.URL}, {Name: "gitee", API: dead.URL}}}
 	if _, err := both.Check(context.Background(), true); err == nil {
 		t.Fatal("两个源都挂了应报错")
+	}
+}
+
+// 镜像落后时用 GitHub 的新版本；一样新时用排在前面的镜像。latest 接口回的是单个对象
+func TestCheckPicksNewestSource(t *testing.T) {
+	serve := func(tag string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(`{"tag_name":"` + tag + `","draft":false,"prerelease":false,"html_url":"https://x/` + tag + `","assets":[]}`))
+		}))
+	}
+	old, newer, same := serve("v0.5.0"), serve("v0.6.0"), serve("v0.6.0")
+	defer old.Close()
+	defer newer.Close()
+	defer same.Close()
+	c := &Checker{Current: "0.5.0", Sources: []Source{{Name: "gitee", API: old.URL}, {Name: "github", API: newer.URL}}}
+	if info, err := c.Check(context.Background(), true); err != nil || info.Latest != "0.6.0" || info.Source != "github" || !info.HasUpdate {
+		t.Fatalf("镜像落后应用 GitHub 的：%+v %v", info, err)
+	}
+	c = &Checker{Current: "0.5.0", Sources: []Source{{Name: "gitee", API: same.URL}, {Name: "github", API: newer.URL}}}
+	if info, _ := c.Check(context.Background(), true); info.Source != "gitee" {
+		t.Fatalf("一样新时用镜像：%+v", info)
+	}
+	c = &Checker{Current: "0.5.0", Sources: []Source{{Name: "gitee", API: "http://127.0.0.1:1"}, {Name: "github", API: newer.URL}}}
+	if info, err := c.Check(context.Background(), true); err != nil || info.Latest != "0.6.0" {
+		t.Fatalf("镜像连不上应照样查到：%+v %v", info, err)
 	}
 }

@@ -41,9 +41,10 @@ type Source struct {
 // DefaultSources 先 GitHub，连不上再 Gitee 镜像（镜像只放最新一个发布的安装包）。
 func DefaultSources() []Source {
 	return []Source{
-		// 国内先查 Gitee 镜像，连不上或镜像还没同步到最新再查 GitHub
-		{Name: "gitee", API: "https://gitee.com/api/v5/repos/" + Repo + "/releases?per_page=10", Page: func(tag string) string { return "https://gitee.com/" + Repo + "/releases/tag/" + tag }},
-		{Name: "github", API: "https://api.github.com/repos/" + Repo + "/releases?per_page=10", Page: func(tag string) string { return "https://github.com/" + Repo + "/releases/tag/" + tag }},
+		// 两边都查各自的 latest（只算正式版，预发布不推给用户），取版本高的；一样新时用排在前面的 Gitee，国内下载快。
+		// 不用发布列表：Gitee 的列表旧的在前，取第一条拿到的是 0.1.0
+		{Name: "gitee", API: "https://gitee.com/api/v5/repos/" + Repo + "/releases/latest", Page: func(tag string) string { return "https://gitee.com/" + Repo + "/releases/tag/" + tag }},
+		{Name: "github", API: "https://api.github.com/repos/" + Repo + "/releases/latest", Page: func(tag string) string { return "https://github.com/" + Repo + "/releases/tag/" + tag }},
 	}
 }
 
@@ -68,6 +69,7 @@ const TTL = 6 * time.Hour
 type release struct {
 	TagName     string    `json:"tag_name"`
 	Draft       bool      `json:"draft"`
+	Prerelease  bool      `json:"prerelease"`
 	HTMLURL     string    `json:"html_url"`
 	Body        string    `json:"body"`
 	PublishedAt time.Time `json:"published_at"`
@@ -99,12 +101,17 @@ func (c *Checker) Check(ctx context.Context, force bool) (*Info, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
+	// 每个源都查：镜像可能还没同步到最新版；取版本最高的，一样高时用排在前面的
 	var info *Info
 	var lastErr error
 	for _, src := range sources {
-		info, lastErr = c.fetch(ctx, client, src, now())
-		if lastErr == nil {
-			break
+		got, err := c.fetch(ctx, client, src, now())
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if info == nil || Newer(got.Latest, info.Latest) {
+			info = got
 		}
 	}
 	if info == nil {
@@ -129,9 +136,33 @@ func (c *Checker) fetch(ctx context.Context, client *http.Client, src Source, at
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("%s 返回 %d", src.Name, resp.StatusCode)
 	}
+	// latest 接口回一个对象，列表接口回数组：两种都认
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, errors.New("连不上 " + src.Name + "：" + shortErr(err))
+	}
 	var rels []release
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rels); err != nil {
-		return nil, errors.New(src.Name + " 回包无法解析")
+	if err := json.Unmarshal(raw, &rels); err != nil {
+		var one release
+		if err := json.Unmarshal(raw, &one); err != nil {
+			return nil, errors.New(src.Name + " 回包无法解析")
+		}
+		rels = []release{one}
+	}
+	// 列表的顺序各家不一样：挑版本最高的正式版
+	best := -1
+	for i, r := range rels {
+		if r.Draft || r.Prerelease || !strings.HasPrefix(r.TagName, "v") {
+			continue
+		}
+		if best < 0 || Newer(r.TagName, rels[best].TagName) {
+			best = i
+		}
+	}
+	if best >= 0 {
+		rels = rels[best : best+1]
+	} else {
+		rels = nil
 	}
 	goos, goarch := c.GOOS, c.GOARCH
 	if goos == "" {

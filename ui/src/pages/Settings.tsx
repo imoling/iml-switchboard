@@ -176,6 +176,14 @@ function BackendRow() {
   );
 }
 
+/** 上次检查的时间：今天只写几点几分，更早的带上日期；点了「检查更新」时间会变，能看出点过了 */
+function checkedAt(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const hm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toDateString() === new Date().toDateString() ? `${hm} ` : `${d.getMonth() + 1} 月 ${d.getDate()} 日 ${hm} `;
+}
+
 /** 版本：是不是最新，有新版本就给下载 */
 function VersionRow() {
   const [version, setVersion] = useState('');
@@ -190,7 +198,7 @@ function VersionRow() {
   };
   const desc = failed ? `检查失败：${failed}`
     : info?.has_update ? `有新版本 ${info.latest}，发布于 ${new Date(info.published_at).toLocaleDateString()}`
-    : info ? '已是最新' : undefined;
+    : info ? `已是最新 · ${checkedAt(info.checked_at)}检查过` : undefined;
   return (
     <SetRow title={`版本 ${version}`} desc={<span className={failed ? 'warn-text' : undefined}>{desc}</span>} last>
       {info?.has_update && <button className="btn sm pri" onClick={() => desktop.openUrl(info.url)}>下载</button>}
