@@ -222,11 +222,28 @@ func (r *Router) smartPickWith(ctx context.Context, t *Task, d *Decision, force 
 	}
 	d.Candidates = ranked
 	d.Smart = &SmartPick{Options: shown}
+	who := r.judgeLabel()
 	if order[0] == jevTop {
-		d.Reason = append(d.Reason, fmt.Sprintf("智能分派：Jev 选 %s（%.0f%%）", best.Display, best.Prob*100))
+		d.Reason = append(d.Reason, fmt.Sprintf("智能分派：%s 选 %s（%.0f%%）", who, best.Display, best.Prob*100))
 	} else {
-		d.Reason = append(d.Reason, fmt.Sprintf("智能分派：Jev 首选 %s（%.0f%%），按档位加权后用 %s（%.0f%% × %.2f）", opts[jevTop].Display, opts[jevTop].Prob*100, best.Display, best.Prob*100, best.Weight))
+		d.Reason = append(d.Reason, fmt.Sprintf("智能分派：%s 首选 %s（%.0f%%），按档位加权后用 %s（%.0f%% × %.2f）", who, opts[jevTop].Display, opts[jevTop].Prob*100, best.Display, best.Prob*100, best.Weight))
 	}
+}
+
+// judgeLabel 是理由里写的判官名字：本机 Laya、Jev，或当判官的那个型号
+func (r *Router) judgeLabel() string {
+	s := r.cfg.Get().Routing.Smart
+	switch s.JudgeOrDefault() {
+	case "laya":
+		return "Laya"
+	case "jev":
+		return "Jev"
+	case "model":
+		if s.JudgeModel != "" {
+			return r.reg.Display(s.JudgeModel)
+		}
+	}
+	return "判官"
 }
 
 // askJudge 问判官，带缓存：同一句话、同一组候选不重复问。

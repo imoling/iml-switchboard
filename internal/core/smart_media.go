@@ -118,8 +118,8 @@ func (r *Router) smartPickMedia(ctx context.Context, t *Task, d *Decision, force
 	d.Smart = &SmartPick{Options: shown}
 	best := opts[order[0]]
 	if order[0] == jevTop {
-		d.Reason = append(d.Reason, fmt.Sprintf("智能分派：判官选 %s（%.0f%%）", best.Display, best.Prob*100))
+		d.Reason = append(d.Reason, fmt.Sprintf("智能分派：%s 选 %s（%.0f%%）", r.judgeLabel(), best.Display, best.Prob*100))
 	} else {
-		d.Reason = append(d.Reason, fmt.Sprintf("智能分派：判官首选 %s（%.0f%%），按你排的顺序加权后用 %s", opts[jevTop].Display, opts[jevTop].Prob*100, best.Display))
+		d.Reason = append(d.Reason, fmt.Sprintf("智能分派：%s 首选 %s（%.0f%%），按你排的顺序加权后用 %s", r.judgeLabel(), opts[jevTop].Display, opts[jevTop].Prob*100, best.Display))
 	}
 }

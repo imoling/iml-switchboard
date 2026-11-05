@@ -66,6 +66,10 @@ func TestSmartPicksByJevAndWeights(t *testing.T) {
 	if call.Model != "glm-5.3" || call.Tier != TierMid || f.calls != 1 {
 		t.Fatalf("应按 Jev 加权后用中档：%s %s 调了 %d 次 %v", call.Model, call.Tier, f.calls, call.Reason)
 	}
+	// 理由里写的是实际在判的那位：默认本机 Laya，不能一律写成 Jev
+	if why := strings.Join(call.Reason, "；"); !strings.Contains(why, "智能分派：Laya ") || strings.Contains(why, "Jev") {
+		t.Fatalf("理由应写 Laya：%v", call.Reason)
+	}
 	// 带工具时订阅渠道不进候选（硬条件先筛，不交给 Jev）
 	for _, d := range f.criteria {
 		if strings.Contains(d, "订阅") {
