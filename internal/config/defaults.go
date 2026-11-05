@@ -25,10 +25,22 @@ func randomKey() string {
 // RulesVersion 是内置任务表的版本；改了内置行就加一，fillMissing 会把新规则合进老配置。
 // 2：加排除词，新增疑难问题、写代码、排查小问题、解释与比较四类（金标准确率 66.7% → 见 golden_test）。
 // 3：新增写作、自动化、记忆整理三类，Codex 的定时任务和写文档的会话不再整条记成「未归类」。
-const RulesVersion = 5
+const RulesVersion = 6
 
 // mediaTechWords 出现时，说的是做软件里的图片、视频，不是要生成一张。
 var mediaTechWords = []string{"接口", "上传", "组件", "报错", "bug", "前端", "后端", "加载", "渲染", "压缩"}
+
+// imageTextWords 是「图」修饰文字的说法：「漫画的文案」「海报文案」「漫画脚本」要的是字，不是图。
+// 不能直接排除「文案」：「根据这个文案生成一张漫画图」仍是出图。
+var imageTextWords = func() []string {
+	var out []string
+	for _, pic := range []string{"漫画", "海报", "封面", "插画", "绘本", "连环画"} {
+		for _, txt := range []string{"文案", "脚本", "剧本", "分镜", "台词", "标题"} {
+			out = append(out, pic+txt, pic+"的"+txt)
+		}
+	}
+	return out
+}()
 
 // MediaTechWords 是媒体行默认的排除词：句子里有这些词多半是在写代码，不是要出图。用户新建的媒体行也带上。
 func MediaTechWords() []string { return append([]string(nil), mediaTechWords...) }
@@ -85,7 +97,7 @@ func Default() *Config {
 		},
 		RulesVersion: RulesVersion,
 		TaskTable: []TaskType{
-			{Type: "image", Name: "生图", Hint: "调用 generate_image，或「画」「配图」「封面」", Kind: "image", MediaTier: "default", Match: Match{Keywords: []string{"画一张", "画一幅", "画一只", "画个", "配图", "封面图", "生成图片", "生成一张图", "做一张图", "插图", "海报"}, Patterns: []string{`(画|生成|做|来|出|要)[^。！？\n]{0,12}(图片|图|插画|海报|封面|头像|壁纸|表情包|漫画|像素画|贴纸)`}, Exclude: mediaTechWords}, Order: 1},
+			{Type: "image", Name: "生图", Hint: "调用 generate_image，或「画」「配图」「封面」", Kind: "image", MediaTier: "default", Match: Match{Keywords: []string{"画一张", "画一幅", "画一只", "画个", "配图", "封面图", "生成图片", "生成一张图", "做一张图", "插图", "海报"}, Patterns: []string{`(画|生成|做|来|出|要)[^。！？\n]{0,12}(图片|图|插画|海报|封面|头像|壁纸|表情包|漫画|像素画|贴纸)`}, Exclude: append(append([]string(nil), mediaTechWords...), imageTextWords...)}, Order: 1},
 			{Type: "video", Name: "生视频", Hint: "调用 generate_video，或「视频」「短片」", Kind: "video", MediaTier: "cheap", Match: Match{Keywords: []string{"生成视频", "做个视频", "做一个视频", "短片", "秒的视频", "图生视频", "介绍视频", "宣传视频", "短视频", "做成视频", "一段视频", "秒视频"}, Patterns: []string{`(生成|做|来|出|要|制作|拍|剪)[^。！？\n]{0,15}视频`}, Exclude: append([]string{"播放器", "教程讲", "总结"}, mediaTechWords...)}, Order: 2},
 			{Type: "animation", Name: "动画", Hint: "调用 make_animation，或「动画」「动效」「Remotion」", Kind: "animation", Match: Match{Keywords: []string{"动画", "动效", "remotion", "转场"}, Exclude: append([]string{"css", "safari", "闪烁", "掉帧", "keyframes", "transition", "怎么解决"}, mediaTechWords...)}, Order: 3},
 			{Type: "debug_hard", Name: "疑难调试", Hint: "有报错栈，或「试了很多次」「还是不行」", Tier: "high", Prefer: []string{"claude_sub", "codex_sub"}, Match: Match{HasStack: b(true)}, Order: 10},

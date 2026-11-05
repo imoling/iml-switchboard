@@ -351,3 +351,39 @@ func TestStreamToolCallsUnreliableIndex(t *testing.T) {
 		t.Fatalf("每块都带同一个 id 的要接起来：%+v", got)
 	}
 }
+
+// 参数定义最外层是 anyOf 的工具（Codex 的某些插件工具）：并成普通对象，WinWork 网关这类 Anthropic 格式的上游才收
+func TestFlattenToolSchemas(t *testing.T) {
+	in := json.RawMessage(`[
+	 {"type":"function","function":{"name":"plain","parameters":{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}}},
+	 {"type":"function","function":{"name":"either","description":"按 id 或按名字查","parameters":{"anyOf":[
+	   {"type":"object","properties":{"id":{"type":"string"},"lang":{"type":"string"}},"required":["id","lang"]},
+	   {"type":"object","properties":{"name":{"type":"string"},"lang":{"type":"string"}},"required":["name","lang"]}]}}}]`)
+	var out []struct {
+		Function struct {
+			Name       string         `json:"name"`
+			Parameters map[string]any `json:"parameters"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(flattenToolSchemas(in), &out); err != nil || len(out) != 2 {
+		t.Fatalf("%v %v", err, out)
+	}
+	if req := out[0].Function.Parameters["required"].([]any); len(req) != 1 {
+		t.Fatalf("普通工具不该动：%v", out[0].Function.Parameters)
+	}
+	p := out[1].Function.Parameters
+	if _, bad := p["anyOf"]; bad || p["type"] != "object" {
+		t.Fatalf("最外层的 anyOf 应并掉：%v", p)
+	}
+	props := p["properties"].(map[string]any)
+	if len(props) != 3 {
+		t.Fatalf("各分支的属性应并到一起：%v", props)
+	}
+	if req := p["required"].([]any); len(req) != 1 || req[0] != "lang" {
+		t.Fatalf("必填只留每个分支都必填的：%v", p["required"])
+	}
+	same := json.RawMessage(`[{"type":"function","function":{"name":"plain","parameters":{"type":"object"}}}]`)
+	if string(flattenToolSchemas(same)) != string(same) {
+		t.Fatal("没有要改的应原样返回")
+	}
+}

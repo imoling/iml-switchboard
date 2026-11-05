@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -321,7 +322,7 @@ func BuildChatRequest(task *core.Task, model string) (*chatRequest, error) {
 		req.Messages = append(req.Messages, chatMessage{Role: m.Role, Content: parts})
 	}
 	if task.HasTools() {
-		req.Tools = task.Tools
+		req.Tools = flattenToolSchemas(task.Tools)
 		if len(task.ToolChoice) > 0 && string(task.ToolChoice) != "null" {
 			req.ToolChoice = task.ToolChoice
 		}
@@ -566,4 +567,112 @@ func (d *APIDriver) Health(ctx context.Context) core.Health {
 		return core.Health{Status: "warn", Detail: fmt.Sprintf("%d 个账号可用；缺密钥：%s", ready, strings.Join(missing, "、"))}
 	}
 	return core.Health{Status: "ok", Detail: fmt.Sprintf("%d 个账号可用", ready)}
+}
+
+// flattenToolSchemas 把参数定义最外层是 oneOf / anyOf / allOf 的工具改成普通的对象定义。
+// Anthropic 格式的上游（WinWork 网关就是）不收这种写法，整轮 400：Codex 里有的插件工具就这么写。
+// 合并办法：各分支的属性并到一起；必填只留每个分支都必填的（allOf 取并集）。其余工具原样不动。
+func flattenToolSchemas(tools json.RawMessage) json.RawMessage {
+	var list []map[string]any
+	if json.Unmarshal(tools, &list) != nil {
+		return tools
+	}
+	changed := false
+	for _, tl := range list {
+		fn, _ := tl["function"].(map[string]any)
+		if fn == nil {
+			continue
+		}
+		params, _ := fn["parameters"].(map[string]any)
+		if params == nil {
+			continue
+		}
+		if flat, ok := flattenSchema(params); ok {
+			fn["parameters"] = flat
+			changed = true
+		}
+	}
+	if !changed {
+		return tools
+	}
+	b, err := json.Marshal(list)
+	if err != nil {
+		return tools
+	}
+	return b
+}
+
+func flattenSchema(s map[string]any) (map[string]any, bool) {
+	key := ""
+	for _, k := range []string{"anyOf", "oneOf", "allOf"} {
+		if _, ok := s[k]; ok {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		return nil, false
+	}
+	variants, _ := s[key].([]any)
+	props := map[string]any{}
+	if base, ok := s["properties"].(map[string]any); ok {
+		for k, v := range base {
+			props[k] = v
+		}
+	}
+	var required []string
+	counts := map[string]int{}
+	n := 0
+	for _, v := range variants {
+		vm, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		n++
+		if vp, ok := vm["properties"].(map[string]any); ok {
+			for k, pv := range vp {
+				if _, seen := props[k]; !seen {
+					props[k] = pv
+				}
+			}
+		}
+		if rq, ok := vm["required"].([]any); ok {
+			for _, r := range rq {
+				if name, ok := r.(string); ok {
+					counts[name]++
+				}
+			}
+		}
+	}
+	for _, r := range anyStrings(s["required"]) {
+		counts[r] = n + 1 // 外层写了必填的照留
+	}
+	for name, c := range counts {
+		if c >= n || key == "allOf" {
+			required = append(required, name)
+		}
+	}
+	sort.Strings(required)
+	out := map[string]any{"type": "object", "properties": props}
+	for _, k := range []string{"description", "title", "$defs", "definitions"} {
+		if v, ok := s[k]; ok {
+			out[k] = v
+		}
+	}
+	if len(required) > 0 {
+		out["required"] = required
+	}
+	return out, true
+}
+
+func anyStrings(v any) []string {
+	var out []string
+	if list, ok := v.([]any); ok {
+		for _, x := range list {
+			if s, ok := x.(string); ok {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
 }
