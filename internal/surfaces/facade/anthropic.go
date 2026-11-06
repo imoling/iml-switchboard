@@ -314,6 +314,8 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 		est += core.EstimateTokens(m.Content)
 	}
 	if err := s.router.FitsAny(est); err != nil {
+		t.EstTokens = est
+		s.router.Bounce(t, err)
 		anthErr(w, 400, "invalid_request_error", "prompt is too long: "+err.Error())
 		return
 	}

@@ -388,3 +388,28 @@ table.t.calls col.c-price { width: 112px; } table.t.calls col.c-base { width: 64
 .try-top .hint { margin-left: auto; font-variant-numeric: tabular-nums; }
 .try-top .grow + .hint { margin-left: 0; }
 .try-pick { font-size: 14px; font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 学院：像素画布 + 下方旁白；卡片浮在画布上 */
+.world .stage { position: relative; background: var(--fg); border-radius: 10px; padding: 6px; }
+.world canvas { display: block; width: 100%; aspect-ratio: 16 / 9; image-rendering: pixelated; border-radius: 6px; background: var(--bg); touch-action: none; }
+.world .cap { margin-top: 10px; font-size: 12px; line-height: 1.7; color: var(--muted); min-height: 62px; }
+.world .cap div { opacity: .55; }
+.world .cap div:last-child { opacity: 1; color: var(--fg); }
+.world .scrub { position: relative; height: 4px; margin-top: 8px; background: var(--line); border-radius: 2px; cursor: pointer; }
+.world .scrub i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 2px; }
+.world .chapters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.world .chapters .btn.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--fg); }
+.world .wcard { position: absolute; z-index: 5; min-width: 200px; max-width: 280px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px color-mix(in srgb, var(--fg) 18%, transparent); }
+.world .wcard.confirm { left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 320px; }
+.world .wcard .tt { font-weight: 600; }
+.world .wcard .ds { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.world .wcard .hint-line { color: var(--accent); }
+.world .wempty { position: absolute; inset: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 86%, transparent); }
+.world .wempty .tt { font-size: 16px; font-weight: 650; }
+.world .wempty ul { list-style: none; margin: 0; padding: 0; color: var(--muted); font-size: 13px; }
+.world .wempty li { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.world .wempty .ic { width: 20px; text-align: center; }
+
+/* 学院页的像素字体（缝合怪像素字体，OFL 1.1，见 assets/world/FONT-LICENSE-OFL.txt） */
+@font-face { font-family: 'Fusion Pixel'; src: url('./assets/world/fusion-pixel-10px.woff2') format('woff2'); font-display: block; }
+.world .tools .btn.on { border-color: var(--accent); color: var(--accent); }

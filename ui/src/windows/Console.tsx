@@ -13,12 +13,13 @@ import { Onboarding } from '../pages/Onboarding';
 import { Overview } from '../pages/Overview';
 import { Rules } from '../pages/Rules';
 import { Settings } from '../pages/Settings';
+import { World } from '../pages/World';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop, inTauri } from '../tauri';
 import { About } from './About';
 import { Offline } from './Offline';
 
-type Page = 'overview' | 'calls' | 'rules' | 'accounts' | 'media' | 'integrations' | 'settings';
+type Page = 'overview' | 'world' | 'calls' | 'rules' | 'accounts' | 'media' | 'integrations' | 'settings';
 const NAV: { id: Page; key: string }[] = [
   { id: 'overview', key: 'nav.overview' }, { id: 'calls', key: 'nav.calls' }, { id: 'rules', key: 'nav.rules' },
   { id: 'accounts', key: 'nav.accounts' }, { id: 'media', key: 'nav.media' }, { id: 'integrations', key: 'nav.integrations' },
@@ -102,6 +103,7 @@ export function Console() {
         ))}
         <hr />
         <button className={`nav ${page === 'settings' ? 'on' : ''}`} onClick={() => setPage('settings')}><span>{t('nav.settings')}</span></button>
+        <button className={`nav ${page === 'world' ? 'on' : ''}`} onClick={() => setPage('world')}><span>{t('nav.world')}</span></button>
         <div className="spacer" />
         <div className="mascot"><Mascot scale={4} /></div>
         {status.paused && <div className="hint" style={{ padding: '0 10px 6px' }}>已{t('pause')}</div>}
@@ -111,6 +113,7 @@ export function Console() {
         {/* 顶上的留白和各页的标题行都能拖窗口：标题栏隐藏了，右半边不留拖动区就只能从侧栏拖 */}
         <div className="drag" data-tauri-drag-region style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 18 }} />
         {page === 'overview' && <Overview live={liveCall} onNavigate={setPage} />}
+        {page === 'world' && <World paused={status.paused} onNavigate={setPage} />}
         {page === 'calls' && <Calls live={liveCall} />}
         {page === 'rules' && <Rules />}
         {page === 'accounts' && <Accounts />}

@@ -115,7 +115,10 @@ The tests come in three layers: a source scan; a fake CLI that records the argum
 
 **Also**
 - Records: model, usage, unit price, spend and app price for every call, paged, with the routing reasons one click away; evaluation runs don't count toward savings. The overview shows daily savings or call volume, the tier mix and the costliest task types. Costs can be shown in CNY or USD.
-- Themes: Standard plus three playful ones that only change the interface wording; one click returns to Standard for screen sharing. Eight menu bar icon styles to choose from (Lab).
+- Themes: Standard plus four playful ones (army camp, magic academy, palace, seaside) that only change the interface wording; one click returns to Standard for screen sharing. Eight menu bar icon styles to choose from (Lab).
+- Easter egg: an animated pixel-art scene under Settings plays every request as a little story (courier, dispatcher, the model on its floor, the reply flying back; fallbacks, re-judging, tool round-trips, async video jobs and bounces each staged). One scene per theme; idle models chat with fixed personalities, click one to make it talk, drag it up a floor to re-run its last call one tier higher.
+
+<p align="center"><img src="docs/images/world.png" width="760" alt="Easter egg: the magic academy theme"></p>
 - Backend service: Settings shows uptime with a one-click restart, and warns when the running backend isn't the one shipped with the installed app.
 - Update check: once a day Switchboard checks the Gitee mirror first (falling back to GitHub Releases), notifies you of a new version, and offers the installer for your platform from Settings.
 

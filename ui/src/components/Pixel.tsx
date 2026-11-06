@@ -77,7 +77,26 @@ const fish = (top: string[], C: string, D: string): SpriteDef => ({
 
 const NONE3 = ['..............', '..............', '..............'];
 
+
+// 魔法学院：学徒不戴帽，导师尖帽，教授加白胡子，校长金边高帽；吉祥物是抱着水晶球的占卜师
+const wizardDef = (rows: string[], C: string, D: string, A: string, eyesRow: number): SpriteDef => ({ map: rows, palette: { ...BASE, C, D, A }, eyes: { row: eyesRow, from: 'K', to: 'S' } });
+const ROBE_TAIL = ['..CCCCCCCC..', '..CCCCCCCC..', '..CCCCCCCC..', '..DDDDDDDD..', '..CCCCCCCC..', '..KK....KK..'];
+const HAT_ROWS = ['.....A......', '....AA......', '....AAA.....', '...AAAAA....', '..AAAAAAAA..'];
+const TALL_ROWS = ['.....A......', '....AAA.....', '....GGG.....', '...AAAAA....', '.GAAAAAAAAG.'];
+const academyTier = {
+  low: wizardDef(['............', '............', '....HHHH....', '...HHHHHH...', '...HSSSSH...', '...HKSSKH...', '....SSSS....', '.....SS.....', '...CCCCCC...', '..CCCWWCCC..', ...ROBE_TAIL], '#A39E94', '#7C786F', '#2E4458', 5),
+  mid: wizardDef([...HAT_ROWS, '...HSSSSH...', '...HKSSKH...', '....SSSS....', '...CCCCCC...', '..CCCWWCCC..', ...ROBE_TAIL], '#4A6785', '#2E4458', '#2E4458', 6),
+  high: wizardDef([...HAT_ROWS, '...HSSSSH...', '...HKSSKH...', '...WSSSSW...', '...WWWWWW..', '..CCWWWWCC..', ...ROBE_TAIL].map((r) => r.padEnd(12, '.')), '#C4613A', '#9A4525', '#6B3420', 6),
+  top: wizardDef([...TALL_ROWS, '...WSSSSW...', '...WKSSKW...', '...WWWWWW...', '...CWWWWC...', '..CCCWWCCC..', ...ROBE_TAIL], '#3E5870', '#2E4458', '#3E5870', 6),
+};
+const ACADEMY_SEER: SpriteDef = {
+  map: ['....OOOO....', '...OOOOOO...', '..OOSSSSOO..', '..OSKSSKSO..', '..OSSSSSSO..', '..OOSSSSOO..', '...CCCCCC...', '..CCCCCCCC..', '..CQQQQCCC..', '.SQqQQQQSC..', '..QQQQQQCC..', '..CQQQQCCC..', '..CCCCCCCC..', '..DDDDDDDD..', '..CCCCCCCC..', '..KK....KK..'],
+  palette: { ...BASE, O: '#3E4A33', C: '#5F6B4A', D: '#4A5539', Q: '#A9C6D6', q: '#E6F4FA' },
+  eyes: { row: 3, from: 'K', to: 'S' },
+};
+
 const TIER_SPRITES: Record<Exclude<ThemeId, 'standard'>, Record<Tier, SpriteDef>> = {
+  academy: academyTier,
   dianjiang: {
     low: soldier({}, '#8C8A84', '#5C5A55'),
     mid: soldier({ 0: '....RRRR....' }, '#4A6785', '#2E4458'),
@@ -101,6 +120,7 @@ const TIER_SPRITES: Record<Exclude<ThemeId, 'standard'>, Record<Tier, SpriteDef>
 // 吉祥物：后宫是端着牌子的敬事房太监，点将台是主帅，海王是戴金冠、手持鱼叉的海王
 const MASCOTS: Record<Exclude<ThemeId, 'standard'>, SpriteDef> = {
   dianjiang: TIER_SPRITES.dianjiang.top,
+  academy: ACADEMY_SEER,
   harem: person('....KKKK....', '...KKKKKK...', '..J.J.J.J...', '#4A6785', '#2E4458', { 9: '.GGGGGGGGGG.' }),
   seaking: {
     map: [
@@ -134,6 +154,10 @@ const fan = { 3: '...HKSSKH.RR', 4: '....SSSS.RRR', 5: '.....SS...K.', 6: '...CC
 const soldierBrush = { 4: '....SSSS...R', 5: '.....SS....R', 6: '..CCCCCCCC.K', 7: '.CCDCCCCDC.K', 8: '.CCCCGGCCCSK', 9: '..CCCCCCCCK.' };
 const soldierCamera = { 6: '..CCCCCC.KKK', 7: '.CCDCCCC.KWK', 8: '.CCCCGGCSKKK' };
 const MEDIA_SPRITES: Record<Exclude<ThemeId, 'standard'>, Record<'image' | 'video', SpriteDef>> = {
+  academy: {
+    image: { ...person('...AAAAAA...', '..AAAAAAAA..', '..CCCCCCCC..', '#5F7A4A', '#3E5230', brush), palette: { ...BASE, C: '#5F7A4A', D: '#3E5230', A: '#8C2A1A' } },
+    video: wizardDef([...HAT_ROWS, '...HSSSSH...', '...HKSSKH...', '....SSSS...J', '...CCCCCC.JJ', '..CCCWWCCSJ.', ...ROBE_TAIL], '#5F7A4A', '#3E5230', '#3E5230', 6),
+  },
   dianjiang: {
     image: soldier(soldierBrush, '#5F7A4A', '#3E5230'),
     video: soldier(soldierCamera, '#5F7A4A', '#3E5230'),

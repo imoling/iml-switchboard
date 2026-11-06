@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -28,7 +29,8 @@ type Router struct {
 	mode       Mode
 	paused     bool
 	onCall     func(*Call)
-	onAttempt  func(*Task, Target)
+	onAttempt  func(*Task, Target, Attempt)
+	onBounce   func(*Task, error)
 	onNotice   func(title, body, level string)
 	loc        *time.Location
 	clsCache   classifyCache
@@ -58,7 +60,28 @@ func (r *Router) Driver(id LaneID) (Driver, bool) { d, ok := r.drivers[id]; retu
 func (r *Router) OnCall(fn func(*Call)) { r.onCall = fn }
 
 // OnAttempt 在把请求交给某个候选之前调用；换候选时会再调一次，OnCall 要等做完才调。
-func (r *Router) OnAttempt(fn func(*Task, Target))            { r.onAttempt = fn }
+func (r *Router) OnAttempt(fn func(*Task, Target, Attempt)) { r.onAttempt = fn }
+
+// OnBounce 在兼容入口发现谁都装不下、原样退回应用时调用；这类请求不进记录。
+func (r *Router) OnBounce(fn func(*Task, error)) { r.onBounce = fn }
+
+// Bounce 见 OnBounce。
+func (r *Router) Bounce(t *Task, err error) {
+	if r.onBounce != nil && err != nil {
+		r.onBounce(t, err)
+	}
+}
+
+// Attempt 是一次交给候选时的上下文，给界面演「谁接的活、是不是换人、判官有没有改判」。
+type Attempt struct {
+	N        int    // 第几个候选，从 1 起；大于 1 就是换人
+	Tier     Tier   // 这个候选所在的档
+	RuleTier Tier   // 智能分派改了档时，规则原本判的档；没改为空
+	Judge    string // 改判的判官
+	TaskType string
+	Sticky   bool // 会话粘住了上次的模型
+}
+
 func (r *Router) OnNotice(fn func(title, body, level string)) { r.onNotice = fn }
 
 // Mode / SetMode / Paused / SetPaused 是菜单栏的两个开关。
@@ -1037,7 +1060,7 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 		}
 		tried++
 		if r.onAttempt != nil {
-			r.onAttempt(t, *c)
+			r.onAttempt(t, *c, r.attemptInfo(t, d, *c, tried))
 		}
 		res, err := drv.Run(ctx, t, *c, emit)
 		if err == nil {
@@ -1089,6 +1112,22 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 	}
 	r.fail(call, t, Target{}, lastErr, start)
 	return call, nil, lastErr
+}
+
+func (r *Router) attemptInfo(t *Task, d *Decision, c Target, n int) Attempt {
+	a := Attempt{N: n, Tier: d.Tier, TaskType: d.TaskType, Sticky: d.Sticky}
+	if c.Tier != "" {
+		a.Tier = c.Tier
+	}
+	if t.Kind == KindText && t.Model != "" && c.Model == t.Model {
+		if tier := r.TierOfModel(c); tier != "" {
+			a.Tier = tier
+		}
+	}
+	if d.Smart != nil && len(d.Smart.Options) > 0 && d.Tier != "" && a.Tier != d.Tier && strings.HasPrefix(c.Why, "智能分派") {
+		a.RuleTier, a.Judge = d.Tier, r.judgeLabel()
+	}
+	return a
 }
 
 func skippedSummary(cs []Target) string {
@@ -1151,6 +1190,7 @@ func (r *Router) finish(call *Call, t *Task, tgt Target, res *Result, start time
 	call.OK = true
 	call.ResultPath = res.Path
 	call.JobID = res.JobID
+	call.ToolCalls = countToolCalls(res.ToolCalls)
 	if r.cfg.Get().Settings.SavePrompts {
 		call.ResultText = excerpt(res.Text, 2000)
 		// 评估要用原话重做：只存单轮文本请求，超过上限的不存（截断后重做就不公平了）
@@ -1170,6 +1210,8 @@ func (r *Router) fail(call *Call, t *Task, tgt Target, err error, start time.Tim
 	call.LatencyMS = int(time.Since(start).Milliseconds())
 	call.OK = false
 	call.Error = oneLine(err)
+	var tl *ErrContextTooLong
+	call.TooLong = errors.As(err, &tl)
 	call.CostUSD += t.JudgeCostUSD
 	_ = r.ledger.Insert(call)
 	if r.onCall != nil {
@@ -1195,6 +1237,18 @@ func oneLine(err error) string {
 		s = s[:160] + "…"
 	}
 	return s
+}
+
+// countToolCalls 数模型要应用去跑几个工具（OpenAI 格式数组）。
+func countToolCalls(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var arr []json.RawMessage
+	if json.Unmarshal(raw, &arr) != nil {
+		return 0
+	}
+	return len(arr)
 }
 
 // evalFullLimit 是为评估保存完整提问和回答的字数上限。

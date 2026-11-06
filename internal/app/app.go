@@ -123,8 +123,19 @@ func New(version string) (*App, error) {
 	a.Router.Register(a.API)
 	a.Router.Register(a.Media)
 	a.Router.OnCall(func(c *core.Call) { a.Bus.PublishCall(a.Router.Decorate(c)); a.checkBudget(c) })
-	a.Router.OnAttempt(func(t *core.Task, c core.Target) {
-		a.Bus.PublishCallStart(core.CallStart{ID: t.ID, Host: t.Host, Lane: c.Lane, Provider: c.Provider})
+	a.Router.OnAttempt(func(t *core.Task, c core.Target, at core.Attempt) {
+		a.Bus.PublishCallStart(core.CallStart{ID: t.ID, Host: t.Host, Lane: c.Lane, Provider: c.Provider,
+			Model: c.Model, Display: reg.Display(c.Model), Kind: t.Kind, Tier: at.Tier, RuleTier: at.RuleTier, Judge: at.Judge,
+			TaskType: at.TaskType, TaskName: a.Router.TaskName(at.TaskType), Session: t.SessionID, Stream: t.Stream,
+			ToolTurn: t.Kind == core.KindText && !t.FreshTurn(), Sticky: at.Sticky, Attempt: at.N, EstTokens: t.EstTokens})
+	})
+	a.Router.OnBounce(func(t *core.Task, err error) {
+		b := core.Bounce{Host: t.Host, Session: t.SessionID, EstTokens: t.EstTokens}
+		var tl *core.ErrContextTooLong
+		if errors.As(err, &tl) {
+			b.EstTokens, b.MaxTokens = tl.Tokens, tl.Usable()
+		}
+		a.Bus.Publish("bounce", b)
 	})
 	a.Router.OnNotice(func(title, body, level string) {
 		if cfg.Get().Settings.Notifications.Quota {

@@ -438,7 +438,7 @@ func Validate(c *Config) error {
 		return fmt.Errorf("default_mode 只能是 save、balanced、quality，现在是 %q", c.Settings.DefaultMode)
 	}
 	switch c.Settings.Theme {
-	case "standard", "dianjiang", "harem", "seaking":
+	case "standard", "dianjiang", "academy", "harem", "seaking":
 	default:
 		return fmt.Errorf("theme 不认识：%q", c.Settings.Theme)
 	}

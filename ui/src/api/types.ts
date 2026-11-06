@@ -4,7 +4,7 @@ export type Tier = 'low' | 'mid' | 'high' | 'top';
 export type Lane = 'claude_sub' | 'codex_sub' | 'agy_sub' | 'api' | 'media';
 export type Kind = 'text' | 'image' | 'video' | 'animation';
 export type Mode = 'save' | 'balanced' | 'quality';
-export type ThemeId = 'standard' | 'dianjiang' | 'harem' | 'seaking';
+export type ThemeId = 'standard' | 'dianjiang' | 'academy' | 'harem' | 'seaking';
 export type MediaTier = 'cheap' | 'default' | 'best' | 'free';
 export type Source = 'mcp' | 'facade' | 'cli' | 'quick' | 'redo';
 
@@ -22,6 +22,8 @@ export interface Call {
   user_escalated: boolean; latency_ms: number; ok: boolean; error?: string;
   prompt_excerpt?: string; result_path?: string; job_id?: string;
   task_name?: string; model_display?: string;
+  /** 只在接口输出：模型要应用去跑的工具个数；谁都装不下、退回应用压缩 */
+  tool_calls?: number; too_long?: boolean;
 }
 
 export interface Decision {
@@ -153,13 +155,20 @@ export type QuickEvent =
   | { type: 'done'; call: Call }
   | { type: 'error'; message: string };
 
-/** 一次请求开始交给某个渠道；换候选时用同一个 id 再发一次 */
-export interface CallStart { id: string; host?: string; lane: Lane; provider: string }
+/** 一次请求开始交给某个渠道；换候选时用同一个 id 再发一次（attempt 加一）。model 往后是学院页用的 */
+export interface CallStart {
+  id: string; host?: string; lane: Lane; provider: string;
+  model?: string; display?: string; kind?: Kind; tier?: Tier; rule_tier?: Tier; judge?: string;
+  task_type?: string; task_name?: string; session_id?: string; stream?: boolean; tool_turn?: boolean; sticky?: boolean; attempt?: number; est_tokens?: number;
+}
+/** 兼容入口谁都装不下，原样退回应用 */
+export interface Bounce { host?: string; session_id?: string; est_tokens: number; max_tokens?: number }
 
 export type StreamEvent =
   | { type: 'quota'; data: { quotas: Quota[] } }
   | { type: 'job'; data: { job: Job } }
   | { type: 'call'; data: { call: Call } }
   | { type: 'call_start'; data: CallStart }
+  | { type: 'bounce'; data: Bounce }
   | { type: 'notice'; data: { title: string; body: string; level?: 'info' | 'warn' | 'error' } }
   | { type: 'status'; data: Status };

@@ -18,6 +18,7 @@ export const DEFAULT_WORDS: Record<string, string> = {
   pause: '暂停调度',
   resume: '恢复调度',
   'nav.overview': '概览',
+  'nav.world': '彩蛋',
   'nav.calls': '记录',
   'nav.rules': '路由规则',
   'nav.eval': '评估',

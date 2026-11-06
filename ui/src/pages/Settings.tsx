@@ -19,7 +19,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { desktop, inTauri } from '../tauri';
 
 /** 词表还没从后台拿到时的选项，id 与 internal/themes/*.json 一致 */
-const FALLBACK_THEMES: { id: ThemeId; name: string }[] = [{ id: 'standard', name: '标准' }, { id: 'dianjiang', name: '点将台' }, { id: 'harem', name: '后宫' }, { id: 'seaking', name: '海王' }];
+const FALLBACK_THEMES: { id: ThemeId; name: string }[] = [{ id: 'standard', name: '标准' }, { id: 'dianjiang', name: '点将台' }, { id: 'academy', name: '魔法学院' }, { id: 'harem', name: '后宫' }, { id: 'seaking', name: '海王' }];
 
 /** 菜单栏图标的八种样式；图是 2x 正常态，和菜单栏里一样按 18 pt 显示 */
 const TRAY_ICONS: { id: TrayIcon; label: string; src: string }[] = [

@@ -30,12 +30,36 @@ func (b *Bus) PublishCall(c *Call) { b.Publish("call", map[string]any{"call": c}
 // PublishJob 见 PublishCall。
 func (b *Bus) PublishJob(j *Job) { b.Publish("job", map[string]any{"job": j}) }
 
-// CallStart 是一次请求开始交给某个渠道；换候选时用同一个 ID 再发一次。做完发的是 call 事件。
+// CallStart 是一次请求开始交给某个渠道；换候选时用同一个 ID 再发一次（Attempt 加一）。做完发的是 call 事件。
+// Model 往后的字段给学院页演「谁接的活」：老界面只认前四个，多出来的不影响。
 type CallStart struct {
 	ID       string `json:"id"`
 	Host     string `json:"host,omitempty"`
 	Lane     LaneID `json:"lane"`
 	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+	Display  string `json:"display,omitempty"`
+	Kind     Kind   `json:"kind,omitempty"`
+	Tier     Tier   `json:"tier,omitempty"`
+	RuleTier Tier   `json:"rule_tier,omitempty"` // 智能分派改了档时，规则原本判的档
+	Judge    string `json:"judge,omitempty"`
+	TaskType string `json:"task_type,omitempty"`
+	TaskName string `json:"task_name,omitempty"`
+	Session  string `json:"session_id,omitempty"`
+	Stream   bool   `json:"stream,omitempty"`
+	// ToolTurn 为真表示这一轮是应用把工具结果送回来，不是用户新说的话
+	ToolTurn  bool `json:"tool_turn,omitempty"`
+	Sticky    bool `json:"sticky,omitempty"`
+	Attempt   int  `json:"attempt,omitempty"`
+	EstTokens int  `json:"est_tokens,omitempty"`
+}
+
+// Bounce 是兼容入口把请求原样退回应用（谁都装不下），应用会自己压缩后重发。
+type Bounce struct {
+	Host      string `json:"host,omitempty"`
+	Session   string `json:"session_id,omitempty"`
+	EstTokens int    `json:"est_tokens"`
+	MaxTokens int    `json:"max_tokens,omitempty"`
 }
 
 // PublishCallStart 广播 call_start。

@@ -17,7 +17,7 @@ type Tier = 'low' | 'mid' | 'high' | 'top';          // 低档 中档 高档 顶
 type Lane = 'claude_sub' | 'codex_sub' | 'agy_sub' | 'api' | 'media';
 type Kind = 'text' | 'image' | 'video' | 'animation';
 type Mode = 'save' | 'balanced' | 'quality';         // 省钱 均衡 质量
-type Theme = 'standard' | 'dianjiang' | 'harem' | 'seaking';
+type Theme = 'standard' | 'dianjiang' | 'academy' | 'harem' | 'seaking';
 
 interface Call {
   id: string; ts: string; source: 'mcp' | 'facade' | 'cli' | 'quick' | 'redo';
@@ -108,7 +108,7 @@ interface Account { id: string; kind: 'subscription' | 'api'; provider: string; 
 | POST /api/evaluations/{id}/accept | 采纳某条建议 | `{task_type}` | rules |
 | POST /api/quick/preview | 快速面板预览 | `{prompt, image_path?}` | `Decision` + `alternatives[]` |
 | POST /api/quick/run | 快速面板执行 | `{prompt, image_path?, tier?, model?, lane?}` | SSE：`text_delta{text}` / `media{path,kind}` / `job{job}` / `done{call}` / `error{message}` |
-| GET /api/events | 事件流 SSE | | `quota{...}` / `job{job}` / `call_start{id,host,lane,provider}`（交给某个渠道时发，换候选时同一个 id 再发）/ `call{call}`（做完才发）/ `notice{title,body,level}` / `status{...}` |
+| GET /api/events | 事件流 SSE | | `quota{...}` / `job{job}` / `call_start{id,host,lane,provider,model,display,kind,tier,rule_tier,judge,task_type,task_name,session_id,stream,tool_turn,sticky,attempt,est_tokens}`（交给某个渠道时发，换候选时同一个 id 再发、attempt 加一；rule_tier 非空表示智能分派改了档；tool_turn 表示这轮是应用送回工具结果）/ `bounce{host,session_id,est_tokens,max_tokens}`（兼容入口谁都装不下、原样退回应用）/ `call{call}`（做完才发）/ `notice{title,body,level}` / `status{...}` |
 | GET /api/onboarding | 引导状态 | | `{done, steps:{cli_detected, api_added, claude_connected, tried}}` |
 | POST /api/onboarding/done | 完成引导 | | |
 

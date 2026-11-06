@@ -147,7 +147,7 @@ function parseSse(chunk: string): { event: string; data: Record<string, unknown>
 /** /api/events 事件流；返回取消函数。断线由 EventSource 自己重连 */
 export function subscribeEvents(onEvent: (e: StreamEvent) => void, onState?: (open: boolean) => void): () => void {
   const es = new EventSource(`${BASE}/api/events?client=ui`);
-  const types: StreamEvent['type'][] = ['quota', 'job', 'call', 'call_start', 'notice', 'status'];
+  const types: StreamEvent['type'][] = ['quota', 'job', 'call', 'call_start', 'bounce', 'notice', 'status'];
   for (const t of types) {
     es.addEventListener(t, (ev) => {
       try {

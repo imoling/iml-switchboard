@@ -1,4 +1,4 @@
-// Package themes 内置四套界面词表。费用、额度、报错、给宿主的工具返回永远不走词表。
+// Package themes 内置五套界面词表。费用、额度、报错、给宿主的工具返回永远不走词表。
 package themes
 
 import (
@@ -36,7 +36,7 @@ func init() {
 
 // All 按固定顺序返回全部主题。
 func All() []Theme {
-	order := map[string]int{"standard": 0, "dianjiang": 1, "harem": 2, "seaking": 3}
+	order := map[string]int{"standard": 0, "dianjiang": 1, "academy": 2, "harem": 3, "seaking": 4}
 	out := make([]Theme, 0, len(all))
 	for _, t := range all {
 		out = append(out, t)

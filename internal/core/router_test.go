@@ -18,6 +18,7 @@ type fakeDriver struct {
 	fail   error
 	calls  int
 	health Health
+	tools  json.RawMessage // 模型要应用去跑的工具
 }
 
 func (f *fakeDriver) ID() LaneID { return f.id }
@@ -26,7 +27,7 @@ func (f *fakeDriver) Run(ctx context.Context, t *Task, tg Target, emit func(Even
 	if f.fail != nil {
 		return nil, f.fail
 	}
-	return &Result{Text: "ok from " + tg.Model, Model: tg.Model, Usage: Usage{InputTokens: 100, OutputTokens: 50, CostUSD: 0.001}}, nil
+	return &Result{Text: "ok from " + tg.Model, Model: tg.Model, ToolCalls: f.tools, Usage: Usage{InputTokens: 100, OutputTokens: 50, CostUSD: 0.001}}, nil
 }
 func (f *fakeDriver) Health(ctx context.Context) Health {
 	if f.health.Status == "" {
@@ -119,12 +120,53 @@ func TestAttemptReportedPerCandidate(t *testing.T) {
 	})
 	var lanes []LaneID
 	var ids []string
-	r.OnAttempt(func(task *Task, c Target) { lanes = append(lanes, c.Lane); ids = append(ids, task.ID) })
+	var ats []Attempt
+	r.OnAttempt(func(task *Task, c Target, a Attempt) {
+		lanes = append(lanes, c.Lane)
+		ids = append(ids, task.ID)
+		ats = append(ats, a)
+	})
 	if _, _, err := r.Run(context.Background(), &Task{Prompt: "这个系统的架构怎么设计", Source: "cli"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(lanes) != 2 || lanes[0] != LaneClaudeSub || lanes[1] != LaneAPI || ids[0] == "" || ids[0] != ids[1] {
 		t.Fatalf("开始事件不对：%v %v", lanes, ids)
+	}
+	// 学院页靠 N 认出换人、靠 Tier 把信送到对的楼层
+	if ats[0].N != 1 || ats[1].N != 2 || ats[0].Tier == "" || ats[0].RuleTier != "" {
+		t.Fatalf("候选上下文不对：%+v", ats)
+	}
+}
+
+// 学院页靠 call 事件里的工具个数演「请应用跑工具」、靠 too_long 演「信太厚」：这两个只在事件里，不入库
+func TestCallCarriesToolCallsAndTooLong(t *testing.T) {
+	r, claude, _ := newTestRouter(t)
+	claude.tools = json.RawMessage(`[{"id":"a","type":"function"},{"id":"b","type":"function"}]`)
+	var got []*Call
+	r.OnCall(func(c *Call) { got = append(got, r.Decorate(c)) })
+	if _, _, err := r.Run(context.Background(), &Task{Prompt: "这个系统的架构怎么设计", Source: "cli"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ToolCalls != 2 {
+		t.Fatalf("工具个数没带上：%+v", got)
+	}
+	call := &Call{ID: "x"}
+	r.fail(call, &Task{}, Target{}, &ErrContextTooLong{Tokens: 3_000_000, MaxWindow: 1_000_000}, time.Now())
+	if !call.TooLong {
+		t.Fatal("太长的失败要标上 too_long")
+	}
+}
+
+// 兼容入口退回的请求不进记录，只发一个钩子给界面演「信太厚」
+func TestBounceHook(t *testing.T) {
+	r, _, _ := newTestRouter(t)
+	var got error
+	r.OnBounce(func(_ *Task, err error) { got = err })
+	r.Bounce(&Task{Host: "codex"}, &ErrContextTooLong{Tokens: 2_000_000, MaxWindow: 200_000})
+	r.Bounce(&Task{Host: "codex"}, nil)
+	var tl *ErrContextTooLong
+	if !errors.As(got, &tl) || tl.Tokens != 2_000_000 {
+		t.Fatalf("钩子没收到：%v", got)
 	}
 }
 

@@ -317,6 +317,8 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 		est += core.EstimateTokens(m.Content)
 	}
 	if err := s.router.FitsAny(est); err != nil {
+		t.EstTokens = est
+		s.router.Bounce(t, err)
 		contextTooLong(w, err)
 		return
 	}

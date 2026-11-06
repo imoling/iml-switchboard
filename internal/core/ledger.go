@@ -52,7 +52,9 @@ type Call struct {
 	// 完整的提问和回答，只给评估用：重做和盲评要看到原话，摘录会截断。不进接口输出
 	PromptFull string `json:"-"`
 	ResultFull string `json:"-"`
-	// 下面两个只在接口输出时填，不入库
+	// 下面几个只在接口输出时填，不入库
+	ToolCalls       int    `json:"tool_calls,omitempty"` // 模型要应用去跑的工具个数
+	TooLong         bool   `json:"too_long,omitempty"`   // 谁都装不下，退回应用自己压缩
 	TaskName        string `json:"task_name,omitempty"`
 	ModelDisplay    string `json:"model_display,omitempty"`
 	BaselineDisplay string `json:"baseline_display,omitempty"`
