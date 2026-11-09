@@ -43,9 +43,10 @@ export function Accounts() {
   const [refreshing, setRefreshing] = useState(false);
   useEffect(() => subscribeEvents((e) => { if (e.type === 'quota') { setRefreshing(false); void reload(); } }), [reload]);
   const refreshQuota = async () => { setRefreshing(true); try { await api.refreshQuota(); } catch { setRefreshing(false); } setTimeout(() => setRefreshing(false), 120000); };
-  // 本机登录的客户端（WinWork）自动出现、不计费，和订阅排在一起
-  const subs = data?.filter((a) => a.kind === 'subscription' || a.local) ?? [];
-  const apis = data?.filter((a) => a.kind === 'api' && !a.local) ?? [];
+  // 本机登录的客户端（WinWork）自动出现、不计费，和订阅排在一起；停用的沉到各组最后，其余保持原顺序
+  const enabledFirst = (list: Account[]) => [...list].sort((x, y) => Number(!x.enabled) - Number(!y.enabled));
+  const subs = enabledFirst(data?.filter((a) => a.kind === 'subscription' || a.local) ?? []);
+  const apis = enabledFirst(data?.filter((a) => a.kind === 'api' && !a.local) ?? []);
 
   const act = async (id: string, fn: () => Promise<unknown>) => {
     setBusy(id); setErr(null);
