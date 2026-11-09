@@ -312,6 +312,9 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 	est := core.EstimateTokens(t.System)
 	for _, m := range t.Messages {
 		est += core.EstimateTokens(m.Content)
+		for _, img := range m.Images {
+			est += len(img) / 4 // data URL 的 base64 部分按字符除 4 粗估 token
+		}
 	}
 	if err := s.router.FitsAny(est); err != nil {
 		t.EstTokens = est
@@ -414,8 +417,11 @@ func (s *Server) countTokens(w http.ResponseWriter, r *http.Request) {
 		n += core.EstimateTokens(sys)
 	}
 	for _, m := range req.Messages {
-		text, _ := blocksText(m.Content)
+		text, imgs := blocksText(m.Content)
 		n += core.EstimateTokens(text)
+		for _, img := range imgs {
+			n += len(img) / 4 // data URL 的 base64 部分按字符除 4 粗估 token
+		}
 	}
 	for _, tl := range req.Tools {
 		n += core.EstimateTokens(tl.Description) + len(tl.InputSchema)/4
