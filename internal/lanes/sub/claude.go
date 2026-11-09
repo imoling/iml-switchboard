@@ -500,7 +500,7 @@ func (d *ClaudeDriver) Health(ctx context.Context) core.Health {
 		return core.Health{Status: "warn", Detail: "claude 还没登录过：运行一次 claude 完成登录", SignedOut: true}
 	}
 	if keys := thirdPartyIn(d.claudeSettingsFiles("")...); len(keys) > 0 {
-		return core.Health{Status: "warn", Detail: thirdPartyHint}
+		return core.Health{Status: "warn", Detail: thirdPartyHint, SignedOut: true}
 	}
 	d.mu.Lock()
 	q := append([]core.QuotaWindow(nil), d.lastQuota...)
