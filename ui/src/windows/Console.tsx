@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, subscribeEvents } from '../api/client';
 import type { Call, Job, Onboarding as Ob, Quota, Status } from '../api/types';
-import { ToastHost } from '../components/ui';
+import { restartBackend } from '../backend';
+import { ToastHost, toast } from '../components/ui';
 import { num, setMoney } from '../format';
 import appMark from '../assets/app-mark.svg';
 import { Mascot } from '../components/Pixel';
@@ -82,6 +83,25 @@ export function Console() {
 
   useEffect(() => { void desktop.setTitle(t('app.title')); }, [t]);
   const online = status !== null && status !== 'offline';
+  // 更新后连着的还是旧后台：等手上的活做完，自动换成安装包里的那份；每次启动只试一次，失败了设置页和菜单栏弹窗里还能手动点
+  const autoRestarted = useRef(false);
+  useEffect(() => {
+    if (!online || autoRestarted.current) return;
+    autoRestarted.current = true;
+    void (async () => {
+      const bundled = await desktop.bundledBuild();
+      if (!bundled) return;
+      for (;;) {
+        const s = await api.status().catch(() => null);
+        if (!s?.build || s.build === bundled) return;
+        if ((s.busy ?? 0) === 0) break;
+        await new Promise((r) => setTimeout(r, 10000));
+      }
+      const why = await restartBackend();
+      if (why) toast(`后台重启失败：${why}`);
+      else void boot();
+    })();
+  }, [online, boot]);
   useEffect(() => { if (online) void api.settings().then((s) => { if (s.hotkey) void desktop.setHotkey(s.hotkey); void desktop.setNotch(!!s.lab_notch); void desktop.setTrayStyle(s.tray_icon ?? 'tile'); }).catch(() => undefined); }, [online]);
 
   if (status === null) return <div className="offline"><span className="hint">正在连接后台…</span></div>;
