@@ -15,7 +15,7 @@ import (
 func TestClaudeTakeover(t *testing.T) {
 	m, home := setup(t)
 	path := filepath.Join(home, ".claude", "settings.json")
-	_ = os.WriteFile(path, []byte(`{"model":"fable","theme":"dark","env":{"HTTP_PROXY":"http://127.0.0.1:7890","ANTHROPIC_MODEL":"opus"}}`), 0o600)
+	_ = os.WriteFile(path, []byte(`{"model":"fable","theme":"dark","env":{"HTTP_PROXY":"http://127.0.0.1:7890","ANTHROPIC_MODEL":"opus","ANTHROPIC_DEFAULT_OPUS_MODEL_NAME":"agnes-2.0-flash","ANTHROPIC_DEFAULT_SONNET_MODEL_NAME":"旧中档"}}`), 0o600)
 	if m.claudeTakenOver() {
 		t.Fatal("还没接管")
 	}
@@ -37,6 +37,15 @@ func TestClaudeTakeover(t *testing.T) {
 	if !m.claudeTakenOver() || d.Env["ANTHROPIC_BASE_URL"] != "http://127.0.0.1:18081" || d.Env["ANTHROPIC_AUTH_TOKEN"] != "imls-key.claude_code" || d.Env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "router-low" || d.Env["ANTHROPIC_MODEL"] != "router-auto" {
 		t.Fatalf("接管后的 env 不对：%s", b)
 	}
+	for key, want := range map[string]string{
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_NAME":   "Switchboard 高档",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_NAME": "Switchboard 中档",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME":  "Switchboard 低档",
+	} {
+		if d.Env[key] != want {
+			t.Errorf("接管后 %s = %q，想要 %q", key, d.Env[key], want)
+		}
+	}
 	if d.Model != "fable" || d.Theme != "dark" || d.Env["HTTP_PROXY"] != "http://127.0.0.1:7890" {
 		t.Fatalf("其它设置不能动：%s", b)
 	}
@@ -49,7 +58,10 @@ func TestClaudeTakeover(t *testing.T) {
 	if m.claudeTakenOver() || d.Env["ANTHROPIC_MODEL"] != "opus" || d.Env["HTTP_PROXY"] == "" {
 		t.Fatalf("关掉后应恢复原值：%s", b)
 	}
-	for _, k := range []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_DEFAULT_OPUS_MODEL"} {
+	if d.Env["ANTHROPIC_DEFAULT_OPUS_MODEL_NAME"] != "agnes-2.0-flash" || d.Env["ANTHROPIC_DEFAULT_SONNET_MODEL_NAME"] != "旧中档" {
+		t.Fatalf("关掉后应恢复原来的显示名称：%s", b)
+	}
+	for _, k := range []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME"} {
 		if _, ok := d.Env[k]; ok {
 			t.Fatalf("原本没有的键应删掉：%s", k)
 		}

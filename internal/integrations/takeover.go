@@ -21,7 +21,8 @@ import (
 
 // claudeTakeoverKeys 是接管时会改动的 env 键；原值全部保存，关掉时逐个恢复（原本没有的删掉）。
 var claudeTakeoverKeys = []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
-	"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "NO_PROXY"}
+	"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	"ANTHROPIC_DEFAULT_OPUS_MODEL_NAME", "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME", "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME", "NO_PROXY"}
 
 func takeoverSavePath(host string) string {
 	return filepath.Join(config.DataDir(), "takeover-"+host+".json")
@@ -101,12 +102,15 @@ func (m *Manager) setClaudeTakeover(on bool) error {
 			}
 		}
 		set := map[string]string{
-			"ANTHROPIC_BASE_URL":             m.facade,
-			"ANTHROPIC_AUTH_TOKEN":           m.facadeKey() + ".claude_code",
-			"ANTHROPIC_MODEL":                "router-auto",
-			"ANTHROPIC_DEFAULT_OPUS_MODEL":   "router-high",
-			"ANTHROPIC_DEFAULT_SONNET_MODEL": "router-mid",
-			"ANTHROPIC_DEFAULT_HAIKU_MODEL":  "router-low",
+			"ANTHROPIC_BASE_URL":                  m.facade,
+			"ANTHROPIC_AUTH_TOKEN":                m.facadeKey() + ".claude_code",
+			"ANTHROPIC_MODEL":                     "router-auto",
+			"ANTHROPIC_DEFAULT_OPUS_MODEL":        "router-high",
+			"ANTHROPIC_DEFAULT_SONNET_MODEL":      "router-mid",
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL":       "router-low",
+			"ANTHROPIC_DEFAULT_OPUS_MODEL_NAME":   "Switchboard 高档",
+			"ANTHROPIC_DEFAULT_SONNET_MODEL_NAME": "Switchboard 中档",
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME":  "Switchboard 低档",
 		}
 		delete(env, "ANTHROPIC_API_KEY")
 		for k, v := range set {
