@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -343,6 +344,33 @@ func postAnth(ts *httptest.Server, key string, body any) (*http.Response, string
 	var buf bytes.Buffer
 	buf.ReadFrom(resp.Body)
 	return resp, buf.String()
+}
+
+// Anthropic 入口的超长错误必须是官方格式：Claude Code 靠 /prompt is too long[^0-9]*(\d+)\s*tokens?\s*>\s*(\d+)/i
+// 从 message 里抠「实际 tokens > 上限」，抠不到就走不到自动压缩，变成硬失败。冒号后必须紧跟数字。
+func TestAnthropicTooLongFormat(t *testing.T) {
+	ts, _, _ := setup(t)
+	huge := strings.Repeat("abcd", 950000)
+	resp, body := postAnth(ts, "k", map[string]any{"model": "router-auto", "max_tokens": 100, "messages": []map[string]string{{"role": "user", "content": huge}}})
+	if resp.StatusCode != 400 {
+		t.Fatalf("应 400：%d %.200s", resp.StatusCode, body)
+	}
+	var envelope struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`^prompt is too long: (\d+) tokens > (\d+) maximum$`)
+	m := re.FindStringSubmatch(envelope.Error.Message)
+	if m == nil {
+		t.Fatalf("应是官方格式 prompt is too long: N tokens > N maximum：%.300s", body)
+	}
+	if m[1] != "950000" {
+		t.Fatalf("实际 token 应是 950000：%s", m[1])
+	}
 }
 
 // Anthropic 协议：工具两头转换、工具结果变成 tool 消息、用 x-api-key 鉴权

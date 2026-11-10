@@ -64,6 +64,18 @@ func anthErr(w http.ResponseWriter, code int, typ, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"type": "error", "error": map[string]any{"type": typ, "message": msg}})
 }
 
+// anthTooLong 把「谁都装不下」的错按 Anthropic 官方格式回给宿主。
+// Claude Code 从 message 里解析「实际 tokens > 上限」计算超出的量，用于压缩恢复。
+// 保持官方格式，避免中文和单位让数字解析失败；是否能恢复仍取决于会话是否可压缩。
+// 上限用 Usable()（窗口的九成）：Switchboard 正是按九成判超长，这样「X tokens > Y」在数字上才自洽。
+func anthTooLong(err error) string {
+	var tl *core.ErrContextTooLong
+	if errors.As(err, &tl) {
+		return fmt.Sprintf("prompt is too long: %d tokens > %d maximum", tl.Tokens, tl.Usable())
+	}
+	return "prompt is too long: " + err.Error()
+}
+
 // blocksText 把 content（字符串或分段数组）里的文字拼起来；顺手收集图片（转成 data URL）。
 func blocksText(raw json.RawMessage) (string, []string) {
 	var s string
@@ -309,17 +321,11 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 		anthErr(w, 400, "invalid_request_error", err.Error())
 		return
 	}
-	est := core.EstimateTokens(t.System)
-	for _, m := range t.Messages {
-		est += core.EstimateTokens(m.Content)
-		for _, img := range m.Images {
-			est += len(img) / 4 // data URL 的 base64 部分按字符除 4 粗估 token
-		}
-	}
+	est := core.EstimateTokens(t.System) + core.EstimateMessages(t.Messages)
 	if err := s.router.FitsAny(est); err != nil {
 		t.EstTokens = est
 		s.router.Bounce(t, err)
-		anthErr(w, 400, "invalid_request_error", "prompt is too long: "+err.Error())
+		anthErr(w, 400, "invalid_request_error", anthTooLong(err))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
@@ -330,7 +336,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			var tl *core.ErrContextTooLong
 			if errors.As(err, &tl) {
-				anthErr(w, 400, "invalid_request_error", "prompt is too long: "+err.Error())
+				anthErr(w, 400, "invalid_request_error", anthTooLong(err))
 				return
 			}
 			anthErr(w, 502, "api_error", err.Error())
@@ -420,7 +426,7 @@ func (s *Server) countTokens(w http.ResponseWriter, r *http.Request) {
 		text, imgs := blocksText(m.Content)
 		n += core.EstimateTokens(text)
 		for _, img := range imgs {
-			n += len(img) / 4 // data URL 的 base64 部分按字符除 4 粗估 token
+			n += core.ImageTokens(img)
 		}
 	}
 	for _, tl := range req.Tools {

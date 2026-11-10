@@ -234,10 +234,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		t.SessionID = "facade:" + hash(t.Messages[0].Content)
 	}
 	// 流式一开始就回了 200，中途发现装不下就没法再报 400：先估一遍，谁都装不下就直接告诉宿主去压缩
-	est := 0
-	for _, m := range t.Messages {
-		est += core.EstimateTokens(m.Content)
-	}
+	est := core.EstimateMessages(t.Messages)
 	if err := s.router.FitsAny(est); err != nil {
 		t.EstTokens = est
 		s.router.Bounce(t, err)

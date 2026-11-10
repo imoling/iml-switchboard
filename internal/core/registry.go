@@ -46,7 +46,7 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	add(ModelInfo{ID: "fable", Provider: "anthropic", Display: "Fable 5.1", InputPerM: 10, OutputPerM: 50, CacheReadPerM: 0.25, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "opus", Provider: "anthropic", Display: "Opus 5.5", InputPerM: 4, OutputPerM: 20, CacheReadPerM: 0.2, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "sonnet", Provider: "anthropic", Display: "Sonnet 5.5", InputPerM: 2, OutputPerM: 10, CacheReadPerM: 0.1, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "haiku", Provider: "anthropic", Display: "Haiku 5.5", InputPerM: 0.10, OutputPerM: 0.50, CacheReadPerM: 0.01, Currency: "USD", Context: 200000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "haiku", Provider: "anthropic", Display: "Haiku 5.5", InputPerM: 0.10, OutputPerM: 0.50, CacheReadPerM: 0.01, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
 	// WinWork（讯飞）网关里的型号：额度算在 WinWork 账上，对用户不计费，所以标成免费，排在收费型号前面
 	for _, w := range WinWorkModels {
 		add(ModelInfo{ID: w.ID, Provider: "winwork", Display: "WinWork " + w.Name, Currency: "CNY", Tools: true, Free: true, Vision: w.Vision, Context: w.Context})
@@ -62,14 +62,15 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	oai := func(id, display string, in, cached, out float64, ctx int) {
 		add(ModelInfo{ID: id, Provider: "openai", Display: display, InputPerM: in, OutputPerM: out, CacheReadPerM: cached, Currency: "USD", Context: ctx, Vision: true, Tools: true, NeedsProxy: true})
 	}
-	oai("gpt-6.1-sol", "GPT-6.1 Sol", 2, 0.10, 10, 400000)
-	oai("gpt-6.1-terra", "GPT-6.1 Terra", 1, 0.05, 5, 400000)
-	oai("gpt-6-sol", "GPT-6 Sol", 2, 0.20, 10, 400000)
-	oai("gpt-6-luna", "GPT-6 Luna", 0.10, 0.01, 0.50, 400000)
-	oai("gpt-6-astra", "GPT-6 Astra", 10, 1, 50, 400000)
-	oai("gpt-5.6-sol", "GPT-5.6 Sol", 4, 0.40, 20, 400000)
-	oai("gpt-5.6-terra", "GPT-5.6 Terra", 2, 0.20, 12, 400000)
-	oai("gpt-5.6-luna", "GPT-5.6 Luna", 0.20, 0.02, 1.20, 400000)
+	// 窗口按 2026-11-10 官方型号页：6.1、6、5.6 系列都是 1,050,000；5.4 及以下没核实，沿用 400K
+	oai("gpt-6.1-sol", "GPT-6.1 Sol", 2, 0.10, 10, 1050000)
+	oai("gpt-6.1-terra", "GPT-6.1 Terra", 1, 0.05, 5, 1050000)
+	oai("gpt-6-sol", "GPT-6 Sol", 2, 0.20, 10, 1050000)
+	oai("gpt-6-luna", "GPT-6 Luna", 0.10, 0.01, 0.50, 1050000)
+	oai("gpt-6-astra", "GPT-6 Astra", 10, 1, 50, 1050000)
+	oai("gpt-5.6-sol", "GPT-5.6 Sol", 4, 0.40, 20, 1050000)
+	oai("gpt-5.6-terra", "GPT-5.6 Terra", 2, 0.20, 12, 1050000)
+	oai("gpt-5.6-luna", "GPT-5.6 Luna", 0.20, 0.02, 1.20, 1050000)
 	oai("gpt-5.5", "GPT-5.5", 5, 0.50, 30, 1050000)
 	oai("gpt-5.5-pro", "GPT-5.5 Pro", 30, 30, 180, 1050000) // 官方没有缓存价：缓存按原价算
 	oai("gpt-5.4", "GPT-5.4", 2.5, 0.25, 15, 400000)
@@ -97,23 +98,23 @@ func NewRegistry(usdPerCNY float64) *Registry {
 	}
 	r.models["codex-auto-review"] = func(m ModelInfo) ModelInfo { m.Display = "Codex 自动审批"; return m }(r.models["codex-auto-review"])
 	// Antigravity（Google AI 订阅里可选的型号；订阅不计费，价格只用于额度权重与基线）
-	add(ModelInfo{ID: "gemini-3.8-flash-high", Provider: "google", Display: "Gemini 3.8 Flash（高）", InputPerM: 0.5, OutputPerM: 3, CacheReadPerM: 0.05, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "gemini-3.8-flash-medium", Provider: "google", Display: "Gemini 3.8 Flash（中）", InputPerM: 0.3, OutputPerM: 2, CacheReadPerM: 0.03, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "gemini-3.8-flash-low", Provider: "google", Display: "Gemini 3.8 Flash（低）", InputPerM: 0.15, OutputPerM: 1, CacheReadPerM: 0.015, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "gemini-3.8-flash-high", Provider: "google", Display: "Gemini 3.8 Flash（高）", InputPerM: 0.5, OutputPerM: 3, CacheReadPerM: 0.05, Currency: "USD", Context: 1048576, Vision: true, Tools: true})
+	add(ModelInfo{ID: "gemini-3.8-flash-medium", Provider: "google", Display: "Gemini 3.8 Flash（中）", InputPerM: 0.3, OutputPerM: 2, CacheReadPerM: 0.03, Currency: "USD", Context: 1048576, Vision: true, Tools: true})
+	add(ModelInfo{ID: "gemini-3.8-flash-low", Provider: "google", Display: "Gemini 3.8 Flash（低）", InputPerM: 0.15, OutputPerM: 1, CacheReadPerM: 0.015, Currency: "USD", Context: 1048576, Vision: true, Tools: true})
 	add(ModelInfo{ID: "claude-sonnet-4-6", Provider: "google", Display: "Sonnet 4.6", InputPerM: 3, OutputPerM: 15, CacheReadPerM: 0.3, Currency: "USD", Context: 200000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "claude-opus-4-6-thinking", Provider: "google", Display: "Opus 4.6", InputPerM: 5, OutputPerM: 25, CacheReadPerM: 0.5, Currency: "USD", Context: 200000, Vision: true, Tools: true})
 	add(ModelInfo{ID: "gpt-oss-120b-medium", Provider: "google", Display: "GPT-OSS 120B", InputPerM: 0.1, OutputPerM: 0.5, Currency: "USD", Context: 128000, Tools: true})
-	// 国产
-	add(ModelInfo{ID: "glm-5.3", Provider: "zhipu", Display: "GLM-5.3", InputPerM: cny(8), OutputPerM: cny(28), CacheReadPerM: cny(1.6), Currency: "CNY", Context: 200000, Vision: false, Tools: true})
-	add(ModelInfo{ID: "glm-5.3-flash", Provider: "zhipu", Display: "GLM-5.3-Flash", InputPerM: cny(0.8), OutputPerM: cny(2.8), CacheReadPerM: cny(0.16), Currency: "CNY", Context: 200000, Tools: true})
+	// 国产（窗口按 2026-11-10 各家官方文档；glm-5v 没核实，沿用）
+	add(ModelInfo{ID: "glm-5.3", Provider: "zhipu", Display: "GLM-5.3", InputPerM: cny(8), OutputPerM: cny(28), CacheReadPerM: cny(1.6), Currency: "CNY", Context: 1000000, Vision: false, Tools: true})
+	add(ModelInfo{ID: "glm-5.3-flash", Provider: "zhipu", Display: "GLM-5.3-Flash", InputPerM: cny(0.8), OutputPerM: cny(2.8), CacheReadPerM: cny(0.16), Currency: "CNY", Context: 1000000, Tools: true})
 	add(ModelInfo{ID: "glm-5v", Provider: "zhipu", Display: "GLM-5V", InputPerM: cny(4), OutputPerM: cny(12), Currency: "CNY", Context: 128000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "qwen3.8-max", Provider: "dashscope", Display: "Qwen3.8-Max", InputPerM: cny(12), OutputPerM: cny(36), CacheReadPerM: cny(2.4), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "qwen3.7-plus", Provider: "dashscope", Display: "Qwen3.7-Plus", InputPerM: cny(2), OutputPerM: cny(8), CacheReadPerM: cny(0.4), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "qwen3.8-flash", Provider: "dashscope", Display: "Qwen3.8-Flash", InputPerM: cny(0.8), OutputPerM: cny(2.7), CacheReadPerM: cny(0.16), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "deepseek-v4-pro", Provider: "deepseek", Display: "DeepSeek V4 Pro", InputPerM: 1.32, OutputPerM: 3.96, CacheReadPerM: 0.026, Currency: "USD", Context: 256000, Tools: true})
-	add(ModelInfo{ID: "deepseek-flash", Provider: "deepseek", Display: "DeepSeek Flash", InputPerM: 0.30, OutputPerM: 1.20, CacheReadPerM: 0.006, Currency: "USD", Context: 256000, Tools: true})
-	add(ModelInfo{ID: "kimi-k3", Provider: "moonshot", Display: "Kimi K3", InputPerM: cny(20), OutputPerM: cny(100), CacheReadPerM: cny(4), Currency: "CNY", Context: 256000, Vision: true, Tools: true})
-	add(ModelInfo{ID: "minimax-m3", Provider: "minimax", Display: "MiniMax M3", InputPerM: cny(2.1), OutputPerM: cny(8.4), Currency: "CNY", Context: 200000, Tools: true})
+	add(ModelInfo{ID: "qwen3.8-max", Provider: "dashscope", Display: "Qwen3.8-Max", InputPerM: cny(12), OutputPerM: cny(36), CacheReadPerM: cny(2.4), Currency: "CNY", Context: 1000000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "qwen3.7-plus", Provider: "dashscope", Display: "Qwen3.7-Plus", InputPerM: cny(2), OutputPerM: cny(8), CacheReadPerM: cny(0.4), Currency: "CNY", Context: 1000000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "qwen3.8-flash", Provider: "dashscope", Display: "Qwen3.8-Flash", InputPerM: cny(0.8), OutputPerM: cny(2.7), CacheReadPerM: cny(0.16), Currency: "CNY", Context: 1000000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "deepseek-v4-pro", Provider: "deepseek", Display: "DeepSeek V4 Pro", InputPerM: 1.32, OutputPerM: 3.96, CacheReadPerM: 0.026, Currency: "USD", Context: 1000000, Tools: true})
+	add(ModelInfo{ID: "deepseek-flash", Provider: "deepseek", Display: "DeepSeek Flash", InputPerM: 0.30, OutputPerM: 1.20, CacheReadPerM: 0.006, Currency: "USD", Context: 1000000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "kimi-k3", Provider: "moonshot", Display: "Kimi K3", InputPerM: cny(20), OutputPerM: cny(100), CacheReadPerM: cny(4), Currency: "CNY", Context: 1000000, Vision: true, Tools: true})
+	add(ModelInfo{ID: "minimax-m3", Provider: "minimax", Display: "MiniMax M3", InputPerM: cny(2.1), OutputPerM: cny(8.4), Currency: "CNY", Context: 1000000, Tools: true})
 	add(ModelInfo{ID: "anthropic/claude-sonnet-5.5", Provider: "openrouter", Display: "Sonnet 5.5", InputPerM: 2, OutputPerM: 10, CacheReadPerM: 0.2, Currency: "USD", Context: 1000000, Vision: true, Tools: true, NeedsProxy: true})
 	add(ModelInfo{ID: "anthropic/claude-opus-5.5", Provider: "openrouter", Display: "Opus 5.5", InputPerM: 4, OutputPerM: 20, CacheReadPerM: 0.4, Currency: "USD", Context: 1000000, Vision: true, Tools: true, NeedsProxy: true})
 	// Agnes AI（国内直连，人民币；2026-10 官方价目，促销期多数为 0 元，这里记原价）

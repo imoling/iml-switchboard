@@ -12,7 +12,8 @@ func big(n int) string { return strings.Repeat("abcd", n) }
 
 func TestContextWindowFit(t *testing.T) {
 	r, _, _ := newTestRouter(t)
-	// 中档：GLM-5.3 只有 20 万，装不下 25 万；Claude Sonnet 有 100 万
+	// 中档：glm-5.3 有 100 万，装得下 25 万；sonnet 也有 100 万；临时把 GLM 改小测窗口判断
+	r.reg.Upsert(ModelInfo{ID: "glm-5.3", Provider: "zhipu", Display: "GLM-5.3", Context: 200000, Vision: true, Tools: true})
 	d := r.Decide(&Task{Prompt: big(250000), Tier: TierMid})
 	var glm, sonnet *Target
 	for i := range d.Candidates {
@@ -30,7 +31,10 @@ func TestContextWindowFit(t *testing.T) {
 		t.Fatalf("Sonnet 应可用：%+v", d.Candidates)
 	}
 
-	// 低档全都装不下（Haiku、GLM-Flash 20 万，GPT-5.6 Luna 40 万）：自动升到中档。「超过 100K 不用低档」先关掉，单看窗口
+	// 低档全都装不下：自动升到中档。临时把低档模型改小，再关掉「超过 100K 不用低档」规则单看窗口
+	r.reg.Upsert(ModelInfo{ID: "haiku", Provider: "anthropic", Display: "Haiku 5.5", Context: 200000, Vision: true, Tools: true})
+	r.reg.Upsert(ModelInfo{ID: "glm-5.3-flash", Provider: "zhipu", Display: "GLM-5.3 Flash", Context: 200000, Vision: true, Tools: true})
+	r.reg.Upsert(ModelInfo{ID: "gpt-5.6-luna", Provider: "openai", Display: "GPT-5.6 Luna", Context: 400000, Vision: true, Tools: true})
 	for i := range r.cfg.Get().Routing.ContextRules {
 		r.cfg.Get().Routing.ContextRules[i].Enabled = false
 	}
@@ -40,12 +44,12 @@ func TestContextWindowFit(t *testing.T) {
 	}
 
 	// 谁都装不下（最大 100 万，留一成余量）：返回专门的错误，让宿主去压缩
-	_, _, err := r.Run(context.Background(), &Task{Prompt: big(950000), Source: "facade"}, nil)
+	_, _, err := r.Run(context.Background(), &Task{Prompt: big(1100000), Source: "facade"}, nil)
 	var tl *ErrContextTooLong
-	if !errors.As(err, &tl) || tl.MaxWindow != 1000000 {
+	if !errors.As(err, &tl) || tl.MaxWindow != 1050000 {
 		t.Fatalf("应返回 ErrContextTooLong：%v", err)
 	}
-	if err := r.FitsAny(950000); err == nil {
+	if err := r.FitsAny(1100000); err == nil {
 		t.Fatal("FitsAny 应报装不下")
 	}
 	if err := r.FitsAny(500000); err != nil {
@@ -55,6 +59,8 @@ func TestContextWindowFit(t *testing.T) {
 
 func TestStickyDropsWhenTooLong(t *testing.T) {
 	r, _, _ := newTestRouter(t)
+	// 粘住的是 glm-5.3-flash（官方 100 万）；临时改小，才测得到「装不下就不粘」
+	r.reg.Upsert(ModelInfo{ID: "glm-5.3-flash", Provider: "zhipu", Display: "GLM-5.3 Flash", Context: 200000, Vision: true, Tools: true})
 	if _, _, err := r.Run(context.Background(), &Task{Prompt: "你好", Tier: TierLow, SessionID: "s1"}, nil); err != nil {
 		t.Fatal(err)
 	}

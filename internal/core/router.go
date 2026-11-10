@@ -109,10 +109,7 @@ func (r *Router) Decide(t *Task) *Decision {
 	cfg := r.cfg.Get()
 	d := &Decision{Kind: t.Kind, Reason: []string{}}
 	if t.EstTokens == 0 {
-		t.EstTokens = EstimateTokens(t.Prompt)
-		for _, m := range t.Messages {
-			t.EstTokens += EstimateTokens(m.Content)
-		}
+		t.EstTokens = EstimateTokens(t.Prompt) + EstimateMessages(t.Messages)
 	}
 	images := 0
 	if t.ImagePath != "" {

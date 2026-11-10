@@ -312,10 +312,7 @@ func (s *Server) responses(w http.ResponseWriter, r *http.Request) {
 		oaiErr(w, 400, "invalid_request_error", err.Error())
 		return
 	}
-	est := core.EstimateTokens(t.System)
-	for _, m := range t.Messages {
-		est += core.EstimateTokens(m.Content)
-	}
+	est := core.EstimateTokens(t.System) + core.EstimateMessages(t.Messages)
 	if err := s.router.FitsAny(est); err != nil {
 		t.EstTokens = est
 		s.router.Bounce(t, err)
