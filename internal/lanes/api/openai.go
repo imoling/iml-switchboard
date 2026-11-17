@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -455,14 +456,19 @@ func (d *APIDriver) readStream(r io.Reader, emit func(core.Event)) (*core.Result
 	var calls []*toolCall         // 按到达顺序
 	latest := map[int]*toolCall{} // 每个 index 上最新的那个调用，续传的参数接在它后面
 	var finish string
+	terminated := false
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
 		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "" || data == "[DONE]" {
+		if data == "" {
 			continue
+		}
+		if data == "[DONE]" {
+			terminated = true
+			break
 		}
 		var cr chatResponse
 		if err := json.Unmarshal([]byte(data), &cr); err != nil {
@@ -511,6 +517,10 @@ func (d *APIDriver) readStream(r io.Reader, emit func(core.Event)) (*core.Result
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
+	}
+	// 部分兼容服务只发 finish_reason，不发 [DONE]；两者都没有才是截断。
+	if !terminated && finish == "" {
+		return nil, errors.New("流式响应意外结束，未收到结束标记")
 	}
 	res.Text = text.String()
 	// 把拼好的消息放进 Raw，门面层需要 tool_calls 时从这里取。

@@ -308,6 +308,24 @@ func TestClassifyBusyAndMessage(t *testing.T) {
 	}
 }
 
+func TestReadStreamRequiresDoneMarker(t *testing.T) {
+	body := "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n"
+	res, err := (&APIDriver{}).readStream(strings.NewReader(body), nil)
+	if err == nil || res != nil || !strings.Contains(err.Error(), "未收到结束标记") {
+		t.Fatalf("缺少 [DONE] 的流必须报错，避免把半截结果当成功：res=%+v err=%v", res, err)
+	}
+
+	finished := body + "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+	if _, err := (&APIDriver{}).readStream(strings.NewReader(finished), nil); err != nil {
+		t.Fatalf("只发 finish_reason 的兼容服务也应成功：%v", err)
+	}
+	body += "data: [DONE]\n\n"
+	res, err = (&APIDriver{}).readStream(strings.NewReader(body), nil)
+	if err != nil || res == nil || res.Text != "partial" {
+		t.Fatalf("收到 [DONE] 的流应成功：res=%+v err=%v", res, err)
+	}
+}
+
 // WinWork 网关并发调用时会给不同的调用报同一个 index，序号也不一定从 0 开始：按 id 分，一个都不能丢、不能粘
 func TestStreamToolCallsUnreliableIndex(t *testing.T) {
 	chunk := func(s string) string {
