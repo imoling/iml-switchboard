@@ -226,8 +226,8 @@ func TestAccountsAndSettings(t *testing.T) {
 	_, _, raw := do(t, ts, "GET", "/api/accounts", nil)
 	var list []map[string]any
 	_ = json.Unmarshal(raw, &list)
-	if len(list) != 4 {
-		t.Fatalf("应有 3 个订阅 + 1 个按量付费：%s", raw)
+	if len(list) != 3 {
+		t.Fatalf("应有 2 个订阅 + 1 个按量付费：%s", raw)
 	}
 	code, _, _ = do(t, ts, "DELETE", "/api/accounts/"+id, nil)
 	if code != 200 {
@@ -264,6 +264,19 @@ func TestInternalTool(t *testing.T) {
 	_, m, _ := do(t, ts, "POST", "/api/internal/tool", map[string]any{"name": "ask_model", "args": map[string]any{"prompt": "翻译：hi", "tier": "low"}, "host": "claude_code"})
 	if !strings.Contains(m["text"].(string), "你好") || !strings.Contains(m["text"].(string), "·") {
 		t.Fatalf("%v", m)
+	}
+}
+
+// Google AI CLI 暂不在模型服务展示，即使驱动报告可用也不提供卡片。
+func TestGoogleSubscriptionServiceHidden(t *testing.T) {
+	ts, r := newServer(t)
+	r.Register(&fake{id: core.LaneAgySub})
+	_, _, raw := do(t, ts, "GET", "/api/accounts", nil)
+	if strings.Contains(string(raw), `"agy_sub"`) || strings.Contains(string(raw), `"Google AI"`) {
+		t.Fatalf("Google AI 订阅服务不应出现：%s", raw)
+	}
+	if !strings.Contains(string(raw), `"claude_sub"`) {
+		t.Fatalf("其他订阅服务不受影响：%s", raw)
 	}
 }
 

@@ -92,8 +92,56 @@ func TestTierTablePerHost(t *testing.T) {
 	if !custom || len(chosen) != 1 || len(inherited) != 2 || inherited[0].Lane != LaneAPI {
 		t.Fatalf("宿主表和继承的全局表：%+v %+v", chosen, inherited)
 	}
-	if chosen, _, _, custom := r.TierTable("codex", TierLow); custom || len(chosen) != 2 {
+	if chosen, _, _, custom := r.TierTable("codex", TierLow); custom || len(chosen) != 1 || chosen[0].Lane != LaneAPI {
 		t.Fatalf("没排的宿主应显示全局顺序：%+v", chosen)
+	}
+}
+
+func TestTierTablesHideGoogleSubscription(t *testing.T) {
+	r, _, _ := newTestRouter(t)
+	r.Register(&fakeDriver{id: LaneAgySub})
+	_ = r.cfg.Update(func(c *config.Config) error {
+		c.Routing.Tiers = map[string][]config.TierPick{"low": {{Lane: "agy_sub"}, {Lane: "claude_sub"}}}
+		it := c.Integrations["workbuddy"]
+		it.Tiers = map[string][]config.TierPick{"low": {{Lane: "agy_sub"}}}
+		c.Integrations["workbuddy"] = it
+		return nil
+	})
+	for _, host := range []string{"", "codex", "workbuddy", "pi"} {
+		for _, tier := range []Tier{TierLow, TierMid, TierHigh} {
+			chosen, avail, inherited, _ := r.TierTable(host, tier)
+			for _, list := range [][]Target{chosen, avail, inherited} {
+				for _, c := range list {
+					if c.Lane == LaneAgySub {
+						t.Fatalf("%s %s 不应显示 Google 订阅：%+v", host, tier, c)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestCodexTierTableHidesSubscriptions(t *testing.T) {
+	r, _, _ := newTestRouter(t)
+	for _, tier := range []Tier{TierLow, TierMid, TierHigh} {
+		chosen, avail, inherited, _ := r.TierTable("codex", tier)
+		for _, list := range [][]Target{chosen, avail, inherited} {
+			for _, c := range list {
+				if c.Lane != LaneAPI {
+					t.Fatalf("Codex 不应显示订阅：%+v", c)
+				}
+			}
+		}
+	}
+	_, global, _, _ := r.TierTable("", TierLow)
+	found := false
+	for _, c := range global {
+		if c.Lane == LaneClaudeSub {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("全局候选应保留订阅")
 	}
 }
 

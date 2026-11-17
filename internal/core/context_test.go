@@ -38,9 +38,10 @@ func TestContextWindowFit(t *testing.T) {
 	for i := range r.cfg.Get().Routing.ContextRules {
 		r.cfg.Get().Routing.ContextRules[i].Enabled = false
 	}
-	d = r.Decide(&Task{Prompt: big(450000), Tier: TierLow})
-	if len(live(d.Candidates)) == 0 || !strings.Contains(strings.Join(d.Reason, "；"), "装不下，改用中档") {
-		t.Fatalf("低档装不下应升档：%v %+v", d.Reason, d.Candidates)
+	var reason []string
+	candidates := r.textCandidates(r.cfg.Get(), &Task{EstTokens: 450000}, TierLow, defaultPrefer(TierLow), false, &reason)
+	if len(live(candidates)) == 0 || !strings.Contains(strings.Join(reason, "；"), "装不下，改用中档") {
+		t.Fatalf("自动低档装不下应升档：%v %+v", reason, candidates)
 	}
 
 	// 谁都装不下（最大 100 万，留一成余量）：返回专门的错误，让宿主去压缩

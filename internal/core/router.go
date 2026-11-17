@@ -345,7 +345,7 @@ func (r *Router) Decide(t *Task) *Decision {
 			}
 		}
 	}
-	d.Candidates = r.textCandidates(cfg, t, tier, prefer, sig.HasImage, &d.Reason)
+	d.Candidates = r.textCandidates(cfg, t, tier, prefer, sig.HasImage, &d.Reason, explicitTier == "" && t.Model == "" && t.Lane == "")
 	d.Auto = explicitTier == "" && t.Model == "" && t.Lane == "" && !hit.SubOnly
 	if d.Auto {
 		// 自动分档：这一档都用不了（不能看图、带工具、被限流、额度用完）时依次往上提，最多到高档；顶配只由显式指令和质量模式触发
@@ -355,7 +355,7 @@ func (r *Router) Decide(t *Task) *Decision {
 				continue
 			}
 			var ignore []string
-			for _, c := range r.textCandidates(cfg, t, up, preferFor(up, prefer), sig.HasImage, &ignore) {
+			for _, c := range r.textCandidates(cfg, t, up, preferFor(up, prefer), sig.HasImage, &ignore, true) {
 				if c.Skipped != "" || hasTarget(d.Candidates, c) {
 					continue
 				}
@@ -368,14 +368,14 @@ func (r *Router) Decide(t *Task) *Decision {
 			d.Reason = append(d.Reason, TierLabel(d.Tier)+"都用不了时往上提档")
 		}
 	}
-	if t.HasTools() && len(live(d.Candidates)) == 0 {
+	if explicitTier == "" && t.Model == "" && t.Lane == "" && t.HasTools() && len(live(d.Candidates)) == 0 {
 		// 带工具只能走按量付费；这一档没配按量付费模型时往下找，总比整轮报错强
 		for _, down := range []Tier{TierMid, TierLow} {
 			if tierRank(down) >= tierRank(d.Tier) {
 				continue
 			}
 			var ignore []string
-			alt := r.textCandidates(cfg, t, down, prefer, sig.HasImage, &ignore)
+			alt := r.textCandidates(cfg, t, down, prefer, sig.HasImage, &ignore, true)
 			for i := range alt {
 				alt[i].Tier = down
 			}
@@ -470,20 +470,18 @@ func (r *Router) accountListing(model string) *config.APIAccount {
 	return nil
 }
 
-// pinChoice 让调用方点名的渠道或模型排在最前：点了渠道只留该渠道，点了模型把它提到首位（没有就临时构造一个候选）。
+// pinChoice 限定调用方点名的渠道或模型；点名模型时不加入其他型号作为回退。
 func (r *Router) pinChoice(t *Task, d *Decision) {
 	if t.Lane == "" && t.Model == "" {
 		return
 	}
-	var pinned, rest []Target
+	var pinned []Target
 	for _, c := range d.Candidates {
 		switch {
 		case t.Model != "" && c.Model == t.Model && (t.Lane == "" || c.Lane == t.Lane):
 			pinned = append(pinned, c)
-		case t.Lane != "" && c.Lane == t.Lane:
+		case t.Model == "" && t.Lane != "" && c.Lane == t.Lane:
 			pinned = append(pinned, c)
-		default:
-			rest = append(rest, c)
 		}
 	}
 	if len(pinned) == 0 && t.Model != "" {
@@ -526,7 +524,7 @@ func (r *Router) pinChoice(t *Task, d *Decision) {
 		return
 	}
 	d.Reason = append(d.Reason, "调用方指定模型 "+t.Model)
-	d.Candidates = append(pinned, rest...)
+	d.Candidates = pinned
 }
 
 func kindLabel(k Kind) string {
@@ -543,7 +541,8 @@ func kindLabel(k Kind) string {
 
 // textCandidates 把档位和渠道偏好展开成具体候选，并标注跳过原因。
 // 这一档有手排的候选表就完全照表；表里的条目都失效了（账号删了、渠道关了）再按内置规则排。
-func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer []string, needVision bool, reason *[]string) []Target {
+func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer []string, needVision bool, reason *[]string, crossTier ...bool) []Target {
+	allowCrossTier := len(crossTier) == 0 || crossTier[0]
 	var out []Target
 	subAllowed := !t.HasTools()
 	if !subAllowed {
@@ -568,16 +567,16 @@ func (r *Router) textCandidates(cfg *config.Config, t *Task, tier Tier, prefer [
 			tooLong++
 		}
 	}
-	if tier == TierTop && len(live(out)) == 0 {
+	if allowCrossTier && tier == TierTop && len(live(out)) == 0 {
 		// 顶配只有 Claude 订阅有；都不可用时退到高档的候选
 		*reason = append(*reason, "顶配不可用，退到高档")
-		return r.textCandidates(cfg, t, TierHigh, prefer, needVision, reason)
+		return r.textCandidates(cfg, t, TierHigh, prefer, needVision, reason, allowCrossTier)
 	}
-	if tooLong > 0 && len(live(out)) == 0 && tierRank(tier) < tierRank(TierHigh) {
+	if allowCrossTier && tooLong > 0 && len(live(out)) == 0 && tierRank(tier) < tierRank(TierHigh) {
 		// 这一档的模型都装不下：往上找窗口更大的
 		up := map[Tier]Tier{TierLow: TierMid, TierMid: TierHigh}[tier]
 		*reason = append(*reason, fmt.Sprintf("内容约 %d 万 token，%s装不下，改用%s", (t.EstTokens+5000)/10000, TierLabel(tier), TierLabel(up)))
-		return r.textCandidates(cfg, t, up, prefer, needVision, reason)
+		return r.textCandidates(cfg, t, up, prefer, needVision, reason, allowCrossTier)
 	}
 	return out
 }
@@ -705,6 +704,21 @@ func tierPicks(cfg *config.Config, host string, tier Tier) ([]config.TierPick, s
 // inherited 是这个宿主不手排时会用的顺序（全局的表或内置排法）。custom 表示 host 这一层自己排过。
 // 按不带工具、不带附件的普通请求算，跳过原因（未接入、冷却中）照标，界面上作提示。
 func (r *Router) TierTable(host string, tier Tier) (chosen, avail, inherited []Target, custom bool) {
+	// Google AI CLI 暂不展示；Codex 另只展示能承接工具往返的按量付费渠道。
+	// 过滤全部返回列表，不删除已保存的配置。
+	defer func() {
+		visible := func(in []Target) []Target {
+			out := make([]Target, 0, len(in))
+			for _, c := range in {
+				if c.Lane == LaneAgySub || (host == "codex" && c.Lane != LaneAPI) {
+					continue
+				}
+				out = append(out, c)
+			}
+			return out
+		}
+		chosen, avail, inherited = visible(chosen), visible(avail), visible(inherited)
+	}()
 	cfg := r.cfg.Get()
 	t := &Task{Kind: KindText}
 	avail = r.preferCandidates(cfg, t, tier, defaultPrefer(tier), false, true)
@@ -1059,7 +1073,18 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 		if r.onAttempt != nil {
 			r.onAttempt(t, *c, r.attemptInfo(t, d, *c, tried))
 		}
-		res, err := drv.Run(ctx, t, *c, emit)
+		// 已发给调用方的文本无法撤回；失败后换模型会把两份回答拼在一起。
+		streamed := false
+		attemptEmit := emit
+		if emit != nil {
+			attemptEmit = func(e Event) {
+				if e.Type == "text_delta" && e.Text != "" {
+					streamed = true
+				}
+				emit(e)
+			}
+		}
+		res, err := drv.Run(ctx, t, *c, attemptEmit)
 		if err == nil {
 			r.finish(call, t, *c, res, start, fallbackFrom)
 			if t.SessionID != "" && t.Kind == KindText {
@@ -1075,6 +1100,9 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 		var rl *ErrRateLimited
 		var pe *ErrProvider
 		switch {
+		case streamed:
+			r.fail(call, t, *c, err, start)
+			return call, nil, err
 		case errors.As(err, &rl):
 			r.quota.MarkCooldown(cooldownKey(*c), rl.RetryAfter, rl.Detail)
 			if c.Lane != LaneAPI && c.Lane != LaneMedia {

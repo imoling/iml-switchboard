@@ -1423,7 +1423,6 @@ func (s *Server) accountViews() []accountView {
 	}{
 		{core.LaneClaudeSub, "Claude", "用本机 claude 命令的登录，消耗你的订阅额度", "anthropic", ""},
 		{core.LaneCodexSub, "ChatGPT", "用本机 codex 命令的登录；含订阅出图", "openai", ""},
-		{core.LaneAgySub, "Google AI", "用本机 agy 命令的登录，消耗 Google AI 订阅额度", "google", "安装 Antigravity 并在终端运行一次 agy 登录"},
 	}
 	for _, sb := range subs {
 		sl := cfg.Sub[string(sb.lane)]

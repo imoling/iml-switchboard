@@ -174,7 +174,7 @@ func TestBounceHook(t *testing.T) {
 func TestAccountErrorMovesOn(t *testing.T) {
 	r, _, api := newTestRouter(t)
 	api.fail = &ErrProvider{Summary: "WinWork 没打开：打开后重试", Retryable: true, Account: true, Cooldown: 30 * time.Second}
-	call, _, err := r.Run(context.Background(), &Task{Prompt: "你好", Model: "glm-5.3", Source: "cli"}, nil)
+	call, _, err := r.Run(context.Background(), &Task{Prompt: "你好", Tier: TierMid, Source: "cli"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
