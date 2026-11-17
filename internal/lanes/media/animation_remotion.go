@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"github.com/imoling/iml-switchboard/internal/config"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -27,7 +28,7 @@ var proxyEnv = []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", 
 
 // defaultRunner 用真实子进程执行命令。
 func defaultRunner(ctx context.Context, dir string, env []string, name string, args ...string) (string, string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := procutil.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = env
 	var out, errb bytes.Buffer

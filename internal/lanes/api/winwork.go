@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -160,10 +160,10 @@ func WinWorkGateway() (baseURL, token string, err error) {
 
 // 拉起 WinWork 的参数，测试里会换掉。
 var (
-	winworkLaunch = func() error { return exec.Command("open", "-g", "-j", "-a", "WinWork").Run() } // 不抢焦点、不显示窗口
+	winworkLaunch = func() error { return procutil.Command("open", "-g", "-j", "-a", "WinWork").Run() } // 不抢焦点、不显示窗口
 	// open -j 拦不住它自己弹窗，等它起来后再藏；用系统的 NSRunningApplication，不需要额外授权
 	winworkHide = func() {
-		_ = exec.Command("osascript", "-l", "JavaScript", "-e", `ObjC.import('AppKit');$.NSRunningApplication.runningApplicationsWithBundleIdentifier('com.agentos.desktop').js.forEach(function(a){a.hide})`).Run()
+		_ = procutil.Command("osascript", "-l", "JavaScript", "-e", `ObjC.import('AppKit');$.NSRunningApplication.runningApplicationsWithBundleIdentifier('com.agentos.desktop').js.forEach(function(a){a.hide})`).Run()
 	}
 	winworkWait  = 30 * time.Second // 等它把令牌写回来的上限
 	winworkPoll  = 300 * time.Millisecond

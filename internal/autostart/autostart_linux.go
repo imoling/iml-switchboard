@@ -2,8 +2,8 @@ package autostart
 
 import (
 	"fmt"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -34,13 +34,13 @@ WantedBy=default.target
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		return err
 	}
-	_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
-	return exec.Command("systemctl", "--user", "enable", "--now", unitName).Run()
+	_ = procutil.Command("systemctl", "--user", "daemon-reload").Run()
+	return procutil.Command("systemctl", "--user", "enable", "--now", unitName).Run()
 }
 
 // Uninstall 停用并删除。
 func Uninstall() error {
-	_ = exec.Command("systemctl", "--user", "disable", "--now", unitName).Run()
+	_ = procutil.Command("systemctl", "--user", "disable", "--now", unitName).Run()
 	return os.Remove(unitPath())
 }
 

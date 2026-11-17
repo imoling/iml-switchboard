@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -22,7 +22,7 @@ func (d *CodexDriver) ProbeQuota(ctx context.Context) ([]core.QuotaWindow, error
 	}
 	pctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(pctx, bin, "app-server")
+	cmd := procutil.CommandContext(pctx, bin, "app-server")
 	cmd.Env = cleanEnv(os.Environ())
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

@@ -429,7 +429,8 @@ fn spawn_detached(bin: &std::path::Path) -> std::io::Result<()> {
         use std::os::windows::process::CommandExt;
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000; // 不弹命令行黑框
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
     }
     cmd.spawn().map(|_| ())
 }

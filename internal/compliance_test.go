@@ -45,3 +45,31 @@ func TestRedLines(t *testing.T) {
 		t.Fatalf("触碰红线：\n%s", strings.Join(hits, "\n"))
 	}
 }
+
+// Windows 上直接 exec.Command 会给每个命令行子进程弹一个黑框（后台已脱离控制台）。
+// 业务代码一律走 procutil.Command，它在 Windows 上设了不开窗口；测试文件和 procutil 自己除外。
+func TestSubprocessesHideWindow(t *testing.T) {
+	raw := regexp.MustCompile(`\bexec\.Command(Context)?\(`)
+	var hits []string
+	_ = filepath.Walk("..", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if info.Name() == "node_modules" || info.Name() == "target" || info.Name() == ".git" || info.Name() == "testdata" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") || strings.Contains(filepath.ToSlash(path), "internal/procutil/") {
+			return nil
+		}
+		if b, _ := os.ReadFile(path); raw.Match(b) {
+			hits = append(hits, path)
+		}
+		return nil
+	})
+	if len(hits) > 0 {
+		t.Fatalf("要用 procutil.Command，Windows 上才不弹命令行窗口：\n%s", strings.Join(hits, "\n"))
+	}
+}

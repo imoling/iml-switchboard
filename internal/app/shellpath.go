@@ -4,8 +4,8 @@ package app
 
 import (
 	"context"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -49,7 +49,7 @@ func loginShellPath() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	const mark = "__IMLS_PATH__"
-	cmd := exec.CommandContext(ctx, sh, "-ilc", "printf '"+mark+"%s"+mark+"' \"$PATH\"")
+	cmd := procutil.CommandContext(ctx, sh, "-ilc", "printf '"+mark+"%s"+mark+"' \"$PATH\"")
 	cmd.Stdin = nil
 	out, err := cmd.Output()
 	if err != nil && len(out) == 0 {

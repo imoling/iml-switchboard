@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"io/fs"
 	"net/http"
 	"os"
@@ -197,7 +198,7 @@ func busyLabel(b string) string {
 }
 
 func (m *Manager) run(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := procutil.CommandContext(ctx, name, args...)
 	cmd.Dir = m.Dir
 	cmd.Env = m.env()
 	out, err := cmd.CombinedOutput()
@@ -296,7 +297,7 @@ func (m *Manager) start() error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(m.venvBin("laya-serve"))
+	cmd := procutil.Command(m.venvBin("laya-serve"))
 	cmd.Dir = m.Dir
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.Env = append(m.env(),

@@ -3,6 +3,7 @@
 package sub
 
 import (
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"os/exec"
 	"strconv"
 )
@@ -14,6 +15,6 @@ func killTree(cmd *exec.Cmd) {
 	if cmd.Process == nil {
 		return
 	}
-	_ = exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+	_ = procutil.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
 	_ = cmd.Process.Kill()
 }

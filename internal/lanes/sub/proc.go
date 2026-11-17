@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"io"
 	"os"
 	"os/exec"
@@ -93,7 +94,7 @@ type started struct {
 
 // startProc 启动子进程：清洗环境、打上 InnerEnv 标记，标准输入留着等任务。
 func startProc(spec procSpec) (*started, error) {
-	cmd := exec.Command(spec.Bin, spec.Args...)
+	cmd := procutil.Command(spec.Bin, spec.Args...)
 	cmd.Dir = spec.Dir
 	base := spec.Env
 	if base == nil {

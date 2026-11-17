@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -382,7 +383,7 @@ func (m *Manager) connectClaude(opts map[string]bool) error {
 		return errors.New("本机没有找到 claude 命令")
 	}
 	if !m.claudeRegistered() {
-		cmd := exec.Command("claude", "mcp", "add", "-s", "user", mcpName, "--", m.exe, "mcp")
+		cmd := procutil.Command("claude", "mcp", "add", "-s", "user", mcpName, "--", m.exe, "mcp")
 		var out bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &out
 		if err := cmd.Run(); err != nil {
@@ -412,7 +413,7 @@ func (m *Manager) connectClaude(opts map[string]bool) error {
 
 func (m *Manager) disconnectClaude() error {
 	if m.claudeRegistered() {
-		cmd := exec.Command("claude", "mcp", "remove", "-s", "user", mcpName)
+		cmd := procutil.Command("claude", "mcp", "remove", "-s", "user", mcpName)
 		var out bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &out
 		if err := cmd.Run(); err != nil {

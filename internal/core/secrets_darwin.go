@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"errors"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"os/exec"
 	"strings"
 	"sync"
@@ -20,7 +21,7 @@ type securityStore struct {
 
 // runSecurity 跑一次 security 命令，测试里会换掉。
 var runSecurity = func(bin string, args ...string) ([]byte, error) {
-	cmd := exec.Command(bin, args...)
+	cmd := procutil.Command(bin, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

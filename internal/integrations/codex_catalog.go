@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -51,14 +51,14 @@ func codexVersionStamp() string {
 func codexBundledCatalog() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return exec.CommandContext(ctx, codexCmdName(), "debug", "models", "--bundled").Output()
+	return procutil.CommandContext(ctx, codexCmdName(), "debug", "models", "--bundled").Output()
 }
 
 // codexCheckCatalog 让本机 Codex 试读目录。目录有一个字段不合它的格式，它就启动不了，所以试读过了才能写进配置。
 func codexCheckCatalog(path string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return exec.CommandContext(ctx, codexCmdName(), "debug", "models", "-c", codexCatalogKey+"="+strconv.Quote(path)).Run()
+	return procutil.CommandContext(ctx, codexCmdName(), "debug", "models", "-c", codexCatalogKey+"="+strconv.Quote(path)).Run()
 }
 
 // codexCmdName 是启动 codex 时用的名字：PATH 上有就用名字，没有就用应用包里的全路径。

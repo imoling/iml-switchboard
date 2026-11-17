@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,7 +49,7 @@ func (m *Manager) geminiRegistered() bool {
 
 // runHostCmd 跑宿主的官方命令，失败时把输出压成一行。
 func runHostCmd(what string, name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	cmd := procutil.Command(name, args...)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {

@@ -4,8 +4,8 @@ package autostart
 
 import (
 	"fmt"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -33,16 +33,16 @@ func Install(exe string, logDir string) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	_ = exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), label)).Run()
+	_ = procutil.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), label)).Run()
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		return err
 	}
-	return exec.Command("launchctl", "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), p).Run()
+	return procutil.Command("launchctl", "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), p).Run()
 }
 
 // Uninstall 卸载。
 func Uninstall() error {
-	_ = exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), label)).Run()
+	_ = procutil.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), label)).Run()
 	return os.Remove(plistPath())
 }
 

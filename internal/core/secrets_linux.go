@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"os/exec"
 	"strings"
 )
@@ -18,7 +19,7 @@ func platformSecretStore() secretStore {
 }
 
 func (secretToolStore) get(service, name string) (string, error) {
-	out, err := exec.Command("secret-tool", "lookup", "service", service, "account", name).Output()
+	out, err := procutil.Command("secret-tool", "lookup", "service", service, "account", name).Output()
 	if err != nil || len(out) == 0 {
 		return "", errNoSecret
 	}
@@ -26,7 +27,7 @@ func (secretToolStore) get(service, name string) (string, error) {
 }
 
 func (secretToolStore) set(service, name, value string) error {
-	cmd := exec.Command("secret-tool", "store", "--label="+service+" "+name, "service", service, "account", name)
+	cmd := procutil.Command("secret-tool", "store", "--label="+service+" "+name, "service", service, "account", name)
 	cmd.Stdin = strings.NewReader(value) // 从标准输入传，密钥不出现在进程列表里
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return errors.New("写入系统钥匙圈失败：" + strings.TrimSpace(string(out)))
@@ -35,6 +36,6 @@ func (secretToolStore) set(service, name, value string) error {
 }
 
 func (secretToolStore) del(service, name string) error {
-	_ = exec.Command("secret-tool", "clear", "service", service, "account", name).Run()
+	_ = procutil.Command("secret-tool", "clear", "service", service, "account", name).Run()
 	return nil
 }

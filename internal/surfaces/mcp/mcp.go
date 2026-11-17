@@ -9,9 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/imoling/iml-switchboard/internal/config"
+	"github.com/imoling/iml-switchboard/internal/procutil"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -164,7 +164,7 @@ func ensureBackend(baseURL string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(self, "serve", "--background")
+	cmd := procutil.Command(self, "serve", "--background")
 	cmd.Stdout, cmd.Stderr = nil, nil // 后台自己写日志文件；挂着宿主的输出会让宿主关不掉
 	cmd.Env = os.Environ()
 	detach(cmd)
