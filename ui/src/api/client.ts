@@ -1,4 +1,4 @@
-import type { Quota, Account, Call, Decision, Evaluation, HostModelList, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview, QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier, UpdateInfo, HostTiers, PickTier, Price, AppBaseline, SmartSettings } from './types';
+import type { Quota, Account, Call, Decision, Evaluation, HostModelList, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview, QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier, UpdateInfo, HostTiers, PickTier, Price, AppBaseline, SmartSettings, Effort } from './types';
 
 export const BASE = 'http://127.0.0.1:18081';
 const HEADERS = { 'X-IMLS-Client': 'ui' };
@@ -71,7 +71,7 @@ export const api = {
   importRules: (yaml: string) => request<Rules>('POST', '/api/rules/import', undefined, { contentType: 'text/yaml', text: yaml }),
   accounts: () => get<Account[]>('/api/accounts'),
   addAccount: (b: { provider: string; api_key: string; base_url?: string; label?: string; icon?: string }) => post<Account>('/api/accounts', b),
-  updateAccount: (id: string, b: { icon?: string; enabled?: boolean; tiers?: Record<string, string>; plan?: string; allow_paid?: boolean; media?: Record<string, string>; api_key?: string; base_url?: string; label?: string }) => put<Account>(`/api/accounts/${id}`, b),
+  updateAccount: (id: string, b: { icon?: string; enabled?: boolean; tiers?: Record<string, string>; plan?: string; allow_paid?: boolean; media?: Record<string, string>; api_key?: string; base_url?: string; label?: string; effort?: Effort }) => put<Account>(`/api/accounts/${id}`, b),
   deleteAccount: (id: string) => del<{ ok: boolean }>(`/api/accounts/${id}`),
   verifyAccount: (id: string) => post<Account>(`/api/accounts/${id}/verify`),
   detectAccounts: () => post<Account[]>('/api/accounts/detect'),

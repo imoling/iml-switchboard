@@ -3,6 +3,7 @@
 export type Tier = 'low' | 'mid' | 'high' | 'top';
 export type Lane = 'claude_sub' | 'codex_sub' | 'agy_sub' | 'api' | 'media';
 export type Kind = 'text' | 'image' | 'video' | 'animation';
+export type Effort = '' | 'low' | 'medium' | 'high';
 export type Mode = 'save' | 'balanced' | 'quality';
 export type ThemeId = 'standard' | 'dianjiang' | 'academy' | 'harem' | 'seaking';
 export type MediaTier = 'cheap' | 'default' | 'best' | 'free';
@@ -59,6 +60,7 @@ export interface Account {
   plan?: string; plan_options?: string[]; plan_manual?: boolean; free_models?: string[]; allow_paid?: boolean; media_choice?: Record<string, string>; media_options?: Record<string, string[]>;
   tiers?: Record<string, string>; tier_options?: Record<string, string[]>; labels?: Record<string, string>; media?: { kind: 'image' | 'video'; model: string; display: string; free?: boolean }[]; models: string[]; needs_proxy?: boolean; enabled: boolean; install_hint?: string;
   top_up_url?: string;
+  effort?: Effort; effort_ok?: boolean; // 思考强度；空表示服务默认
 }
 
 export interface Status {

@@ -1,6 +1,6 @@
 # 路由金标集：每条是宿主可能派给 Switchboard 的一句话，want 是「该用哪一档」。
 # 标注按任务本身的难度来定，不迁就现有规则；规则判不对就改规则，别改标注。
-# want：low / mid / high（文本三档），image / video / animation（媒体）。
+# want：low / mid / high（文本三档），image / video（媒体）。做动画、动效是写代码，按文本档位标。
 # 新增来源：imls golden 导出的「判低了」记录，人工复核后贴进来。
 
 # —— 低档：翻译、改写、摘要、归类、抽取、短问答 ——
@@ -104,9 +104,9 @@
 - {p: "生成一段 8 秒的视频：海边日落，镜头缓慢推进", want: video}
 - {p: "把这张图做成视频，让人物眨眼", want: video}
 - {p: "做个短片，展示咖啡倒进杯子", want: video}
-- {p: "做一个 8 秒的标题动画", want: animation}
-- {p: "做一段片头动效，Logo 从中间放大淡入", want: animation}
-- {p: "用 Remotion 做一个数字滚动的转场", want: animation}
+- {p: "做一个 8 秒的标题动画", want: mid}
+- {p: "做一段片头动效，Logo 从中间放大淡入", want: mid}
+- {p: "用 Remotion 做一个数字滚动的转场", want: mid}
 
 # —— 易混：带媒体词但不是媒体任务 ——
 - {p: "这个视频播放器组件切换清晰度时会卡住，帮我看看", want: mid}

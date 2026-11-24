@@ -12,7 +12,7 @@
 - {p: "线上订单服务每隔几天会有一两笔重复扣款,日志里看不出规律,重试逻辑和 MQ 消费都查过了,还是想不通怎么来的", want: high}
 - {p: "帮我给这个函数补单元测试:\n```python\ndef clamp(x, lo, hi):\n    return max(lo, min(x, hi))\n```", want: mid}
 - {p: "我这边有一份会议纪要,大概两千字,里面讲了排期、人员、预算三块,你帮我只把里面提到的所有日期抽出来,按时间顺序列成清单就行,别的不用管", want: low}
-- {p: "做个片头动效,白底,文字「iML Studio」逐字弹出,然后 logo 缩放进来,6 秒", want: animation}
+- {p: "做个片头动效,白底,文字「iML Studio」逐字弹出,然后 logo 缩放进来,6 秒", want: mid}
 - {p: "Redis 分布式锁在主从切换时怎么保证不会两个客户端同时持有?Redlock 够用吗", want: high}
 - {p: "视频播放器拖进度条的时候有点卡,帮我看看这段 requestAnimationFrame 的写法是不是有问题", want: mid}
 - {p: "这个报错啥意思?ENOENT: no such file or directory, open './config.json'", want: low}
@@ -24,7 +24,7 @@
 - {p: "React 里 useEffect 和 useLayoutEffect 到底啥区别,什么时候该用后者", want: mid}
 - {p: "怎么让两个手机端离线编辑同一份文档,联网后合并还不丢数据?", want: high}
 - {p: "帮我把这封邮件语气改得客气一点:「你们的接口又挂了,赶紧修」", want: low}
-- {p: "做一段数据可视化动画,柱状图从 0 长到各自高度,配色赭红和墨色,8 秒", want: animation}
+- {p: "做一段数据可视化动画,柱状图从 0 长到各自高度,配色赭红和墨色,8 秒", want: mid}
 - {p: "比较一下 SQLite 和 PostgreSQL,我这个是个人记账小工具,数据量不大", want: mid}
 - {p: "CI 里这条测试十次挂一次,本地永远过,试过加 sleep 了没用", want: high}
 - {p: "Generate a flat-style illustration of a cat sleeping on a laptop, transparent background if possible.", want: image}
@@ -41,7 +41,7 @@
 - {p: "帮我出个应用图标,一个简洁的黄色小闪电,圆角方形底", want: image}
 - {p: "Summarize this in one sentence: the PR renames three config fields and updates the docs accordingly.", want: low}
 - {p: "Can you review this SQL for obvious issues? SELECT * FROM orders WHERE date = '2024-01-01' OR user_id = 5;", want: mid}
-- {p: "帮我做个转场动效,从左往右的圆形擦除,1 秒左右", want: animation}
+- {p: "帮我做个转场动效,从左往右的圆形擦除,1 秒左右", want: mid}
 - {p: "内存只涨不降,重启后三小时涨到 8G,heap dump 里大头是 byte[] 但看不出是谁在持有", want: high}
 - {p: "从这段 package.json 里把所有 devDependencies 的名字抽出来,一行一个", want: low}
 - {p: "Go 里 context.WithTimeout 为啥一定要 defer cancel", want: mid}

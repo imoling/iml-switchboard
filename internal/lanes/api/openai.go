@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/imoling/iml-switchboard/internal/config"
 	"github.com/imoling/iml-switchboard/internal/core"
 )
 
@@ -215,6 +216,31 @@ type chatRequest struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
 	MaxTokens int `json:"max_tokens,omitempty"`
+	// 思考强度：OpenAI 兼容服务认 reasoning_effort，OpenRouter 认 reasoning.effort
+	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+	Reasoning       *reasoningParams `json:"reasoning,omitempty"`
+}
+
+type reasoningParams struct {
+	Effort string `json:"effort"`
+}
+
+// setEffort 按服务的写法填思考强度；不支持的服务不动。
+func (r *chatRequest) setEffort(provider, effort string) {
+	r.ReasoningEffort, r.Reasoning = "", nil
+	if effort == "" || !config.EffortProviders[provider] {
+		return
+	}
+	if provider == "openrouter" {
+		r.Reasoning = &reasoningParams{Effort: effort}
+		return
+	}
+	r.ReasoningEffort = effort
+}
+
+// rejectsEffort 判断上游是不是因为思考强度参数拒了这次请求（这个型号不支持）。
+func rejectsEffort(status int, body []byte) bool {
+	return status == http.StatusBadRequest && strings.Contains(strings.ToLower(string(body)), "reasoning")
 }
 
 // usageBody 是 OpenAI 兼容的 usage 字段。
@@ -388,20 +414,30 @@ func (d *APIDriver) Run(ctx context.Context, task *core.Task, target core.Target
 	if err != nil {
 		return nil, err
 	}
-	raw, _ := json.Marshal(body)
-	req, err := acct.newRequest(ctx, http.MethodPost, endpoint(acct.BaseURL, "/chat/completions"), raw)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := d.client().Do(req)
-	if err != nil {
-		return nil, ClassifyNetError(acct.Provider, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
+	body.setEffort(acct.Provider, target.Effort)
+	var resp *http.Response
+	for {
+		raw, _ := json.Marshal(body)
+		req, err := acct.newRequest(ctx, http.MethodPost, endpoint(acct.BaseURL, "/chat/completions"), raw)
+		if err != nil {
+			return nil, err
+		}
+		resp, err = d.client().Do(req)
+		if err != nil {
+			return nil, ClassifyNetError(acct.Provider, err)
+		}
+		if resp.StatusCode/100 == 2 {
+			break
+		}
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		resp.Body.Close()
+		if (body.ReasoningEffort != "" || body.Reasoning != nil) && rejectsEffort(resp.StatusCode, b) {
+			body.setEffort("", "") // 这个型号不认思考强度：去掉再发一次，不因为设置让请求失败
+			continue
+		}
 		return nil, ClassifyHTTPError(acct.Provider, resp.StatusCode, b)
 	}
+	defer resp.Body.Close()
 	var res *core.Result
 	if body.Stream {
 		res, err = d.readStream(resp.Body, emit)

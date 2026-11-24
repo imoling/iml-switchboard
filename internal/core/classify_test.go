@@ -31,7 +31,7 @@ func newJudgeRouter(t *testing.T, label string) (*Router, *judgeDriver) {
 }
 
 func TestParseLabel(t *testing.T) {
-	for in, want := range map[string]string{"high": "high", " Mid\n": "mid", "档位：low": "low", "animation": "animation", "高档": "", "": "", "midway": ""} {
+	for in, want := range map[string]string{"high": "high", " Mid\n": "mid", "档位：low": "low", "animation": "", "高档": "", "": "", "midway": ""} {
 		if got := ParseLabel(in); got != want {
 			t.Errorf("%q → %q，想要 %q", in, got, want)
 		}

@@ -140,6 +140,7 @@ type Target struct {
 	Tier       Tier    `json:"tier,omitempty"`    // 提档或降档补进来的候选标上自己那一档；空表示就是决策的那一档
 	Why        string  `json:"-"`                 // 换了档时记进理由的话；空用「X都用不了，改用Y」
 	NoService  bool    `json:"-"`                 // 没有能用的模型服务（没装、没登录、没添加账号）；候选表里不列出来
+	Effort     string  `json:"-"`                 // 思考强度 low medium high，发请求前按模型服务的设置填；空表示跟着服务自己的默认
 }
 
 // Decision 是路由结果。

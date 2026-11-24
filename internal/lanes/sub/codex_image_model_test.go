@@ -47,3 +47,25 @@ func TestCodexImageAttachesRefs(t *testing.T) {
 		t.Fatalf("文字任务不带 --image：%v", text)
 	}
 }
+
+// 思考强度：claude 传 --effort，codex 传 model_reasoning_effort；没设都不传，出图也不传
+func TestSubEffortArgs(t *testing.T) {
+	cd := &ClaudeDriver{}
+	txt := &core.Task{Kind: core.KindText, Prompt: "你好"}
+	if args := cd.buildArgs(txt, core.Target{Model: "sonnet"}, false); slices.Contains(args, "--effort") {
+		t.Fatalf("没设时不该传 --effort：%v", args)
+	}
+	args := cd.buildArgs(txt, core.Target{Model: "sonnet", Effort: "low"}, false)
+	if i := slices.Index(args, "--effort"); i < 0 || args[i+1] != "low" {
+		t.Fatalf("claude 应带 --effort low：%v", args)
+	}
+	d := NewCodexDriver()
+	args, _ = d.BuildArgs(txt, core.Target{Lane: core.LaneCodexSub, Model: "gpt-5.6-terra", Effort: "high"})
+	if !slices.Contains(args, `model_reasoning_effort="high"`) || args[len(args)-1] != "-" {
+		t.Fatalf("codex 应带 model_reasoning_effort：%v", args)
+	}
+	args, _ = d.BuildArgs(&core.Task{Kind: core.KindImage, Prompt: "画只猫"}, core.Target{Lane: core.LaneCodexSub, Model: CodexImageModel, Effort: "high"})
+	if strings.Contains(strings.Join(args, " "), "reasoning") {
+		t.Fatalf("出图不该带思考强度：%v", args)
+	}
+}

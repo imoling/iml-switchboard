@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, subscribeEvents } from '../api/client';
-import type { Account, Tier } from '../api/types';
+import type { Account, Effort, Tier } from '../api/types';
 import { Bar, Dot, ErrorLine, Modal, toast } from '../components/ui';
 import { MediaSprite, TierSprite } from '../components/Pixel';
 import { accountIcon, ICON_CHOICES, vendorSrc, VendorLogo } from '../components/Vendor';
@@ -20,6 +20,9 @@ const API_PROVIDERS = [
   { id: 'openrouter', label: 'OpenRouter', url: 'https://openrouter.ai' },
   { id: 'custom', label: '自定义服务', url: '' }, // 任何 OpenAI 兼容地址，型号从服务拉
 ];
+
+const EFFORTS: { id: Effort; label: string }[] = [{ id: '', label: '默认' }, { id: 'low', label: '轻度' }, { id: 'medium', label: '中度' }, { id: 'high', label: '深度' }];
+const effortLabel = (e?: Effort) => (EFFORTS.find((x) => x.id === (e ?? '')) ?? EFFORTS[0]).label;
 
 const STATUS: Record<Account['status'], { dot: 'ok' | 'warn' | 'no' | 'err'; text: (a: Account) => string }> = {
   ok: { dot: 'ok', text: () => '可用' },
@@ -72,6 +75,7 @@ export function Accounts() {
         : (a.media ?? []).map((m) => (
           <span key={m.model} className="tile media" title={m.model}><MediaSprite kind={m.kind} scale={2} /><span className="chip c-m">{t(m.kind === 'video' ? 'media.video' : 'media.image')}</span><span className="tm">{m.display}</span>{m.free && <span className="free">免费</span>}</span>
         ))}
+      {a.effort && <span className="tile"><span className="tn">思考</span><span className="tm">{effortLabel(a.effort)}</span></span>}
       <span className="chev">▾</span>
     </div>
   );
@@ -162,6 +166,14 @@ export function Accounts() {
               </select>
             </div>
           ))}
+          {tierEdit.effort_ok && (
+            <div className="setrow">
+              <div className="tt">思考强度<div className="hint">调低更快更省，难题可能答得浅</div></div>
+              <select className="sel" value={tierEdit.effort ?? ''} onChange={async (e) => { const effort = e.target.value as Effort; setTierEdit({ ...tierEdit, effort }); await act(tierEdit.id, () => api.updateAccount(tierEdit.id, { effort })); }}>
+                {EFFORTS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+            </div>
+          )}
           {tierEdit.free_models && tierEdit.free_models.length > 0 && (
             <div className="setrow">
               <div className="tt">计费<div className="hint">只用免费时，收费型号从档位里摘掉；改回来要重新选</div></div>

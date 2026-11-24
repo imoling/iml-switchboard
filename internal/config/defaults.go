@@ -25,7 +25,8 @@ func randomKey() string {
 // RulesVersion 是内置任务表的版本；改了内置行就加一，fillMissing 会把新规则合进老配置。
 // 2：加排除词，新增疑难问题、写代码、排查小问题、解释与比较四类（金标准确率 66.7% → 见 golden_test）。
 // 3：新增写作、自动化、记忆整理三类，Codex 的定时任务和写文档的会话不再整条记成「未归类」。
-const RulesVersion = 6
+// 7：去掉「动画」：对话里提到动画、动效、转场不再转去渲染动效视频，照常交给文字模型；要动效视频就点名调 make_animation。
+const RulesVersion = 7
 
 // mediaTechWords 出现时，说的是做软件里的图片、视频，不是要生成一张。
 var mediaTechWords = []string{"接口", "上传", "组件", "报错", "bug", "前端", "后端", "加载", "渲染", "压缩"}
@@ -97,9 +98,8 @@ func Default() *Config {
 		},
 		RulesVersion: RulesVersion,
 		TaskTable: []TaskType{
-			{Type: "image", Name: "生图", Hint: "调用 generate_image，或「画」「配图」「封面」", Kind: "image", MediaTier: "default", Match: Match{Keywords: []string{"画一张", "画一幅", "画一只", "画个", "配图", "封面图", "生成图片", "生成一张图", "做一张图", "插图", "海报"}, Patterns: []string{`(画|生成|做|来|出|要)[^。！？\n]{0,12}(图片|图|插画|海报|封面|头像|壁纸|表情包|漫画|像素画|贴纸)`}, Exclude: append(append([]string(nil), mediaTechWords...), imageTextWords...)}, Order: 1},
+			{Type: "image", Name: "生图", Hint: "调用 generate_image，或「画」「配图」「封面」", Kind: "image", MediaTier: "default", Match: Match{Keywords: []string{"画一张", "画一幅", "画一只", "画个", "配图", "封面图", "生成图片", "生成一张图", "做一张图", "插图", "海报"}, Patterns: []string{`(画|生成|做|来|出|要)[^。！？\n]{0,12}(图片|图|插画|海报|封面|头像|壁纸|表情包|漫画|像素画|贴纸)`}, Exclude: append(append([]string{"动画", "动效"}, mediaTechWords...), imageTextWords...)}, Order: 1},
 			{Type: "video", Name: "生视频", Hint: "调用 generate_video，或「视频」「短片」", Kind: "video", MediaTier: "cheap", Match: Match{Keywords: []string{"生成视频", "做个视频", "做一个视频", "短片", "秒的视频", "图生视频", "介绍视频", "宣传视频", "短视频", "做成视频", "一段视频", "秒视频"}, Patterns: []string{`(生成|做|来|出|要|制作|拍|剪)[^。！？\n]{0,15}视频`}, Exclude: append([]string{"播放器", "教程讲", "总结"}, mediaTechWords...)}, Order: 2},
-			{Type: "animation", Name: "动画", Hint: "调用 make_animation，或「动画」「动效」「Remotion」", Kind: "animation", Match: Match{Keywords: []string{"动画", "动效", "remotion", "转场"}, Exclude: append([]string{"css", "safari", "闪烁", "掉帧", "keyframes", "transition", "怎么解决"}, mediaTechWords...)}, Order: 3},
 			{Type: "debug_hard", Name: "疑难调试", Hint: "有报错栈，或「试了很多次」「还是不行」", Tier: "high", Prefer: []string{"claude_sub", "codex_sub"}, Match: Match{HasStack: b(true)}, Order: 10},
 			{Type: "debug_stuck", Name: "疑难调试", Hint: "反复失败", Tier: "high", Prefer: []string{"claude_sub", "codex_sub"}, Match: Match{Keywords: []string{"试了很多次", "还是不行", "还是报错", "一直失败", "怎么都不行"}}, Order: 11},
 			{Type: "architecture", Name: "架构设计", Hint: "「架构」「方案」「怎么设计」「重构」", Tier: "high", Prefer: []string{"claude_sub"}, Match: Match{Keywords: []string{"架构", "技术方案", "怎么设计", "重构", "系统设计", "选型", "迁移方案", "灰度", "多租户"}, Patterns: []string{`设计(一个|一套)[^。！？\n]{0,20}(系统|方案|架构|服务|协议|框架)`}}, Order: 12},
@@ -109,7 +109,7 @@ func Default() *Config {
 			{Type: "summarize", Name: "摘要与归类", Hint: "总结、归类、提取；长日志", Tier: "low", Prefer: []string{"api"}, Match: Match{Keywords: []string{"总结", "归类", "提取", "分类", "摘要", "归纳", "列出"}}, Order: 31},
 			{Type: "code_small", Name: "小段代码", Hint: "有代码块，80 行以内，无报错栈", Tier: "mid", Prefer: []string{"api", "claude_sub"}, Match: Match{HasCode: b(true), HasStack: b(false), MaxCodeLines: 80}, Order: 40},
 			{Type: "code_feature", Name: "写功能", Hint: "代码超过 80 行，或要新建模块", Tier: "mid", Prefer: []string{"claude_sub", "api"}, Match: Match{HasCode: b(true), HasStack: b(false)}, Order: 41},
-			{Type: "code_write", Name: "写代码", Hint: "写函数、脚本、组件、测试，没贴代码", Tier: "mid", Prefer: []string{"api", "claude_sub"}, Match: Match{Keywords: []string{"dockerfile", "github actions", "单元测试", "接口文档", "改成支持", "断点续传"}, Patterns: []string{
+			{Type: "code_write", Name: "写代码", Hint: "写函数、脚本、组件、测试，没贴代码", Tier: "mid", Prefer: []string{"api", "claude_sub"}, Match: Match{Keywords: []string{"dockerfile", "github actions", "单元测试", "接口文档", "改成支持", "断点续传", "动画", "动效", "转场", "remotion"}, Patterns: []string{
 				`(写|实现|搭)(一个|个|一份|一段|段)?[^。！？\n]{0,24}(函数|脚本|组件|类型|命令|装饰器|工具|缓存|中间件|插件|测试|爬虫|服务|页面|程序)`,
 				`设计[^。！？\n]{0,8}(表|字段|数据模型)`,
 				`\b(write|implement|build|create) (a|an|the)\b[^.\n]{0,40}\b(script|function|component|class|test|cli|server|hook)`,

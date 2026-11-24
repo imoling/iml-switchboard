@@ -22,9 +22,8 @@ func TestMergeRulesUpgradesOldConfig(t *testing.T) {
 			continue // 旧版没有这几行
 		case "summarize":
 			continue // 用户删掉了
-		case "animation":
+		case "image":
 			r.Match.Exclude = nil
-			r.Tier = ""
 		case "review":
 			r.Tier = "high" // 用户改过档位
 			r.Match.Exclude = nil
@@ -56,7 +55,7 @@ func TestMergeRulesUpgradesOldConfig(t *testing.T) {
 	if _, ok := got["summarize"]; ok {
 		t.Error("用户删掉的行不该复活")
 	}
-	if len(got["animation"].Match.Exclude) == 0 {
+	if len(got["image"].Match.Exclude) == 0 {
 		t.Error("没改过的内置行应换成带排除词的新规则")
 	}
 	if got["review"].Tier != "high" {
@@ -150,6 +149,36 @@ func TestMergeRulesMovesCustomRowsFirst(t *testing.T) {
 	first := st.Get().Routing.TaskTable[0]
 	if first.Type != "拼豆" || first.Order != CustomOrder {
 		t.Fatalf("自定义行应挪到最前：%s order=%d", first.Type, first.Order)
+	}
+}
+
+// 7 去掉了「动画」：老配置里这一行升级时摘掉，对话里提到动画不再转去渲染动效视频
+func TestMergeRulesDropsAnimationRow(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("IMLS_DATA_DIR", dir)
+	old := Default()
+	old.Routing.RulesVersion = 6
+	old.Routing.TaskTable = append(old.Routing.TaskTable, TaskType{Type: "animation", Name: "动画", Hint: "调用 make_animation，或「动画」「动效」「Remotion」", Kind: "animation", Order: 3, Match: Match{Keywords: []string{"动画", "动效"}}})
+	b, _ := yaml.Marshal(old)
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range st.Get().Routing.TaskTable {
+		if r.Type == "animation" || r.Kind == "animation" {
+			t.Fatalf("动画行应在升级时摘掉：%+v", r)
+		}
+	}
+}
+
+func TestValidEffort(t *testing.T) {
+	for e, want := range map[string]bool{"": true, "low": true, "medium": true, "high": true, "max": false, "低": false} {
+		if ValidEffort(e) != want {
+			t.Errorf("ValidEffort(%q) 应为 %v", e, want)
+		}
 	}
 }
 

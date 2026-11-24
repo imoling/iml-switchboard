@@ -1401,6 +1401,8 @@ type accountView struct {
 	NeedsProxy      bool                `json:"needs_proxy,omitempty"`
 	Enabled         bool                `json:"enabled"`
 	InstallHint     string              `json:"install_hint,omitempty"`
+	Effort          string              `json:"effort,omitempty"`    // 思考强度：low medium high；空表示服务默认
+	EffortOK        bool                `json:"effort_ok,omitempty"` // 这个服务能设思考强度
 }
 
 // planOptions 是命令行读不到套餐时给用户自己选的名单。
@@ -1426,7 +1428,7 @@ func (s *Server) accountViews() []accountView {
 	}
 	for _, sb := range subs {
 		sl := cfg.Sub[string(sb.lane)]
-		v := accountView{ID: string(sb.lane), Kind: "subscription", Provider: sb.prov, Label: sb.label, Detail: sb.detail, Enabled: sl.Enabled, Status: "missing", Currency: "USD", InstallHint: sb.hint}
+		v := accountView{ID: string(sb.lane), Kind: "subscription", Provider: sb.prov, Label: sb.label, Detail: sb.detail, Enabled: sl.Enabled, Status: "missing", Currency: "USD", InstallHint: sb.hint, Effort: sl.Effort, EffortOK: true}
 		tiers := map[string]any{}
 		v.Labels = map[string]string{}
 		for k, m := range sl.Models {
@@ -1480,7 +1482,8 @@ func (s *Server) accountViews() []accountView {
 		out = append(out, v)
 	}
 	for _, a := range cfg.API {
-		v := accountView{ID: a.ID, Kind: "api", Provider: a.Provider, Icon: a.Icon, Label: labelOr(a.Label, core.ProviderLabel(a.Provider)), BaseURL: a.BaseURL, Enabled: a.Enabled, Currency: a.Currency, NeedsProxy: a.NeedsProxy, Status: "ok", Detail: "", Plan: "按量付费"}
+		v := accountView{ID: a.ID, Kind: "api", Provider: a.Provider, Icon: a.Icon, Label: labelOr(a.Label, core.ProviderLabel(a.Provider)), BaseURL: a.BaseURL, Enabled: a.Enabled, Currency: a.Currency, NeedsProxy: a.NeedsProxy, Status: "ok", Detail: "", Plan: "按量付费",
+			Effort: a.Effort, EffortOK: config.EffortProviders[a.Provider]}
 		if a.Provider == "winwork" {
 			// 走的是它网关的接口，所以在按量付费这条通路上；但它是本机登录的客户端，不计费，界面上和订阅排在一起
 			v.Local, v.Plan = true, "不计费"
@@ -1716,9 +1719,13 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 		APIKey    *string           `json:"api_key"`    // 按量付费：换密钥；先验证再存
 		BaseURL   *string           `json:"base_url"`   // 按量付费：换接口地址（自定义服务、OpenRouter）
 		Label     *string           `json:"label"`      // 按量付费：改名字
+		Effort    *string           `json:"effort"`     // 思考强度：low medium high，空串表示服务默认
 	}
 	if err := decode(r, &in); err != nil {
 		return nil, err
+	}
+	if in.Effort != nil && !config.ValidEffort(*in.Effort) {
+		return nil, errors.New("思考强度只能是 low、medium、high 或留空")
 	}
 	// 换密钥或地址：先用新值去验证，过了才落盘；自定义服务顺便把型号列表换新
 	var discovered []config.DiscoveredModel
@@ -1774,6 +1781,9 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 			if in.Plan != nil {
 				sl.Plan = *in.Plan
 			}
+			if in.Effort != nil {
+				sl.Effort = *in.Effort
+			}
 			if in.Tiers != nil {
 				models := map[string]string{}
 				for k, v := range in.Tiers {
@@ -1802,6 +1812,9 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) (any, err
 				}
 				if in.Label != nil {
 					c.API[i].Label = strings.TrimSpace(*in.Label)
+				}
+				if in.Effort != nil {
+					c.API[i].Effort = *in.Effort
 				}
 				if in.BaseURL != nil {
 					c.API[i].BaseURL = newBase

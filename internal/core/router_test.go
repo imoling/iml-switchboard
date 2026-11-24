@@ -19,11 +19,13 @@ type fakeDriver struct {
 	calls  int
 	health Health
 	tools  json.RawMessage // 模型要应用去跑的工具
+	effort string          // 最近一次调用带的思考强度
 }
 
 func (f *fakeDriver) ID() LaneID { return f.id }
 func (f *fakeDriver) Run(ctx context.Context, t *Task, tg Target, emit func(Event)) (*Result, error) {
 	f.calls++
+	f.effort = tg.Effort
 	if f.fail != nil {
 		return nil, f.fail
 	}
@@ -367,5 +369,23 @@ func TestCodexImageNeedsSignIn(t *testing.T) {
 	}
 	if !found {
 		t.Skip("默认出图表里没有订阅出图")
+	}
+}
+
+// 思考强度跟着模型服务走：账号设了就带上，没设不带
+func TestEffortFollowsService(t *testing.T) {
+	r, _, api := newTestRouter(t)
+	if _, _, err := r.Run(context.Background(), &Task{Prompt: "把这段话翻译成英文：你好", Source: "cli"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if api.effort != "" {
+		t.Fatalf("没设思考强度时不该带：%q", api.effort)
+	}
+	_ = r.Config().Update(func(c *config.Config) error { c.API[0].Effort = "low"; return nil })
+	if _, _, err := r.Run(context.Background(), &Task{Prompt: "把这段话翻译成英文：再见", Source: "cli"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if api.effort != "low" {
+		t.Fatalf("账号设了轻度，调用应带 low：%q", api.effort)
 	}
 }

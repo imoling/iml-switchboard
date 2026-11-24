@@ -405,3 +405,49 @@ func TestFlattenToolSchemas(t *testing.T) {
 		t.Fatal("没有要改的应原样返回")
 	}
 }
+
+// 思考强度：OpenAI 兼容服务写 reasoning_effort，OpenRouter 写 reasoning.effort，不支持的服务不写；
+// 上游因为这个参数报 400 时去掉重发一次
+func TestChatEffort(t *testing.T) {
+	var bodies []map[string]any
+	reject := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		json.NewDecoder(r.Body).Decode(&b)
+		bodies = append(bodies, b)
+		if reject && (b["reasoning_effort"] != nil || b["reasoning"] != nil) {
+			w.WriteHeader(400)
+			fmt.Fprint(w, `{"error":{"message":"Unsupported parameter: 'reasoning_effort' is not supported with this model."}}`)
+			return
+		}
+		fmt.Fprint(w, `{"id":"x","model":"m","choices":[{"message":{"role":"assistant","content":"好"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+	}))
+	defer srv.Close()
+	run := func(provider, effort string) map[string]any {
+		bodies = nil
+		a := testAccount(srv.URL)
+		a.ID, a.Provider = provider, provider
+		d := NewAPIDriver([]Account{a}, srv.Client())
+		if _, err := d.Run(context.Background(), &core.Task{Kind: core.KindText, Prompt: "hi"}, core.Target{Lane: core.LaneAPI, AccountID: provider, Model: "m", Effort: effort}, nil); err != nil {
+			t.Fatalf("%s：%v", provider, err)
+		}
+		return bodies[0]
+	}
+	if b := run("custom", "low"); b["reasoning_effort"] != "low" {
+		t.Errorf("自定义服务应写 reasoning_effort：%v", b)
+	}
+	if b := run("openrouter", "high"); b["reasoning"] == nil || b["reasoning"].(map[string]any)["effort"] != "high" || b["reasoning_effort"] != nil {
+		t.Errorf("OpenRouter 应写 reasoning.effort：%v", b)
+	}
+	if b := run("zhipu", "low"); b["reasoning_effort"] != nil || b["reasoning"] != nil {
+		t.Errorf("不支持的服务不该写思考强度：%v", b)
+	}
+	if b := run("custom", ""); b["reasoning_effort"] != nil {
+		t.Errorf("没设时不该写：%v", b)
+	}
+	reject = true
+	run("custom", "medium")
+	if len(bodies) != 2 || bodies[1]["reasoning_effort"] != nil {
+		t.Errorf("上游不认时应去掉重发一次：%v", bodies)
+	}
+}

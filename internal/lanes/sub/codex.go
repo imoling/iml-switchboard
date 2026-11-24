@@ -125,6 +125,9 @@ func (d *CodexDriver) BuildArgs(task *core.Task, target core.Target) (args []str
 	if d.Ephemeral {
 		args = append(args, "--ephemeral")
 	}
+	if target.Effort != "" && !isImageTask(task, target) {
+		args = append(args, "-c", `model_reasoning_effort="`+target.Effort+`"`)
+	}
 	// 用户把 Switchboard 接进了 Codex 时，这次子进程里关掉它，免得绕回来调用自己。
 	// 没注册时不能加：覆盖一个不存在的服务器，Codex 会报配置加载失败
 	if d.switchboardRegistered() {

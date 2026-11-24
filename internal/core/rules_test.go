@@ -16,7 +16,7 @@ func TestGoldenRouting(t *testing.T) {
 		{"把这段话翻译成英文：今天天气不错", "rewrite"},
 		{"帮我总结一下这 40 条报错日志分成几类", "summarize"},
 		{"给 README 配一张封面图", "image"},
-		{"做一个 8 秒的标题动画", "animation"},
+		{"做一个 8 秒的标题动画", "code_write"},
 		{"做一个 5 秒的产品介绍视频", "video"},
 		{"为什么这个组件每次输入都重新渲染\nTraceback (most recent call last):\n  File \"a.py\", line 3\nTypeError: x", "debug_hard"},
 		{"这个项目的后端架构怎么设计比较好", "architecture"},

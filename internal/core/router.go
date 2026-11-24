@@ -152,13 +152,17 @@ func (r *Router) Decide(t *Task) *Decision {
 			d.Reason = append(d.Reason, "应用转述的会话内容，不当媒体任务")
 			tt, matched = config.TaskType{}, false
 		}
+		if matched && tt.Kind == string(KindAnimation) {
+			// 动效视频只在点名调 make_animation 时做；对话里提到动画多半是要写代码，照常交给文字模型
+			tt, matched = config.TaskType{}, false
+		}
 		if matched && tt.Kind != "" && !t.FreshTurn() {
 			d.Reason = append(d.Reason, "工具结果回来的后续回合，不再出图")
 			tt, matched = config.TaskType{}, false
 		}
 		if !matched || tt.Type == "qa_short" {
 			switch t.Judged {
-			case "image", "video", "animation":
+			case "image", "video":
 				// 带工具的智能体回合也认：接管后宿主的模型拿不到画师，只会自己写 SVG
 				if IsMediaAsk(ask) && t.FreshTurn() && !IsQuoted(t.Prompt) {
 					tt, matched = config.TaskType{Type: t.Judged, Kind: t.Judged}, true
@@ -1084,7 +1088,9 @@ func (r *Router) Execute(ctx context.Context, t *Task, d *Decision, emit func(Ev
 				emit(e)
 			}
 		}
-		res, err := drv.Run(ctx, t, *c, attemptEmit)
+		tgt := *c
+		tgt.Effort = effortFor(cfg, tgt)
+		res, err := drv.Run(ctx, t, tgt, attemptEmit)
 		if err == nil {
 			r.finish(call, t, *c, res, start, fallbackFrom)
 			if t.SessionID != "" && t.Kind == KindText {
@@ -1482,6 +1488,21 @@ func TierByName(model string) Tier {
 		return TierHigh
 	case strings.Contains(m, "sonnet"), strings.Contains(m, "terra"):
 		return TierMid
+	}
+	return ""
+}
+
+// effortFor 取这个候选所在模型服务设的思考强度；判档、判官这类内部小调用不走这里，照旧用服务默认。
+func effortFor(cfg *config.Config, c Target) string {
+	switch c.Lane {
+	case LaneAPI:
+		for _, a := range cfg.API {
+			if a.ID == c.AccountID {
+				return a.Effort
+			}
+		}
+	case LaneClaudeSub, LaneCodexSub:
+		return cfg.Sub[string(c.Lane)].Effort
 	}
 	return ""
 }

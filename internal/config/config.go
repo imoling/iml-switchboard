@@ -115,7 +115,8 @@ type SubLane struct {
 	Enabled  bool              `yaml:"enabled" json:"enabled"`
 	Models   map[string]string `yaml:"models" json:"models"` // tier -> model
 	ImageGen bool              `yaml:"image_gen,omitempty" json:"image_gen,omitempty"`
-	Plan     string            `yaml:"plan,omitempty" json:"plan,omitempty"` // 手填的套餐名，命令行读不到时用
+	Plan     string            `yaml:"plan,omitempty" json:"plan,omitempty"`     // 手填的套餐名，命令行读不到时用
+	Effort   string            `yaml:"effort,omitempty" json:"effort,omitempty"` // 思考强度：low medium high；空表示跟着服务自己的默认
 }
 
 // APIAccount 是一个按量付费账号。密钥不在这里，在钥匙串里，键名为 account id。
@@ -136,6 +137,28 @@ type APIAccount struct {
 	Icon string `yaml:"icon,omitempty" json:"icon,omitempty"`
 	// Discovered 是自定义服务从 /models 拉到的型号，档位从这里选；重新验证时整表换新
 	Discovered []DiscoveredModel `yaml:"discovered,omitempty" json:"discovered,omitempty"`
+	// Effort 是思考强度：low medium high；空表示不传，跟着服务自己的默认。只对支持的服务生效
+	Effort string `yaml:"effort,omitempty" json:"effort,omitempty"`
+}
+
+// EffortProviders 是能设思考强度的按量付费服务。其余的要么不认这个参数，要么写法各不相同，先不给选；
+// 订阅里 Claude 和 ChatGPT 都能设（官方命令行的 --effort、model_reasoning_effort）
+var EffortProviders = map[string]bool{"openrouter": true, "302ai": true, "custom": true}
+
+// Efforts 是思考强度能选的值，从轻到重；空串表示默认。
+var Efforts = []string{"low", "medium", "high"}
+
+// ValidEffort 判断思考强度的取值是否合法；空串合法（默认）。
+func ValidEffort(e string) bool {
+	if e == "" {
+		return true
+	}
+	for _, x := range Efforts {
+		if x == e {
+			return true
+		}
+	}
+	return false
 }
 
 // DiscoveredModel 是服务自己报的一个型号。
@@ -485,6 +508,9 @@ const CustomOrder = 0
 // rulesAddedIn 记录每一版新增的内置任务类型：只在升级那一次补进去，用户之后删掉的不再补。
 var rulesAddedIn = map[int][]string{2: {"hard_problem", "code_write", "tech_issue", "explain"}, 3: {"writing", "automation", "housekeeping"}}
 
+// rulesRemovedIn 记录每一版去掉的内置任务类型：升级那一次从老配置里摘掉。
+var rulesRemovedIn = map[int][]string{7: {"animation"}}
+
 // mergeRules 把新版内置任务表合进老配置。识别说明没改过的内置行整行换成新规则（保留用户选的档位和渠道）；
 // 改过的只补排除词；新增的类型按默认顺序插进去。
 func mergeRules(c, d *Config) {
@@ -523,6 +549,16 @@ func mergeRules(c, d *Config) {
 		c.Routing.TaskTable = append(mine, rest...)
 	}
 	for v := c.Routing.RulesVersion + 1; v <= RulesVersion; v++ {
+		for _, typ := range rulesRemovedIn[v] {
+			keep := c.Routing.TaskTable[:0]
+			for _, t := range c.Routing.TaskTable {
+				if t.Type != typ {
+					keep = append(keep, t)
+				}
+			}
+			c.Routing.TaskTable = keep
+			have[typ] = false
+		}
 		for _, typ := range rulesAddedIn[v] {
 			if !have[typ] {
 				c.Routing.TaskTable = append(c.Routing.TaskTable, defs[typ])

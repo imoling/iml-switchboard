@@ -160,6 +160,9 @@ func (d *ClaudeDriver) buildArgs(task *core.Task, target core.Target, inlineSyst
 		// 不加载用户配置里的 MCP 服务器：里面有 Switchboard 自己，加载了既慢又可能绕回来调用自己
 		"--strict-mcp-config",
 	}
+	if target.Effort != "" {
+		args = append(args, "--effort", target.Effort)
+	}
 	if needsWrite(task) {
 		if task.System != "" && !inlineSystem {
 			args = append(args, "--append-system-prompt", task.System)

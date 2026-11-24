@@ -24,15 +24,15 @@ const classifyPrompt = `你是任务分档员。编程助手会把子任务派�
 low：翻译、改写、润色、摘要、归类、抽取、格式转换、查一个命令或一个事实
 mid：写一般的代码（函数、脚本、组件、测试）、代码评审、解释技术原理、比较方案、排查常见小问题
 high：疑难排查（偶发、反复失败、查了很久、性能退化、泄漏）、架构与系统设计、并发、安全、分布式、需要深入推理和权衡
-image：真的要生成一张图片；video：真的要生成一段视频；animation：真的要做一段动效视频（片头、转场、数据动画）
-修图片接口、视频播放器卡顿、CSS 动画掉帧这类是写代码，按 mid 或 high 判。拿不准时宁高勿低。
+image：真的要生成一张图片；video：真的要生成一段视频
+做动画、动效、转场，修图片接口、视频播放器卡顿、CSS 动画掉帧这类是写代码，按 mid 或 high 判。拿不准时宁高勿低。
 
-只输出一个词：low、mid、high、image、video、animation 之一。
+只输出一个词：low、mid、high、image、video 之一。
 
 任务：
 `
 
-var reLabel = regexp.MustCompile(`\b(low|mid|high|image|video|animation)\b`)
+var reLabel = regexp.MustCompile(`\b(low|mid|high|image|video)\b`)
 
 // ParseLabel 从判档员的回答里取第一个合法档位，取不到返回空。
 func ParseLabel(s string) string {
