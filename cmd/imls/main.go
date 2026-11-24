@@ -21,7 +21,7 @@ import (
 	"github.com/imoling/iml-switchboard/internal/surfaces/mcp"
 )
 
-var version = "0.7.2"
+var version = "0.8.0"
 
 func main() {
 	admin.Version = version
