@@ -253,3 +253,63 @@ func TestDshDetectedByDataDir(t *testing.T) {
 		t.Fatal("有 profiles 目录就该算装了")
 	}
 }
+
+func TestCustomIntegrationAndAntigravity(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("IMLS_DATA_DIR", filepath.Join(home, "data"))
+	cs, err := config.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(cs, "/usr/local/bin/imls", "http://127.0.0.1:18081", func() string { return "imls-secret" })
+	m.home = home
+
+	// Antigravity 内置视图：未建目录时不可用，建目录后支持一键接入、自动同步与断开
+	ag := m.view("antigravity")
+	if ag["available"] != false || !strings.Contains(ag["snippet"].(string), "IMLS_HOST") {
+		t.Fatalf("antigravity 视图不对：%v", ag)
+	}
+	_ = os.MkdirAll(filepath.Join(home, ".gemini", "antigravity"), 0o755)
+	if m.view("antigravity")["available"] != true {
+		t.Fatal("存在 .gemini/antigravity 目录应视为已安装")
+	}
+	if _, err := m.Connect("antigravity", nil); err != nil {
+		t.Fatalf("接入 antigravity 失败：%v", err)
+	}
+	if m.view("antigravity")["status"] != "connected" {
+		t.Fatalf("接入后应为 connected：%v", m.view("antigravity"))
+	}
+	// 模拟旧路径，SyncAntigravity 自动更新为当前 exe
+	m.exe = "/Applications/Switchboard.app/Contents/MacOS/imls"
+	m.SyncAntigravity()
+	b, _ := os.ReadFile(m.antigravityMcpCfg())
+	if !strings.Contains(string(b), m.exe) || !strings.Contains(string(b), `"IMLS_HOST": "antigravity"`) {
+		t.Fatalf("SyncAntigravity 未同步更新：%s", string(b))
+	}
+	if _, err := m.Disconnect("antigravity"); err != nil {
+		t.Fatalf("断开 antigravity 失败：%v", err)
+	}
+	if m.view("antigravity")["status"] != "disconnected" {
+		t.Fatalf("断开后应为 disconnected：%v", m.view("antigravity"))
+	}
+
+	// 添加、停用、删除自定义应用
+	added, err := m.AddCustom("Cursor IDE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := added["id"].(string)
+	if id != "cursor_ide" || added["custom"] != true || !strings.Contains(added["snippet"].(string), "IMLS_HOST=cursor_ide") {
+		t.Fatalf("自定义应用视图不对：%v", added)
+	}
+	upd, err := m.Update(id, map[string]bool{"disabled": true})
+	if err != nil || upd["disabled"] != true || upd["status"] != "disconnected" {
+		t.Fatalf("停用自定义应用不对：%v %v", upd, err)
+	}
+	if err := m.DeleteCustom("claude_code"); err == nil {
+		t.Fatal("内置应用不应允许删除")
+	}
+	if err := m.DeleteCustom(id); err != nil {
+		t.Fatalf("删除自定义应用失败：%v", err)
+	}
+}

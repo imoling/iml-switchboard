@@ -84,8 +84,9 @@ type Task struct {
 	Smart      bool            `json:"smart,omitempty"`      // 应用选了「智能分派」（router-smart）
 	EstTokens  int             `json:"est_tokens"`
 	// 媒体参数
-	ImagePath  string    `json:"image_path,omitempty"` // 视频的首帧；出图时也算一张参考图
-	RefImages  []string  `json:"ref_images,omitempty"` // 出图的参考图：本地路径、data URL 或 http 地址
+	ImagePath     string    `json:"image_path,omitempty"`      // 视频的首帧；出图时也算一张参考图
+	LastImagePath string    `json:"last_image_path,omitempty"` // 视频的尾帧（与首帧配合做首尾帧生视频）
+	RefImages     []string  `json:"ref_images,omitempty"`      // 出图/出视频的参考图：本地路径、data URL 或 http 地址
 	Seconds    int       `json:"seconds,omitempty"`
 	Size       string    `json:"size,omitempty"`
 	OutDir     string    `json:"out_dir,omitempty"`

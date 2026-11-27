@@ -44,11 +44,25 @@ type ImageProvider interface {
 
 // VideoRequest 是一次视频生成请求。
 type VideoRequest struct {
-	Prompt    string
-	Model     string
-	Seconds   int
-	ImagePath string
-	Size      string
+	Prompt        string
+	Model         string
+	Seconds       int
+	ImagePath     string
+	LastImagePath string
+	// Refs 是参考图（图生视频/多参考图生视频），本地路径、data URL 或 http 地址；可以有多张。
+	Refs []string
+	Size string
+}
+
+// videoRefs 返回视频请求的全部参考图：Refs 优先，若为空再退回单张 ImagePath。
+func (r VideoRequest) videoRefs() []string {
+	if len(r.Refs) > 0 {
+		return r.Refs
+	}
+	if r.ImagePath != "" {
+		return []string{r.ImagePath}
+	}
+	return nil
 }
 
 // VideoStatus 是异步视频任务的状态。

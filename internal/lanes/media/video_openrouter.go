@@ -42,8 +42,8 @@ func (p *OpenRouterVideo) Submit(ctx context.Context, req VideoRequest) (string,
 	if req.Size != "" {
 		body["resolution"] = req.Size
 	}
-	if req.ImagePath != "" {
-		u, err := imageDataURL(req.ImagePath)
+	if refs := req.videoRefs(); len(refs) > 0 {
+		u, err := imageDataURL(refs[0])
 		if err != nil {
 			return "", err
 		}

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -206,5 +207,29 @@ func TestNumberFormat(t *testing.T) {
 		if got := Count(n); got != want {
 			t.Errorf("Count(%d) = %q，想要 %q", n, got, want)
 		}
+	}
+}
+
+func TestStoreHotReload(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("IMLS_DATA_DIR", dir)
+	st, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Get().Settings.DefaultMode != "balanced" {
+		t.Fatalf("默认模式应为 balanced")
+	}
+	// 模拟外部进程修改 config.yaml 并推进 mtime
+	b, _ := os.ReadFile(st.Path())
+	updated := strings.Replace(string(b), "default_mode: balanced", "default_mode: save", 1)
+	if err := os.WriteFile(st.Path(), []byte(updated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	_ = os.Chtimes(st.Path(), future, future)
+	st.lastCheck = time.Time{}
+	if got := st.Get().Settings.DefaultMode; got != "save" {
+		t.Fatalf("外部修改后应自动热加载为 save，实际 %q", got)
 	}
 }

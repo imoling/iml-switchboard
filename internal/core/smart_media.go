@@ -57,7 +57,7 @@ func (r *Router) smartPickMedia(ctx context.Context, t *Task, d *Decision, force
 	if !cfg.Routing.Smart.Enabled && !force {
 		return // 没打开就照顺序，不在理由里多说一句
 	}
-	if t.Model != "" || t.MediaTier != "" {
+	if t.Model != "" || (t.MediaTier != "" && t.MediaTier != "default") {
 		note("智能分派：指定了型号或档位，照指定的走")
 		return
 	}

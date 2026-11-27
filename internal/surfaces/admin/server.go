@@ -55,6 +55,8 @@ type IntegrationOps interface {
 	// HostModels 和 SetHostModels 管宿主菜单里列出的型号表（Codex、WorkBuddy、pi 等）；ids 为空表示回到默认
 	HostModels(id string) (any, error)
 	SetHostModels(id string, ids []string) (any, error)
+	AddCustom(name string) (map[string]any, error)
+	DeleteCustom(id string) error
 }
 
 // Deps 是接口层需要的全部依赖。
@@ -173,6 +175,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	h("POST /api/jobs/{id}/retry", s.jobRetry)
 	h("POST /api/jobs/{id}/revise", s.jobRevise)
 	h("GET /api/integrations", s.integrations)
+	h("POST /api/integrations", s.integrationAdd)
+	h("DELETE /api/integrations/{id}", s.integrationDelete)
 	h("POST /api/integrations/{id}/connect", s.integrationConnect)
 	h("POST /api/integrations/{id}/disconnect", s.integrationDisconnect)
 	h("PUT /api/integrations/{id}", s.integrationUpdate)
@@ -652,11 +656,12 @@ func (s *Server) rulesBody(cfg *config.Config) map[string]any {
 	for _, c := range cfg.Routing.ContextRules {
 		ctxRules = append(ctxRules, map[string]any{"id": c.ID, "title": c.Title, "off_effect": c.Note, "enabled": c.Enabled})
 	}
-	return map[string]any{"task_table": rows, "explicit": explicit, "context_rules": ctxRules, "sticky": cfg.Routing.Sticky, "tiers": s.tierTables(cfg, ""), "media_order": s.mediaOrderTables(cfg)}
+	return map[string]any{"task_table": rows, "explicit": explicit, "context_rules": ctxRules, "sticky": cfg.Routing.Sticky, "tiers": s.tierTables(cfg, ""), "media_order": s.mediaOrderTables(cfg, "")}
 }
 
-// mediaOrderTables 是出图、出视频的先后表：生效的在前（on），其余能选的跟在后面；custom 表示手排过。
-func (s *Server) mediaOrderTables(cfg *config.Config) map[string]any {
+// mediaOrderTables 是某个宿主（host 为空是全局）出图、出视频的先后表：生效的在前（on），其余能选的跟在后面；
+// custom 表示这一层自己排过；host 非空时额外返回 inherited（全局生效的顺序），方便「改回跟全局」。
+func (s *Server) mediaOrderTables(cfg *config.Config, host string) map[string]any {
 	reg := s.d.Router.Registry()
 	tierOf := map[string]string{}
 	for _, tb := range []map[string]config.MediaTarget{cfg.Media.Image, cfg.Media.Video} {
@@ -673,16 +678,25 @@ func (s *Server) mediaOrderTables(cfg *config.Config) map[string]any {
 	out := map[string]any{}
 	for _, kind := range []core.Kind{core.KindImage, core.KindVideo} {
 		pool := s.d.Router.MediaModels(kind)
-		order := cfg.Routing.MediaOrder[string(kind)]
-		var on []string
-		if len(order) > 0 {
-			on = order
+		var globalOrder []string
+		if g := cfg.Routing.MediaOrder[string(kind)]; len(g) > 0 {
+			globalOrder = g
 		} else {
 			for _, c := range s.d.Router.MediaOrderNow(kind) {
 				if c.Skipped == "" {
-					on = append(on, core.MediaID(c))
+					globalOrder = append(globalOrder, core.MediaID(c))
 				}
 			}
+		}
+		var order []string
+		if host != "" {
+			order = cfg.Integrations[host].MediaOrder[string(kind)]
+		} else {
+			order = cfg.Routing.MediaOrder[string(kind)]
+		}
+		on := globalOrder
+		if len(order) > 0 {
+			on = order
 		}
 		pick := func(c core.Target, enabled bool) map[string]any {
 			group := accLabel[c.AccountID]
@@ -711,7 +725,20 @@ func (s *Server) mediaOrderTables(cfg *config.Config) map[string]any {
 				picks = append(picks, pick(c, false))
 			}
 		}
-		out[string(kind)] = map[string]any{"custom": len(order) > 0, "picks": picks}
+		entry := map[string]any{"custom": len(order) > 0, "picks": picks}
+		if host != "" {
+			inh := []string{}
+			for _, id := range globalOrder {
+				for _, c := range pool {
+					if core.MediaID(c) == id && !c.NoService {
+						inh = append(inh, id)
+						break
+					}
+				}
+			}
+			entry["inherited"] = inh
+		}
+		out[string(kind)] = entry
 	}
 	return out
 }
@@ -842,15 +869,23 @@ func (s *Server) integrationSetBaseline(w http.ResponseWriter, r *http.Request) 
 }
 
 // integrationTiers 是一个宿主自己的档位候选表。
+func (s *Server) integrationTiersBody(cfg *config.Config, id string) map[string]any {
+	out := s.tierTables(cfg, id)
+	for k, v := range s.mediaOrderTables(cfg, id) {
+		out[k] = v
+	}
+	return out
+}
+
 func (s *Server) integrationTiers(w http.ResponseWriter, r *http.Request) (any, error) {
 	id := r.PathValue("id")
 	if !s.knownHost(id) {
 		return nil, &httpError{404, "没有这个应用"}
 	}
-	return s.tierTables(s.d.Router.Config().Get(), id), nil
+	return s.integrationTiersBody(s.d.Router.Config().Get(), id), nil
 }
 
-// integrationSetTiers 保存宿主自己的档位候选表；某档给空表示跟全局。
+// integrationSetTiers 保存宿主自己的档位候选表（含文本三档与生图/生视频）；某档给空表示跟全局。
 func (s *Server) integrationSetTiers(w http.ResponseWriter, r *http.Request) (any, error) {
 	id := r.PathValue("id")
 	if !s.knownHost(id) {
@@ -860,9 +895,32 @@ func (s *Server) integrationSetTiers(w http.ResponseWriter, r *http.Request) (an
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
-	picks, err := s.parseTierPicks(id, in)
+	textIn := map[string][]string{}
+	mediaIn := map[string][]string{}
+	for k, v := range in {
+		if k == "image" || k == "video" {
+			mediaIn[k] = v
+		} else {
+			textIn[k] = v
+		}
+	}
+	picks, err := s.parseTierPicks(id, textIn)
 	if err != nil {
 		return nil, err
+	}
+	mediaOrder := map[string][]string{}
+	for kind, ids := range mediaIn {
+		known := map[string]bool{}
+		for _, c := range s.d.Router.MediaModels(core.Kind(kind)) {
+			known[core.MediaID(c)] = true
+		}
+		keep := []string{}
+		for _, mid := range ids {
+			if known[mid] && !slices.Contains(keep, mid) {
+				keep = append(keep, mid)
+			}
+		}
+		mediaOrder[kind] = keep
 	}
 	err = s.d.Router.Config().Update(func(c *config.Config) error {
 		if c.Integrations == nil {
@@ -882,17 +940,36 @@ func (s *Server) integrationSetTiers(w http.ResponseWriter, r *http.Request) (an
 		if len(it.Tiers) == 0 {
 			it.Tiers = nil
 		}
+		for kind, list := range mediaOrder {
+			if len(list) == 0 {
+				delete(it.MediaOrder, kind)
+				continue
+			}
+			if it.MediaOrder == nil {
+				it.MediaOrder = map[string][]string{}
+			}
+			it.MediaOrder[kind] = list
+		}
+		if len(it.MediaOrder) == 0 {
+			it.MediaOrder = nil
+		}
 		c.Integrations[id] = it
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return s.tierTables(s.d.Router.Config().Get(), id), nil
+	s.d.Bus.Publish("config", map[string]any{"ts": time.Now().Unix()})
+	return s.integrationTiersBody(s.d.Router.Config().Get(), id), nil
 }
 
-// knownHost 判断是不是接入页列出的宿主。
-func (s *Server) knownHost(id string) bool { return slices.Contains(config.HostIDs, id) }
+// knownHost 判断是不是接入页列出的内置或自定义宿主。
+func (s *Server) knownHost(id string) bool {
+	if slices.Contains(config.HostIDs, id) {
+		return true
+	}
+	return s.d.Router.Config().Get().Integrations[id].Custom
+}
 
 // subGroup 是候选表里订阅条目的来源名，和「模型与账号」里的叫法一致。
 var subGroup = map[core.LaneID]string{core.LaneClaudeSub: "Claude 订阅", core.LaneCodexSub: "ChatGPT 订阅", core.LaneAgySub: "Google AI 订阅"}
@@ -1437,6 +1514,9 @@ func (s *Server) accountViews() []accountView {
 			v.Labels[m] = s.d.Router.Registry().Display(m)
 		}
 		v.Tiers = tiers
+		if v.Models == nil {
+			v.Models = []string{}
+		}
 		if d, ok := s.d.Router.Driver(sb.lane); ok {
 			h := d.Health(context.Background())
 			if h.SignedOut {
@@ -1531,6 +1611,10 @@ func (s *Server) accountViews() []accountView {
 			}
 		}
 		v.Tiers = tiers
+		if len(v.Models) == 0 {
+			// 只出图出视频的服务（火山方舟）没有文字型号：不列空档位；型号表给空表，界面拿到 null 会整页崩掉
+			v.Models, v.Tiers, v.TierOptions = []string{}, nil, nil
+		}
 		v.Media = s.mediaItemsFor(a)
 		if len(v.Media) > 0 {
 			v.MediaChoice = map[string]string{}
@@ -2026,7 +2110,7 @@ func (s *Server) jobRevise(w http.ResponseWriter, r *http.Request) (any, error) 
 
 // hostTagged 是请求里带宿主标记的接入：MCP 靠 IMLS_HOST，兼容入口靠请求头或密钥后缀。
 // pi、OpenClaw、DeepSeek Harness 早先接入时写的密钥没有后缀，重新接入一次才计得上。
-var hostTagged = map[string]bool{"claude_code": true, "claude_desktop": true, "codex": true, "gemini_cli": true, "workbuddy": true, "hermes": true, "doubao_work": true,
+var hostTagged = map[string]bool{"claude_code": true, "claude_desktop": true, "codex": true, "antigravity": true, "gemini_cli": true, "workbuddy": true, "hermes": true, "doubao_work": true,
 	"pi": true, "openclaw": true, "deepseek_harness": true}
 
 func (s *Server) integrations(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -2035,12 +2119,14 @@ func (s *Server) integrations(w http.ResponseWriter, r *http.Request) (any, erro
 	if err != nil {
 		return list, nil
 	}
-	// 豆包工作的连接器在它自己的账号里，本机看不到配置；它派过活就算接上了
+	// 豆包工作、Antigravity 的连接器在它们自己的配置里，本机看不到或只做手动配置；派过活且未停用就算接上了
 	ever, _ := s.d.Router.Ledger().HostActivity(time.Time{})
 	for _, it := range list {
 		id, _ := it["id"].(string)
+		custom, _ := it["custom"].(bool)
+		disabled, _ := it["disabled"].(bool)
 		it["baseline"] = s.baselineBody(id)
-		if !hostTagged[id] {
+		if !hostTagged[id] && !custom {
 			continue
 		}
 		a := act[id]
@@ -2048,11 +2134,36 @@ func (s *Server) integrations(w http.ResponseWriter, r *http.Request) (any, erro
 		if !a.Last.IsZero() {
 			it["last_call"] = a.Last
 		}
-		if id == "doubao_work" && ever[id].Calls > 0 {
+		if (id == "doubao_work" || id == "antigravity") && !disabled && ever[id].Calls > 0 {
 			it["status"] = "connected"
 		}
 	}
 	return list, nil
+}
+
+func (s *Server) integrationAdd(w http.ResponseWriter, r *http.Request) (any, error) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if err := decode(r, &in); err != nil {
+		return nil, err
+	}
+	it, err := s.d.Integr.AddCustom(in.Name)
+	if err != nil {
+		return nil, &httpError{400, err.Error()}
+	}
+	if id, _ := it["id"].(string); id != "" {
+		it["baseline"] = s.baselineBody(id)
+		it["calls_7d"] = 0
+	}
+	return it, nil
+}
+
+func (s *Server) integrationDelete(w http.ResponseWriter, r *http.Request) (any, error) {
+	if err := s.d.Integr.DeleteCustom(r.PathValue("id")); err != nil {
+		return nil, &httpError{400, err.Error()}
+	}
+	return map[string]any{"ok": true}, nil
 }
 
 func (s *Server) integrationConnect(w http.ResponseWriter, r *http.Request) (any, error) {

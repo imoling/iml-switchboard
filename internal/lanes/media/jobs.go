@@ -134,7 +134,7 @@ func (d *MediaDriver) runVideoJob(job *core.Job, vp VideoProvider, task *core.Ta
 	var ref string
 	err := withBusyRetry(ctx, func() error {
 		var e error
-		ref, e = vp.Submit(ctx, VideoRequest{Prompt: task.Prompt, Model: target.Model, Seconds: secondsOf(task), ImagePath: task.ImagePath, Size: task.Size})
+		ref, e = vp.Submit(ctx, VideoRequest{Prompt: task.Prompt, Model: target.Model, Seconds: secondsOf(task), ImagePath: task.ImagePath, LastImagePath: task.LastImagePath, Refs: task.ImageRefs(), Size: task.Size})
 		return e
 	})
 	if err != nil {

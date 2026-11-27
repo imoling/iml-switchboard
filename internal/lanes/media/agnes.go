@@ -171,13 +171,22 @@ func (p *AgnesVideo) Submit(ctx context.Context, req VideoRequest) (string, erro
 		size = "1080P"
 	}
 	body := map[string]interface{}{"model": req.Model, "prompt": req.Prompt, "mode": "text", "seconds": strconv.Itoa(secs), "size": size, "aspect_ratio": "16:9", "n": 1}
-	if req.ImagePath != "" {
-		u, err := imageDataURL(req.ImagePath)
+	refs := req.videoRefs()
+	if len(refs) > 0 {
+		u, err := imageDataURL(refs[0])
 		if err != nil {
 			return "", err
 		}
 		body["mode"] = "keyframe"
 		body["first_frame"] = u
+	}
+	if req.LastImagePath != "" {
+		u, err := imageDataURL(req.LastImagePath)
+		if err != nil {
+			return "", err
+		}
+		body["mode"] = "keyframe"
+		body["last_frame"] = u
 	}
 	raw, err := doJSON(ctx, p.Client, p.Name(), http.MethodPost, joinURL(p.base(), "/videos"), headers, body)
 	if err != nil {

@@ -820,11 +820,22 @@ func providerOf(l LaneID) string {
 	return string(l)
 }
 
-// mediaCandidates 返回媒体任务的候选。用户手排过这一类的先后（分派 → 档位候选），又没指定档位，就照手排的；
-// 否则先是所选档位，再是其它档位作为回退。
+// mediaOrderPicks 找媒体任务的先后表：应用自己的优先，其次全局的；都没有返回空。
+func mediaOrderPicks(cfg *config.Config, host string, kind Kind) []string {
+	if host != "" {
+		if order := cfg.Integrations[host].MediaOrder[string(kind)]; len(order) > 0 {
+			return order
+		}
+	}
+	return cfg.Routing.MediaOrder[string(kind)]
+}
+
+// mediaCandidates 返回媒体任务的候选。用户手排过这一类的先后（应用自己排或全局的「分派 → 档位候选」），
+// 就严格只在用户勾选的候选里按手排顺序选；若调用方显式指定了非默认档位（cheap / best / free），
+// 且该档位对应的模型本身可用，则把它提到最前，其余仍按手排顺序回退——绝不再调用用户放进「不用」里的模型。
 func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) []Target {
 	out := r.mediaBase(cfg, t, mediaTier)
-	if order := cfg.Routing.MediaOrder[string(t.Kind)]; len(order) > 0 && t.MediaTier == "" && t.Kind != KindAnimation {
+	if order := mediaOrderPicks(cfg, t.Host, t.Kind); len(order) > 0 && t.Kind != KindAnimation {
 		pool := append(out, r.discoveredMedia(cfg, t.Kind, out)...)
 		var picked []Target
 		for _, id := range order {
@@ -832,6 +843,28 @@ func (r *Router) mediaCandidates(cfg *config.Config, t *Task, mediaTier string) 
 				if MediaID(c) == id && !hasTarget(picked, c) {
 					picked = append(picked, c)
 					break
+				}
+			}
+		}
+		if t.MediaTier != "" && t.MediaTier != "default" {
+			var table map[string]config.MediaTarget
+			if t.Kind == KindImage {
+				table = cfg.Media.Image
+			} else if t.Kind == KindVideo {
+				table = cfg.Media.Video
+			}
+			if mt, ok := table[t.MediaTier]; ok {
+				for _, c := range pool {
+					if c.Provider == mt.Provider && c.Model == mt.Model && c.Skipped == "" {
+						var rest []Target
+						for _, p := range picked {
+							if !hasTarget([]Target{c}, p) {
+								rest = append(rest, p)
+							}
+						}
+						picked = append([]Target{c}, rest...)
+						break
+					}
 				}
 			}
 		}

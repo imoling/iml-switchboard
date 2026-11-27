@@ -124,3 +124,34 @@ func TestMediaOrderHidesNoService(t *testing.T) {
 		}
 	}
 }
+
+// 应用级媒体顺序与停用保护
+func TestHostMediaOrderAndDisabledTool(t *testing.T) {
+	ts, r := newServer(t)
+	_ = r.Config().Update(func(c *config.Config) error {
+		c.API = append(c.API, config.APIAccount{ID: "gw", Provider: "custom", Enabled: true, AllowPaid: true, Media: map[string]string{"image": "gpt-image-2.5-flare"},
+			Discovered: []config.DiscoveredModel{{ID: "gpt-image-2.5-flare"}, {ID: "gpt-image-1.5"}}})
+		return nil
+	})
+	code, body, _ := do(t, ts, "PUT", "/api/integrations/antigravity/tiers", map[string]any{"image": []string{"gw/gpt-image-1.5"}})
+	if code != 200 {
+		t.Fatalf("保存应用级生图顺序失败：%d %v", code, body)
+	}
+	img := body["image"].(map[string]any)
+	if img["custom"] != true {
+		t.Fatalf("应标记为自定义：%v", img)
+	}
+	if got := r.Config().Get().Integrations["antigravity"].MediaOrder["image"]; !slices.Equal(got, []string{"gw/gpt-image-1.5"}) {
+		t.Fatalf("配置未保存：%v", got)
+	}
+	// 停用后 RunTool 拒绝请求
+	_ = r.Config().Update(func(c *config.Config) error {
+		it := c.Integrations["antigravity"]
+		it.Disabled = true
+		c.Integrations["antigravity"] = it
+		return nil
+	})
+	if _, err := RunTool(t.Context(), r, nil, ToolRequest{Name: "ask_model", Host: "antigravity", Args: []byte(`{"prompt":"hi"}`)}); err == nil || !strings.Contains(err.Error(), "已停用") {
+		t.Fatalf("停用后的应用应被拒绝：%v", err)
+	}
+}

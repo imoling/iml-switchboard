@@ -16,22 +16,30 @@ import (
 // RunTool 执行一个 MCP 工具。返回给宿主的文字永远用标准措辞，不走主题词表。
 func RunTool(ctx context.Context, r *core.Router, jobs *core.MemJobStore, req ToolRequest) (string, error) {
 	var a struct {
-		Prompt     string   `json:"prompt"`
-		Spec       string   `json:"spec"`
-		Tier       string   `json:"tier"`
-		Size       string   `json:"size"`
-		OutDir     string   `json:"out_dir"`
-		Seconds    int      `json:"seconds"`
-		ImagePath  string   `json:"image_path"`
-		ImagePaths []string `json:"image_paths"`
-		Engine     string   `json:"engine"`
-		Model      string   `json:"model"`
-		JobID      string   `json:"job_id"`
+		Prompt        string   `json:"prompt"`
+		Spec          string   `json:"spec"`
+		Tier          string   `json:"tier"`
+		Size          string   `json:"size"`
+		OutDir        string   `json:"out_dir"`
+		Seconds       int      `json:"seconds"`
+		ImagePath     string   `json:"image_path"`
+		ImagePaths    []string `json:"image_paths"`
+		LastImagePath string   `json:"last_image_path"`
+		Engine        string   `json:"engine"`
+		Model         string   `json:"model"`
+		JobID         string   `json:"job_id"`
 	}
 	_ = json.Unmarshal(req.Args, &a)
 	host := req.Host
 	if host == "" {
 		host = "mcp"
+	}
+	if it, ok := r.Config().Get().Integrations[host]; ok && it.Disabled {
+		name := it.Name
+		if name == "" {
+			name = host
+		}
+		return "", fmt.Errorf("应用「%s」已停用，到 Switchboard 应用页重新启用后再试", name)
 	}
 	reg := r.Registry()
 	switch req.Name {
@@ -69,17 +77,29 @@ func RunTool(ctx context.Context, r *core.Router, jobs *core.MemJobStore, req To
 		} else if a.Seconds == 0 {
 			a.Seconds = 5
 		}
-		if a.ImagePath != "" {
-			refs, err := resolveRefs(req.ProjectDir, []string{a.ImagePath})
+		var refs []string
+		if kind == core.KindVideo {
+			var err error
+			refs, err = resolveRefs(req.ProjectDir, append([]string{a.ImagePath}, a.ImagePaths...))
 			if err != nil {
 				return "", err
 			}
-			a.ImagePath = refs[0]
-		}
-		if kind == core.KindAnimation {
+			if len(refs) > 0 {
+				a.ImagePath = refs[0]
+			}
+			if a.LastImagePath != "" {
+				last, err := resolveRefs(req.ProjectDir, []string{a.LastImagePath})
+				if err != nil {
+					return "", err
+				}
+				if len(last) > 0 {
+					a.LastImagePath = last[0]
+				}
+			}
+		} else {
 			a.Model = "" // 动画的型号是写代码的模型，在媒体设置里定
 		}
-		t := &core.Task{Prompt: prompt, Kind: kind, MediaTier: a.Tier, Seconds: a.Seconds, ImagePath: a.ImagePath, Model: a.Model, Engine: a.Engine, OutDir: a.OutDir, ProjectDir: req.ProjectDir, Source: "mcp", Host: host}
+		t := &core.Task{Prompt: prompt, Kind: kind, MediaTier: a.Tier, Seconds: a.Seconds, ImagePath: a.ImagePath, LastImagePath: a.LastImagePath, RefImages: refs, Size: a.Size, Model: a.Model, Engine: a.Engine, OutDir: a.OutDir, ProjectDir: req.ProjectDir, Source: "mcp", Host: host}
 		// MCP 调用方最多等 90 秒
 		wctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()

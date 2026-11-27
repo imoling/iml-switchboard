@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -59,8 +61,10 @@ func New(cfg *config.Store, exe, facadeURL string, facadeKey func() string) *Man
 	return &Manager{cfg: cfg, exe: exe, facade: facadeURL, home: home, facadeKey: facadeKey, codexBundled: codexBundledCatalog, codexCheck: codexCheckCatalog, codexStamp: codexVersionStamp}
 }
 
-func (m *Manager) claudeDir() string       { return filepath.Join(m.home, ".claude") }
-func (m *Manager) hermesCfg() string       { return filepath.Join(m.home, ".hermes", "config.yaml") }
+func (m *Manager) claudeDir() string         { return filepath.Join(m.home, ".claude") }
+func (m *Manager) antigravityDir() string    { return filepath.Join(m.home, ".gemini", "antigravity") }
+func (m *Manager) antigravityMcpCfg() string { return filepath.Join(m.home, ".gemini", "config", "mcp_config.json") }
+func (m *Manager) hermesCfg() string         { return filepath.Join(m.home, ".hermes", "config.yaml") }
 func (m *Manager) workbuddyModels() string { return filepath.Join(m.home, ".workbuddy", "models.json") }
 func (m *Manager) piModels() string        { return filepath.Join(m.home, ".pi", "agent", "models.json") }
 func (m *Manager) doubaoWorkApp() string   { return "/Applications/DoubaoWork.app" }
@@ -88,10 +92,21 @@ func (m *Manager) dshInstalled() bool {
 func (m *Manager) openclawCfg() string { return filepath.Join(m.home, ".openclaw", "openclaw.json") }
 func (m *Manager) dshEnv() string      { return filepath.Join(m.dshHome(), ".env") }
 
-// List 返回三个宿主的状态。
+// List 返回全部内置与自定义宿主的状态。
 func (m *Manager) List() []map[string]any {
 	var out []map[string]any
 	for _, id := range config.HostIDs {
+		out = append(out, m.view(id))
+	}
+	cfg := m.cfg.Get()
+	var customIDs []string
+	for id, it := range cfg.Integrations {
+		if it.Custom && !slices.Contains(config.HostIDs, id) {
+			customIDs = append(customIDs, id)
+		}
+	}
+	sort.Strings(customIDs)
+	for _, id := range customIDs {
 		out = append(out, m.view(id))
 	}
 	return out
@@ -99,9 +114,28 @@ func (m *Manager) List() []map[string]any {
 
 func (m *Manager) view(id string) map[string]any {
 	st := m.cfg.Get().Integrations[id]
-	v := map[string]any{"id": id, "status": "disconnected", "options": st.Options, "available": true}
+	v := map[string]any{"id": id, "status": "disconnected", "options": st.Options, "available": true, "disabled": st.Disabled}
 	if st.Options == nil {
 		v["options"] = map[string]bool{} // 空 map 放进 any 后不等于 nil，不单独判会把 null 发给界面
+	}
+	if st.Custom {
+		name := st.Name
+		if name == "" {
+			name = id
+		}
+		v["name"] = name
+		v["custom"] = true
+		if st.Disabled {
+			v["status"] = "disconnected"
+		} else {
+			v["status"] = "connected"
+		}
+		v["options"] = map[string]bool{"disabled": st.Disabled}
+		v["snippet"] = m.customMCPSnippet(id, name)
+		if n := len(st.Tiers) + len(st.MediaOrder); n > 0 {
+			v["tiers_custom"] = n
+		}
+		return v
 	}
 	switch id {
 	case "claude_code":
@@ -134,6 +168,20 @@ func (m *Manager) view(id string) map[string]any {
 		}
 		m.SyncCodexCatalog()
 		v["options"] = map[string]bool{"takeover": m.codexTakenOver()}
+	case "antigravity":
+		if _, err := os.Stat(m.antigravityDir()); err != nil {
+			v["available"] = false
+			v["detail"] = "本机没有找到 Antigravity 数据目录"
+		} else if m.antigravityRegistered() {
+			if st.Disabled {
+				v["status"] = "disconnected"
+			} else {
+				v["status"] = "connected"
+				m.SyncAntigravity()
+			}
+		}
+		v["options"] = map[string]bool{"disabled": st.Disabled}
+		v["snippet"] = m.antigravitySnippet()
 	case "gemini_cli":
 		if _, err := exec.LookPath("gemini"); err != nil {
 			v["available"] = false
@@ -206,7 +254,7 @@ func (m *Manager) view(id string) map[string]any {
 	if modelListHosts[id] {
 		v["models_count"] = len(m.selectedHostModels(id))
 	}
-	if n := len(st.Tiers); n > 0 {
+	if n := len(st.Tiers) + len(st.MediaOrder); n > 0 {
 		v["tiers_custom"] = n
 	}
 	return v
@@ -220,6 +268,8 @@ func (m *Manager) Connect(id string, opts map[string]bool) (map[string]any, erro
 		err = m.connectClaude(opts)
 	case "codex":
 		err = m.connectCodex()
+	case "antigravity":
+		err = m.connectAntigravity()
 	case "gemini_cli":
 		err = m.connectGemini()
 	case "hermes":
@@ -265,6 +315,8 @@ func (m *Manager) Disconnect(id string) (map[string]any, error) {
 		err = m.disconnectClaude()
 	case "codex":
 		err = m.disconnectCodex()
+	case "antigravity":
+		err = m.disconnectAntigravity()
 	case "gemini_cli":
 		err = m.disconnectGemini()
 	case "hermes":
@@ -296,8 +348,24 @@ func (m *Manager) Disconnect(id string) (map[string]any, error) {
 	return m.view(id), nil
 }
 
-// Update 只改选项（Claude Code 和 WinWork 有）。
+// Update 改应用选项（开关、停用等）。
 func (m *Manager) Update(id string, opts map[string]bool) (map[string]any, error) {
+	if v, ok := opts["disabled"]; ok {
+		if err := m.cfg.Update(func(c *config.Config) error {
+			if c.Integrations == nil {
+				c.Integrations = map[string]config.Integration{}
+			}
+			it := c.Integrations[id]
+			it.Disabled = v
+			c.Integrations[id] = it
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		if m.cfg.Get().Integrations[id].Custom || id == "antigravity" || id == "doubao_work" {
+			return m.view(id), nil
+		}
+	}
 	if id == "winwork" {
 		if v, ok := opts["write_claude_md"]; ok {
 			if err := setInstructionBlock(m.winworkMdPath(), v); err != nil {
@@ -881,6 +949,216 @@ func (m *Manager) disconnectWorkBuddy() error {
 // ---------- 豆包工作 ----------
 
 // doubaoWorkSnippet 给「技能 · 连接器 · 伙伴 → 新建 → 新建自定义连接器」用；桌面版支持本地命令和 HTTP 两种。
+func (m *Manager) antigravitySnippet() string {
+	entry := map[string]any{
+		"mcpServers": map[string]any{
+			"switchboard": map[string]any{
+				"command": m.exe,
+				"args":    []string{"mcp"},
+				"env": map[string]string{
+					"IMLS_HOST": "antigravity",
+					"NO_PROXY":  "127.0.0.1,localhost",
+				},
+			},
+		},
+	}
+	b, _ := json.MarshalIndent(entry, "", "  ")
+	return "// 写进 ~/.gemini/config/mcp_config.json\n" + string(b)
+}
+
+func (m *Manager) antigravityRegistered() bool {
+	b, err := os.ReadFile(m.antigravityMcpCfg())
+	if err != nil {
+		return false
+	}
+	var doc struct {
+		MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if json.Unmarshal(b, &doc) != nil {
+		return false
+	}
+	_, ok1 := doc.MCPServers["switchboard"]
+	_, ok2 := doc.MCPServers[mcpName]
+	return ok1 || ok2
+}
+
+func (m *Manager) connectAntigravity() error {
+	path := m.antigravityMcpCfg()
+	doc := map[string]json.RawMessage{}
+	if b, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(b, &doc); err != nil {
+			return errors.New("mcp_config.json 无法解析，请手动合并下面的片段")
+		}
+		_ = os.WriteFile(path+".bak-imls-"+time.Now().Format("20060102-150405"), b, 0o600)
+	}
+	servers := map[string]json.RawMessage{}
+	if raw, ok := doc["mcpServers"]; ok {
+		_ = json.Unmarshal(raw, &servers)
+	}
+	key := "switchboard"
+	if _, ok := servers[mcpName]; ok {
+		if _, ok2 := servers["switchboard"]; !ok2 {
+			key = mcpName
+		}
+	}
+	entry := map[string]any{}
+	if raw, ok := servers[key]; ok {
+		_ = json.Unmarshal(raw, &entry)
+	}
+	entry["command"] = m.exe
+	entry["args"] = []string{"mcp"}
+	env := map[string]string{}
+	if rawEnv, ok := entry["env"].(map[string]any); ok {
+		for k, v := range rawEnv {
+			if s, ok := v.(string); ok {
+				env[k] = s
+			}
+		}
+	}
+	env["IMLS_HOST"] = "antigravity"
+	if env["NO_PROXY"] == "" {
+		env["NO_PROXY"] = "127.0.0.1,localhost"
+	}
+	entry["env"] = env
+	eb, _ := json.Marshal(entry)
+	servers[key] = eb
+	sb, _ := json.Marshal(servers)
+	doc["mcpServers"] = sb
+	out, _ := json.MarshalIndent(doc, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0o600)
+}
+
+func (m *Manager) disconnectAntigravity() error {
+	path := m.antigravityMcpCfg()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	doc := map[string]json.RawMessage{}
+	if json.Unmarshal(b, &doc) != nil {
+		return nil
+	}
+	servers := map[string]json.RawMessage{}
+	_ = json.Unmarshal(doc["mcpServers"], &servers)
+	delete(servers, "switchboard")
+	delete(servers, mcpName)
+	sb, _ := json.Marshal(servers)
+	doc["mcpServers"] = sb
+	out, _ := json.MarshalIndent(doc, "", "  ")
+	return os.WriteFile(path, append(out, '\n'), 0o600)
+}
+
+// SyncAntigravity 在 Antigravity 已接入但路径或 IMLS_HOST 过旧时，静默同步更新 mcp_config.json。
+func (m *Manager) SyncAntigravity() {
+	if !m.antigravityRegistered() {
+		return
+	}
+	b, err := os.ReadFile(m.antigravityMcpCfg())
+	if err != nil {
+		return
+	}
+	var doc struct {
+		MCPServers map[string]struct {
+			Command string            `json:"command"`
+			Env     map[string]string `json:"env"`
+		} `json:"mcpServers"`
+	}
+	if json.Unmarshal(b, &doc) != nil {
+		return
+	}
+	cur, ok := doc.MCPServers["switchboard"]
+	if !ok {
+		cur = doc.MCPServers[mcpName]
+	}
+	if cur.Command == m.exe && cur.Env["IMLS_HOST"] == "antigravity" {
+		return
+	}
+	_ = m.connectAntigravity()
+}
+
+func (m *Manager) customMCPSnippet(id, name string) string {
+	return fmt.Sprintf(`在 %s 的工具配置里添加 Switchboard（两种方式任选其一）：
+
+方式一（推荐）：本地命令（STDIO）
+  命令：%s
+  参数：mcp
+  环境变量：IMLS_HOST=%s
+
+方式二：HTTP
+  地址：%s/mcp
+  请求头：Authorization: Bearer %s.%s
+          X-IMLS-Host: %s
+`, name, m.exe, id, m.facade, m.facadeKey(), id, id)
+}
+
+// AddCustom 添加一个自定义应用，返回视图。
+func (m *Manager) AddCustom(name string) (map[string]any, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errors.New("请填写应用名称")
+	}
+	id := slugHostID(name)
+	if err := m.cfg.Update(func(c *config.Config) error {
+		if c.Integrations == nil {
+			c.Integrations = map[string]config.Integration{}
+		}
+		cand := id
+		for i := 2; slices.Contains(config.HostIDs, cand) || c.Integrations[cand].Custom || c.Integrations[cand].Connected; i++ {
+			cand = fmt.Sprintf("%s_%d", id, i)
+		}
+		id = cand
+		c.Integrations[id] = config.Integration{Name: name, Custom: true, Connected: true}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return m.view(id), nil
+}
+
+// DeleteCustom 删除一个用户添加的自定义应用。
+func (m *Manager) DeleteCustom(id string) error {
+	if slices.Contains(config.HostIDs, id) {
+		return errors.New("内置应用不能删除")
+	}
+	return m.cfg.Update(func(c *config.Config) error {
+		it, ok := c.Integrations[id]
+		if !ok || !it.Custom {
+			return errors.New("没有这个自定义应用")
+		}
+		delete(c.Integrations, id)
+		return nil
+	})
+}
+
+// slugHostID 把应用名规范成小写字母、数字、下划线标识（匹配 CheckHostKey 的约束，最长 28 字符）。
+func slugHostID(name string) string {
+	var b strings.Builder
+	lastUnder := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastUnder = false
+		default:
+			if b.Len() > 0 && !lastUnder {
+				b.WriteByte('_')
+				lastUnder = true
+			}
+		}
+		if b.Len() >= 24 {
+			break
+		}
+	}
+	s := strings.Trim(b.String(), "_")
+	if s == "" {
+		return strings.TrimPrefix(core.NewID("app"), "") // app_<hex>
+	}
+	return s
+}
+
 func (m *Manager) doubaoWorkSnippet() string {
 	return fmt.Sprintf(`豆包工作 → 左侧「技能 · 连接器 · 伙伴」→ 右上角「新建」→「新建自定义连接器」
 

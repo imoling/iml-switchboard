@@ -78,9 +78,21 @@ func TestMediaOrder(t *testing.T) {
 	if len(live(d.Candidates)) != 2 {
 		t.Fatalf("表外的不用：%+v", d.Candidates)
 	}
-	// 指定了最好档：最好档配的那个先上（这里没账号会被跳过），不按手排
-	if d := r.Decide(&Task{Prompt: "一只猫", Kind: KindImage, MediaTier: "best"}); d.Candidates[0].Model == "gpt-image-2.5-flare" && d.Candidates[0].Skipped == "" && len(live(d.Candidates)) == 2 {
-		t.Fatalf("指定档位时不该照手排：%+v", d.Candidates)
+	// 指定了最好档但最好档没配账号：仍应回退到手排顺序里的候选，不能绕开手排去用「不用」里的便宜档
+	if got := first("best"); got != "gpt-image-2.5-flare" {
+		t.Fatalf("指定档位不可用时应回退到手排第一：%s", got)
+	}
+	// 指定了便宜档且便宜档已配账号：便宜档提到最前，其余仍按手排回退
+	_ = r.cfg.Update(func(c *config.Config) error {
+		c.API = append(c.API, config.APIAccount{ID: "ark1", Provider: "ark", Enabled: true})
+		return nil
+	})
+	if got := first("cheap"); got != "doubao-seedream-5-0-flash-260915" {
+		t.Fatalf("显式指定可用的便宜档时应先用便宜档：%s", got)
+	}
+	// 但指定不可用的最好档时，绝不能落到没勾选的便宜档（Seedream）上
+	if got := first("best"); got != "gpt-image-2.5-flare" {
+		t.Fatalf("指定不可用的最好档时应落到手排的 GPT，而不是未勾选的 Seedream：%s", got)
 	}
 }
 
@@ -123,5 +135,47 @@ func TestSmartMedia(t *testing.T) {
 	call, _, err := r.Run(context.Background(), &Task{Prompt: "画一只狗", Kind: KindImage, Source: "mcp"}, nil)
 	if err != nil || calls != n || call.Model != "gpt-image-2.5-flare" {
 		t.Fatalf("没打开智能分派时照顺序、不问判官：%v %d %v", call, calls, err)
+	}
+}
+
+// 调用方显式传 tier=default 时仍应走手排表与智能分派（只有 cheap/best/free 才覆盖手排）；
+// 应用自己排的 MediaOrder 优先于全局。
+func TestMediaDefaultTierAndHostOrder(t *testing.T) {
+	r := mediaRouter(t)
+	_ = r.cfg.Update(func(c *config.Config) error {
+		c.API = append([]config.APIAccount{{ID: "ag", Provider: "agnes", Enabled: true, Media: map[string]string{"image": "agnes-image-2.5-flash"}}}, c.API...)
+		c.Routing.MediaOrder = map[string][]string{"image": {"gw/gpt-image-2.5-flare", "ag/agnes-image-2.5-flash"}}
+		c.Integrations = map[string]config.Integration{
+			"antigravity": {MediaOrder: map[string][]string{"image": {"ag/agnes-image-2.5-flash"}}},
+		}
+		return nil
+	})
+	first := func(host, tier string) string {
+		for _, c := range r.Decide(&Task{Prompt: "画一只猫", Kind: KindImage, Host: host, MediaTier: tier}).Candidates {
+			if c.Skipped == "" {
+				return c.Model
+			}
+		}
+		return ""
+	}
+	if got := first("", "default"); got != "gpt-image-2.5-flare" {
+		t.Fatalf("tier=default 应仍走全局手排表：%s", got)
+	}
+	if got := first("antigravity", "default"); got != "agnes-image-2.5-flash" {
+		t.Fatalf("应用级手排表应优先于全局：%s", got)
+	}
+	if got := first("claude_code", "default"); got != "gpt-image-2.5-flare" {
+		t.Fatalf("未单独排的应用应回退全局手排表：%s", got)
+	}
+	// 智能分派在 tier=default 时也生效
+	_ = r.cfg.Update(func(c *config.Config) error { c.Routing.Smart.Enabled = true; return nil })
+	called := 0
+	r.SetSmartJudge(func(ctx context.Context, task string, sig map[string]any, criteria map[string]string, ins string) (map[string]float64, error) {
+		called++
+		return map[string]float64{"1": 0.1, "2": 0.9}, nil
+	})
+	d := r.DecideSmart(context.Background(), &Task{Prompt: "画图标", Kind: KindImage, MediaTier: "default"}, false)
+	if called != 1 || d.Candidates[0].Model != "agnes-image-2.5-flash" {
+		t.Fatalf("tier=default 应照常触发智能分派：called=%d top=%+v", called, d.Candidates[0])
 	}
 }

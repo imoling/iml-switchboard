@@ -47,6 +47,9 @@ func (fakeAccounts) Preset(p string) (string, string, map[string][]string, bool,
 	if p == "custom" {
 		return "", "USD", map[string][]string{}, false, true // 和真的一样：地址由用户填
 	}
+	if p == "ark" {
+		return "https://ark/api/v3", "CNY", map[string][]string{}, false, true // 和真的一样：只出图出视频，没有文字型号
+	}
 	return "https://x/v1", "CNY", map[string][]string{"low": {"glm-5.3-flash"}, "mid": {"glm-5.3"}}, false, true
 }
 func (fakeAccounts) ListModels(ctx context.Context, baseURL, apiKey string) ([]config.DiscoveredModel, error) {
@@ -77,6 +80,10 @@ func (fakeIntegr) HostModels(id string) (any, error) {
 func (fakeIntegr) SetHostModels(id string, ids []string) (any, error) {
 	return map[string]any{"models": ids, "custom": len(ids) > 0}, nil
 }
+func (fakeIntegr) AddCustom(name string) (map[string]any, error) {
+	return map[string]any{"id": "custom_app", "name": name, "custom": true, "status": "connected"}, nil
+}
+func (fakeIntegr) DeleteCustom(id string) error { return nil }
 
 func newServer(t *testing.T) (*httptest.Server, *core.Router) {
 	t.Helper()
@@ -525,5 +532,33 @@ func TestHostTierPicks(t *testing.T) {
 	}
 	if code, _, _ := do(t, ts, "GET", "/api/integrations/nope/tiers", nil); code != 404 {
 		t.Fatalf("不认识的宿主应 404：%d", code)
+	}
+}
+
+// 只出图出视频的服务（火山方舟）没有文字型号：型号表要给空表不给 null，也不列空档位；
+// 以前给 null，模型页一打开它的档位弹窗就整页崩掉，选不了视频型号
+func TestMediaOnlyAccountView(t *testing.T) {
+	ts, r := newServer(t)
+	_ = r.Config().Update(func(c *config.Config) error {
+		c.API = append(c.API, config.APIAccount{ID: "ark-1", Provider: "ark", Enabled: true, Models: map[string][]string{"low": {}, "mid": {}, "high": {}}})
+		return nil
+	})
+	_, _, raw := do(t, ts, "GET", "/api/accounts", nil)
+	var list []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range list {
+		if string(a["models"]) == "null" {
+			t.Errorf("%s 的型号表是 null", a["id"])
+		}
+		if string(a["id"]) == `"ark-1"` {
+			if string(a["models"]) != "[]" {
+				t.Errorf("方舟没有文字型号，型号表应为空表：%s", a["models"])
+			}
+			if _, ok := a["tiers"]; ok {
+				t.Errorf("没有文字型号就不列档位：%s", a["tiers"])
+			}
+		}
 	}
 }

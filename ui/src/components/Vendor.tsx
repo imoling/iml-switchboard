@@ -22,7 +22,7 @@ import mark from '../assets/app-mark.svg';
 const MAP: Record<string, string> = {
   anthropic: claude, claude: claude, claude_sub: claude, claude_code: claude, claude_desktop: claude,
   openai: openai, chatgpt: openai, codex: openai, codex_sub: openai,
-  google: gemini, gemini: gemini, gemini_cli: gemini, agy: gemini, agy_sub: gemini,
+  google: gemini, gemini: gemini, gemini_cli: gemini, agy: gemini, agy_sub: gemini, antigravity: gemini,
   zhipu: zhipu, glm: zhipu,
   qwen: qwen, alibaba: qwen, bailian: bailian, dashscope: bailian,
   volcengine: volcengine, ark: volcengine, doubao: doubao, seedream: volcengine, seedance: volcengine,
@@ -69,8 +69,8 @@ export function Vendor({ provider, model, size = 'sm' }: { provider?: string; mo
 }
 
 export function VendorLogo({ provider }: { provider: string }) {
-  const src = MAP[provider.toLowerCase()];
-  return <div className={`logo ${provider === 'workbuddy' || provider === 'winwork' || provider === 'agnes' ? 'lgimg' : ''}`}>{src ? <img src={src} alt="" /> : <span className="muted">?</span>}</div>;
+  const src = MAP[provider.toLowerCase()] ?? gateway;
+  return <div className={`logo ${provider === 'workbuddy' || provider === 'winwork' || provider === 'agnes' ? 'lgimg' : ''}`}><img src={src} alt="" /></div>;
 }
 
 export const Model = ({ provider, name }: { provider?: string; name: string }) => <><Vendor provider={provider} model={name} />{name}</>;

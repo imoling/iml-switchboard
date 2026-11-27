@@ -92,8 +92,9 @@ export interface TierPick { id: string; lane: Lane; account_id?: string; model: 
 /** 一档的候选：生效的按顺序在前，其余可选的跟在后面；custom 为假时跟着内置排法走 */
 export interface TierTable { custom: boolean; picks: TierPick[]; inherited?: string[] }
 export type PickTier = 'low' | 'mid' | 'high';
-/** 一个宿主三档的候选表 */
-export type HostTiers = Record<PickTier, TierTable>;
+export type PickKey = PickTier | 'image' | 'video';
+/** 一个宿主三档加生图、生视频的候选表 */
+export type HostTiers = Record<PickTier, TierTable> & Partial<Record<'image' | 'video', TierTable>>;
 export interface Rules {
   task_table: TaskRule[]; explicit: ExplicitRule[]; context_rules: ContextRule[]; classifier?: Record<string, unknown>;
   tiers?: Record<'low' | 'mid' | 'high', TierTable>;
@@ -105,14 +106,14 @@ export interface Rules {
 }
 export interface Suggestion { task_type: string; name?: string; escalations: number; from_tier: Tier; to_tier: Tier; weekly_delta_usd: number }
 
-export type IntegrationId = 'claude_code' | 'claude_desktop' | 'codex' | 'gemini_cli' | 'doubao_work' | 'pi' | 'deepseek_harness' | 'openclaw' | 'hermes' | 'workbuddy' | 'winwork';
+export type IntegrationId = string;
 export interface Integration {
-  id: IntegrationId; status: 'connected' | 'disconnected' | 'manual';
-  options: { write_claude_md?: boolean; opusplan?: boolean; commands?: boolean; takeover?: boolean }; snippet?: string; available?: boolean; detail?: string;
+  id: IntegrationId; name?: string; custom?: boolean; disabled?: boolean; status: 'connected' | 'disconnected' | 'manual';
+  options: { write_claude_md?: boolean; opusplan?: boolean; commands?: boolean; takeover?: boolean; disabled?: boolean }; snippet?: string; available?: boolean; detail?: string;
   calls_7d?: number; last_call?: string;
   /** 写进宿主菜单的型号数；只有带型号表的宿主有 */
   models_count?: number;
-  /** 这个宿主自己排过几档的候选表 */
+  /** 这个宿主自己排过几项候选表（三档 + 生图/生视频） */
   tiers_custom?: number;
   /** 应用原价按哪个型号、什么单价算；source 是 custom（手填）、builtin（内置价目表）或 none（没有价） */
   baseline?: AppBaseline;

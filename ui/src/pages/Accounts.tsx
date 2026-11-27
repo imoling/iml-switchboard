@@ -153,7 +153,7 @@ export function Accounts() {
               <div className="tt">{isTier(k) ? <><TierSprite tier={k} scale={2} /> {t(`tier.${k}`)}</> : k}</div>
               <select className="sel" value={v} onChange={async (e) => { const tiers = { ...tierEdit.tiers, [k]: e.target.value }; setTierEdit({ ...tierEdit, tiers }); await act(tierEdit.id, () => api.updateAccount(tierEdit.id, { tiers })); }}>
                 {tierEdit.kind === 'api' && <option value="">不用</option>}
-                {[...(v ? [v] : []), ...tierEdit.models.filter((m) => m !== v)].filter((m) => tierEdit.allow_paid !== false || isFree(tierEdit, m)).map((m) => <option key={m} value={m}>{name(tierEdit, m)}{isFree(tierEdit, m) ? '（免费）' : ''}</option>)}
+                {[...(v ? [v] : []), ...(tierEdit.models ?? []).filter((m) => m !== v)].filter((m) => tierEdit.allow_paid !== false || isFree(tierEdit, m)).map((m) => <option key={m} value={m}>{name(tierEdit, m)}{isFree(tierEdit, m) ? '（免费）' : ''}</option>)}
               </select>
             </div>
           ))}

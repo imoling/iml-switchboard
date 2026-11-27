@@ -672,3 +672,47 @@ func TestBusyRetry(t *testing.T) {
 		t.Fatalf("不是正忙的错误不该重试：%v %d", err, n)
 	}
 }
+
+func TestArkVideoReferenceAndFrames(t *testing.T) {
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		bodies = append(bodies, m)
+		fmt.Fprint(w, `{"id":"cgt-ref"}`)
+	}))
+	defer srv.Close()
+	ark := &ArkVideo{Account: acct("a", "ark", srv.URL+"/api/v3"), Client: srv.Client()}
+	ctx := context.Background()
+
+	// 1. 单图：first_frame
+	if _, err := ark.Submit(ctx, VideoRequest{Prompt: "单图", Model: "m", Refs: []string{"https://example.com/1.png"}}); err != nil {
+		t.Fatal(err)
+	}
+	// 2. 多参考图：全部 reference_image
+	if _, err := ark.Submit(ctx, VideoRequest{Prompt: "多图", Model: "m", Refs: []string{"https://example.com/1.png", "https://example.com/2.png"}}); err != nil {
+		t.Fatal(err)
+	}
+	// 3. 首尾帧：first_frame + last_frame
+	if _, err := ark.Submit(ctx, VideoRequest{Prompt: "首尾帧", Model: "m", Refs: []string{"https://example.com/1.png"}, LastImagePath: "https://example.com/end.png"}); err != nil {
+		t.Fatal(err)
+	}
+	roles := func(m map[string]any) []string {
+		var out []string
+		for _, item := range m["content"].([]any) {
+			if role, ok := item.(map[string]any)["role"].(string); ok {
+				out = append(out, role)
+			}
+		}
+		return out
+	}
+	if got := strings.Join(roles(bodies[0]), ","); got != "first_frame" {
+		t.Fatalf("单图应为 first_frame，实际 %s", got)
+	}
+	if got := strings.Join(roles(bodies[1]), ","); got != "reference_image,reference_image" {
+		t.Fatalf("多图应为 reference_image，实际 %s", got)
+	}
+	if got := strings.Join(roles(bodies[2]), ","); got != "first_frame,last_frame" {
+		t.Fatalf("首尾帧应为 first_frame,last_frame，实际 %s", got)
+	}
+}

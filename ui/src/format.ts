@@ -52,8 +52,8 @@ export const LANE_CHIP: Record<LaneGroup, string> = { sub: 'c-s', api: 'c-a', me
 export const TIER_CHIP: Record<Tier, string> = { low: 'c-lo', mid: 'c-mid', high: 'c-hi', top: 'c-top' };
 export const MEDIA_TIER_LABEL: Record<string, string> = { cheap: '便宜档', default: '默认档', best: '最好档', free: '订阅出图' };
 
-export const HOST_LABEL: Record<string, string> = { claude_code: 'Claude Code', claude_desktop: 'Claude Desktop', codex: 'Codex', gemini_cli: 'Gemini CLI', pi: 'pi', openclaw: 'OpenClaw', deepseek_harness: 'DeepSeek Harness', doubao_work: '豆包工作', hermes: 'Hermes', workbuddy: 'WorkBuddy', winwork: 'WinWork', quick: '快速面板', cli: '命令行', redo: '重做', facade: '兼容接口', mcp: '其他应用' };
-export const hostLabel = (c: Pick<Call, 'source' | 'host'>) => HOST_LABEL[c.host ?? ''] ?? HOST_LABEL[c.source] ?? c.source;
+export const HOST_LABEL: Record<string, string> = { claude_code: 'Claude Code', claude_desktop: 'Claude Desktop', codex: 'Codex', antigravity: 'Antigravity', gemini_cli: 'Gemini CLI', pi: 'pi', openclaw: 'OpenClaw', deepseek_harness: 'DeepSeek Harness', doubao_work: '豆包工作', hermes: 'Hermes', workbuddy: 'WorkBuddy', winwork: 'WinWork', quick: '快速面板', cli: '命令行', redo: '重做', facade: '兼容接口', mcp: '其他应用' };
+export const hostLabel = (c: Pick<Call, 'source' | 'host'>) => HOST_LABEL[c.host ?? ''] ?? (c.host && c.host !== 'mcp' ? c.host : undefined) ?? HOST_LABEL[c.source] ?? c.source;
 
 export const hhmm = (iso: string) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 export const tokens = (n?: number) => (n === undefined ? '—' : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));

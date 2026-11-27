@@ -96,15 +96,29 @@ func New(opt Options) *MediaDriver {
 // ID 返回渠道标识。
 func (d *MediaDriver) ID() core.LaneID { return core.LaneMedia }
 
+// isUnusableProjectDir 判断宿主传来的工作目录是否不可用（空、或文件系统根目录如 "/" / "C:\"）。
+// 桌面端 GUI 宿主拉起 MCP 子进程时 cwd 常常是 "/"，往 "/assets" 写会在只读根分区报错。
+func isUnusableProjectDir(dir string) bool {
+	if dir == "" {
+		return true
+	}
+	clean := filepath.Clean(dir)
+	return filepath.Dir(clean) == clean
+}
+
 // DefaultOutDir 解析产物目录：Task.OutDir 优先，其次 ProjectDir/assets，最后应用支持目录下的 media/。
 func DefaultOutDir(task *core.Task) (string, error) {
+	usableProj := !isUnusableProjectDir(task.ProjectDir)
 	switch {
 	case task.OutDir != "":
-		if filepath.IsAbs(task.OutDir) || task.ProjectDir == "" {
+		if filepath.IsAbs(task.OutDir) {
 			return task.OutDir, nil
 		}
-		return filepath.Join(task.ProjectDir, task.OutDir), nil
-	case task.ProjectDir != "":
+		if usableProj {
+			return filepath.Join(task.ProjectDir, task.OutDir), nil
+		}
+		return filepath.Join(config.DataDir(), task.OutDir), nil
+	case usableProj:
 		return filepath.Join(task.ProjectDir, "assets"), nil
 	}
 	return filepath.Join(config.DataDir(), "media"), nil

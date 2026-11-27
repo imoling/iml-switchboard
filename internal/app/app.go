@@ -211,7 +211,7 @@ func (a *App) mediaOptions(client *http.Client) media.Options {
 	dir := config.DataDir()
 	return media.Options{Jobs: a.Jobs, Accounts: a.API, Codex: a.Codex, Claude: a.Claude, Client: client, AnimRoot: filepath.Join(dir, "animations"),
 		OutDir: func(t *core.Task) (string, error) {
-			if t.OutDir == "" && t.ProjectDir == "" {
+			if t.OutDir == "" && (t.ProjectDir == "" || filepath.Dir(filepath.Clean(t.ProjectDir)) == filepath.Clean(t.ProjectDir)) {
 				return filepath.Join(dir, "media"), nil
 			}
 			return media.DefaultOutDir(t)
@@ -379,6 +379,7 @@ func (a *App) Serve(ctx context.Context) error {
 	a.startHousekeeping(ctx)
 	a.startUpdateCheck(ctx)
 	go a.Integr.SyncCodexCatalog()
+	go a.Integr.SyncAntigravity()
 	err = srv.Serve(ln)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil

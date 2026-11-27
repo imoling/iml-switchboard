@@ -6,7 +6,7 @@ import { type Floor, hash, type LaneGroup, type Tower, type Wizard } from './mod
 import { TOWER_MAX } from './scene';
 
 const TOWER_COLOR: Record<string, string> = {
-  claude_code: '#C98A3B', claude_desktop: '#B5835A', codex: '#3A3935', workbuddy: '#7D8F5E', gemini_cli: '#4A6785',
+  claude_code: '#C98A3B', claude_desktop: '#B5835A', codex: '#3A3935', antigravity: '#4A6785', workbuddy: '#7D8F5E', gemini_cli: '#4A6785',
   hermes: '#8C5A7A', openclaw: '#A4473A', winwork: '#3E7CB1', pi: '#6F6A61', doubao_work: '#3E6BB0', deepseek_harness: '#4D6BFE',
 };
 const SPARE = ['#8C5A7A', '#3E7CB1', '#A4473A', '#6F6A61', '#7D8F5E'];

@@ -1,4 +1,4 @@
-import type { Quota, Account, Call, Decision, Evaluation, HostModelList, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview, QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier, UpdateInfo, HostTiers, PickTier, Price, AppBaseline, SmartSettings, Effort } from './types';
+import type { Quota, Account, Call, Decision, Evaluation, HostModelList, Integration, IntegrationId, Job, MediaLibrary, Mode, Onboarding, Overview, QuickEvent, QuickPreview, Rules, Settings, Status, StreamEvent, Suggestion, Theme, Tier, UpdateInfo, HostTiers, PickKey, Price, AppBaseline, SmartSettings, Effort } from './types';
 
 export const BASE = 'http://127.0.0.1:18081';
 const HEADERS = { 'X-IMLS-Client': 'ui' };
@@ -83,6 +83,8 @@ export const api = {
   retryJob: (id: string, model?: string) => post<Job>(`/api/jobs/${id}/retry`, { model }),
   reviseJob: (id: string, instruction: string) => post<Job>(`/api/jobs/${id}/revise`, { instruction }),
   integrations: () => get<Integration[]>('/api/integrations'),
+  addIntegration: (name: string) => post<Integration>('/api/integrations', { name }),
+  deleteIntegration: (id: IntegrationId) => del<{ ok: boolean }>(`/api/integrations/${id}`),
   connect: (id: IntegrationId, options?: Integration['options']) => post<Integration>(`/api/integrations/${id}/connect`, { options }),
   disconnect: (id: IntegrationId) => post<Integration>(`/api/integrations/${id}/disconnect`),
   setIntegration: (id: IntegrationId, options: Integration['options']) => put<Integration>(`/api/integrations/${id}`, { options }),
@@ -90,8 +92,8 @@ export const api = {
   /** 空数组表示回到默认 */
   setHostModels: (id: IntegrationId, models: string[]) => put<HostModelList>(`/api/integrations/${id}/models`, { models }),
   hostTiers: (id: IntegrationId) => get<HostTiers>(`/api/integrations/${id}/tiers`),
-  /** 某档给空数组表示跟全局 */
-  setHostTiers: (id: IntegrationId, picks: Partial<Record<PickTier, string[]>>) => put<HostTiers>(`/api/integrations/${id}/tiers`, picks),
+  /** 某档或某类媒体给空数组表示跟全局 */
+  setHostTiers: (id: IntegrationId, picks: Partial<Record<PickKey, string[]>>) => put<HostTiers>(`/api/integrations/${id}/tiers`, picks),
   setBaseline: (id: IntegrationId, body: { model: string; price?: Price }) => put<AppBaseline>(`/api/integrations/${id}/baseline`, body),
   settings: () => get<Settings>('/api/settings'),
   saveSettings: (s: Partial<Settings>) => put<Settings>('/api/settings', s),
@@ -144,8 +146,17 @@ function parseSse(chunk: string): { event: string; data: Record<string, unknown>
   try { return { event, data: JSON.parse(dataLines.join('\n')) }; } catch { return null; }
 }
 
-/** /api/events 事件流；返回取消函数。断线由 EventSource 自己重连 */
-export function subscribeEvents(onEvent: (e: StreamEvent) => void, onState?: (open: boolean) => void): () => void {
+/** /api/events 事件流；同一窗口内共享一条 EventSource，避免占满浏览器 HTTP/1.1 的 6 连接上限。返回取消函数，断线由 EventSource 自己重连 */
+type StreamListener = {
+  onEvent: (e: StreamEvent) => void;
+  onState?: (open: boolean) => void;
+};
+let sharedES: EventSource | null = null;
+let sharedOpen: boolean | null = null;
+const streamListeners = new Set<StreamListener>();
+
+function ensureSharedEvents() {
+  if (sharedES) return;
   const es = new EventSource(`${BASE}/api/events?client=ui`);
   const types: StreamEvent['type'][] = ['quota', 'job', 'call', 'call_start', 'bounce', 'notice', 'status'];
   for (const t of types) {
@@ -154,11 +165,33 @@ export function subscribeEvents(onEvent: (e: StreamEvent) => void, onState?: (op
         const data = JSON.parse((ev as MessageEvent).data);
         // 后台是独立进程，界面升级后可能还连着旧版：旧版的 call、job 没有外层包装
         const bare = (t === 'call' || t === 'job') && data && data.id && !data[t];
-        onEvent({ type: t, data: bare ? { [t]: data } : data } as StreamEvent);
+        const msg = { type: t, data: bare ? { [t]: data } : data } as StreamEvent;
+        for (const l of streamListeners) l.onEvent(msg);
       } catch { /* 坏包丢弃 */ }
     });
   }
-  es.onopen = () => onState?.(true);
-  es.onerror = () => onState?.(false);
-  return () => es.close();
+  es.onopen = () => {
+    sharedOpen = true;
+    for (const l of streamListeners) l.onState?.(true);
+  };
+  es.onerror = () => {
+    sharedOpen = false;
+    for (const l of streamListeners) l.onState?.(false);
+  };
+  sharedES = es;
+}
+
+export function subscribeEvents(onEvent: (e: StreamEvent) => void, onState?: (open: boolean) => void): () => void {
+  const listener: StreamListener = { onEvent, onState };
+  streamListeners.add(listener);
+  ensureSharedEvents();
+  if (sharedOpen !== null) onState?.(sharedOpen);
+  return () => {
+    streamListeners.delete(listener);
+    if (streamListeners.size === 0 && sharedES) {
+      sharedES.close();
+      sharedES = null;
+      sharedOpen = null;
+    }
+  };
 }

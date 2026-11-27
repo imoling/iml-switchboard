@@ -37,8 +37,31 @@ func (p *ArkVideo) Submit(ctx context.Context, req VideoRequest) (string, error)
 		return "", err
 	}
 	content := []map[string]interface{}{{"type": "text", "text": req.Prompt}}
-	if req.ImagePath != "" {
-		u, err := imageDataURL(req.ImagePath)
+	refs := req.videoRefs()
+	switch {
+	case req.LastImagePath != "":
+		if len(refs) > 0 {
+			u, err := imageDataURL(refs[0])
+			if err != nil {
+				return "", err
+			}
+			content = append(content, map[string]interface{}{"type": "image_url", "image_url": map[string]string{"url": u}, "role": "first_frame"})
+		}
+		u, err := imageDataURL(req.LastImagePath)
+		if err != nil {
+			return "", err
+		}
+		content = append(content, map[string]interface{}{"type": "image_url", "image_url": map[string]string{"url": u}, "role": "last_frame"})
+	case len(refs) > 1:
+		us, err := refDataURLs(refs)
+		if err != nil {
+			return "", err
+		}
+		for _, u := range us {
+			content = append(content, map[string]interface{}{"type": "image_url", "image_url": map[string]string{"url": u}, "role": "reference_image"})
+		}
+	case len(refs) == 1:
+		u, err := imageDataURL(refs[0])
 		if err != nil {
 			return "", err
 		}

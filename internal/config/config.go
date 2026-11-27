@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -315,16 +316,22 @@ func ParseTierPick(id string) (TierPick, bool) {
 var TrayIcons = []string{"tile", "frame", "fork", "patchbay", "lever", "breakout", "pixel", "ladder"}
 
 // HostIDs 是接入页列出的宿主，顺序就是页面顺序。
-var HostIDs = []string{"claude_code", "claude_desktop", "codex", "gemini_cli", "workbuddy", "winwork", "doubao_work", "deepseek_harness", "pi", "openclaw", "hermes"}
+var HostIDs = []string{"claude_code", "claude_desktop", "codex", "antigravity", "gemini_cli", "workbuddy", "winwork", "doubao_work", "deepseek_harness", "pi", "openclaw", "hermes"}
 
 // Integration 是一个宿主的接入状态。
 type Integration struct {
 	Connected bool            `yaml:"connected" json:"connected"`
 	Options   map[string]bool `yaml:"options,omitempty" json:"options,omitempty"`
+	// Name 与 Custom 用于用户自己添加的应用（如 Antigravity、Cursor、其他工具）
+	Name     string `yaml:"name,omitempty" json:"name,omitempty"`
+	Custom   bool   `yaml:"custom,omitempty" json:"custom,omitempty"`
+	Disabled bool   `yaml:"disabled,omitempty" json:"disabled,omitempty"`
 	// Models 是用户给这个宿主排好的型号表，第一个是默认；空表示跟着默认走（路由型号加各账号分进档位的型号）
 	Models []string `yaml:"models,omitempty" json:"models,omitempty"`
 	// Tiers 是这个宿主自己的档位候选表，档位 → 按顺序的条目；没有这一档的表就用全局的（Routing.Tiers），再没有按内置规则
 	Tiers map[string][]TierPick `yaml:"tiers,omitempty" json:"tiers,omitempty"`
+	// MediaOrder 是这个宿主自己的生图、生视频先后表；空表示跟全局（Routing.MediaOrder）
+	MediaOrder map[string][]string `yaml:"media_order,omitempty" json:"media_order,omitempty"`
 	// BaselineModel 是「应用原价」按哪个型号算：不经过 Switchboard、应用自己调时用的型号；空表示按接管前的型号，再没有按 Opus
 	BaselineModel string `yaml:"baseline_model,omitempty" json:"baseline_model,omitempty"`
 	// BaselinePrice 是这个型号的单价；空表示用内置价目表
@@ -350,11 +357,13 @@ type Config struct {
 	Integrations map[string]Integration `yaml:"integrations" json:"integrations"`
 }
 
-// Store 负责加载、保存和并发访问。
+// Store 负责加载、保存和并发访问；外部修改 config.yaml 时自动热加载。
 type Store struct {
-	mu   sync.RWMutex
-	path string
-	cfg  *Config
+	mu        sync.RWMutex
+	path      string
+	cfg       *Config
+	modTime   time.Time
+	lastCheck time.Time
 }
 
 // DataDir 返回数据目录，环境变量 IMLS_DATA_DIR 可覆盖（测试用）。
@@ -413,16 +422,45 @@ func Open() (*Store, error) {
 	if err := Validate(s.cfg); err != nil {
 		return nil, err
 	}
+	if st, err := os.Stat(s.path); err == nil {
+		s.modTime = st.ModTime()
+	}
+	s.lastCheck = time.Now()
 	return s, nil
 }
 
 // Path 返回配置文件路径。
 func (s *Store) Path() string { return s.path }
 
-// Get 返回当前配置的只读快照（调用方不要修改）。
+// Get 返回当前配置的只读快照（调用方不要修改）；若磁盘文件被外部改过则自动重新加载。
 func (s *Store) Get() *Config {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	needCheck := time.Since(s.lastCheck) >= 500*time.Millisecond
+	cfg := s.cfg
+	s.mu.RUnlock()
+	if !needCheck {
+		return cfg
+	}
+	st, err := os.Stat(s.path)
+	if err != nil {
+		return cfg
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastCheck = time.Now()
+	if !st.ModTime().Equal(s.modTime) {
+		if b, err := os.ReadFile(s.path); err == nil {
+			next := Default()
+			next.Routing.RulesVersion = 0
+			if yaml.Unmarshal(b, next) == nil {
+				fillMissing(next)
+				if Validate(next) == nil {
+					s.cfg = next
+					s.modTime = st.ModTime()
+				}
+			}
+		}
+	}
 	return s.cfg
 }
 
@@ -450,7 +488,14 @@ func (s *Store) save() error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	if err := os.Rename(tmp, s.path); err != nil {
+		return err
+	}
+	if st, err := os.Stat(s.path); err == nil {
+		s.modTime = st.ModTime()
+	}
+	s.lastCheck = time.Now()
+	return nil
 }
 
 // Validate 检查配置，错在启动时报而不是运行时。

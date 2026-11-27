@@ -3,6 +3,7 @@
 package mcp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -30,17 +32,21 @@ func Serve(ctx context.Context, baseURL, version string) error {
 	cwd, _ := os.Getwd()
 	host := os.Getenv("IMLS_HOST")
 	if host == "" {
-		// Claude Code 会给子进程设 CLAUDECODE=1；Codex 设 CODEX_SANDBOX 之类；都没有就按通用 MCP 记
+		// Claude Code 会给子进程设 CLAUDECODE=1；Codex 设 CODEX_SANDBOX 之类；Antigravity 设 ANTIGRAVITY_*；都没有就按通用 MCP 记
 		switch {
 		case os.Getenv("CLAUDECODE") != "" || os.Getenv("CLAUDE_CODE_ENTRYPOINT") != "":
 			host = "claude_code"
 		case os.Getenv("CODEX_SANDBOX") != "" || os.Getenv("CODEX_HOME") != "":
 			host = "codex"
+		case os.Getenv("ANTIGRAVITY_EDITOR_APP_ROOT") != "" || os.Getenv("ANTIGRAVITY_AGENT") != "":
+			host = "antigravity"
 		default:
 			host = "mcp"
 		}
 	}
-	return NewServer(baseURL, version, host, cwd).Run(ctx, &sdk.StdioTransport{})
+	srv, refresh := newServerWithRefresh(baseURL, version, host, cwd)
+	go watchBackendEvents(ctx, baseURL, refresh)
+	return srv.Run(ctx, &sdk.StdioTransport{})
 }
 
 // HTTPHandler 把同一套工具挂在后台的 /mcp 上，给只会连 HTTP 的宿主（豆包工作等）用。
@@ -71,10 +77,15 @@ const Instructions = `需要一张成品图时（插画、头像、封面、海�
 用户给了参考图（照着这张头像画、按这张的风格、把这张改成…），把图片的本地路径放进 image_paths 一起传。
 只有用户明确要 SVG 或矢量源文件、要数据图表、流程图或界面里的小图标时，才自己画。
 generate_image 报「没有可用的模型」说明还没配出图账号：这时再自己画，并告诉用户。
-需要视频用 generate_video；标题动效、转场用 make_animation。不需要读写本地文件的杂活（分类、摘要、改写、翻译、抽取）用 ask_model。工具返回的路径和费用原样告诉用户。`
+需要视频用 generate_video（用户给了参考图、首帧或首尾帧就把本地路径放进 image_paths、last_image_path）；标题动效、转场用 make_animation。不需要读写本地文件的杂活（分类、摘要、改写、翻译、抽取）用 ask_model。工具返回的路径和费用原样告诉用户。`
 
 // NewServer 组装五个工具；每次调用都转发给后台的 /api/internal/tool。
 func NewServer(baseURL, version, host, cwd string) *sdk.Server {
+	srv, _ := newServerWithRefresh(baseURL, version, host, cwd)
+	return srv
+}
+
+func newServerWithRefresh(baseURL, version, host, cwd string) (*sdk.Server, func()) {
 	srv := sdk.NewServer(&sdk.Implementation{Name: "iml-switchboard", Version: version}, &sdk.ServerOptions{Instructions: Instructions})
 	call := func(name string, args any) (*sdk.CallToolResult, any, error) {
 		raw, _ := json.Marshal(args)
@@ -98,22 +109,27 @@ func NewServer(baseURL, version, host, cwd string) *sdk.Server {
 	type imageArgs struct {
 		Prompt     string   `json:"prompt" jsonschema:"要画什么，越具体越好；有参考图时写清要保留什么、改成什么"`
 		ImagePaths []string `json:"image_paths,omitempty" jsonschema:"参考图，可以多张：用户贴的图或项目里的图片的本地路径（相对路径按项目目录算），也可以是 http 地址"`
-		Model      string   `json:"model,omitempty" jsonschema:"点名用哪个出图型号（工具说明里列了能用的）；不填按档位选"`
-		Tier       string   `json:"tier,omitempty" jsonschema:"档位：cheap 便宜 / default 默认 / best 最好 / free 用 ChatGPT 订阅出图"`
+		Model      string   `json:"model,omitempty" jsonschema:"点名用哪个出图型号（工具说明里列了能用的）；不填按 Switchboard 配置分派"`
+		Tier       string   `json:"tier,omitempty" jsonschema:"一般不填，按 Switchboard 配置分派；只有用户明确要求时才填 cheap 便宜 / best 最好 / free 用 ChatGPT 订阅出图"`
 		Size       string   `json:"size,omitempty" jsonschema:"尺寸，如 1024x1024、1536x1024"`
 		OutDir     string   `json:"out_dir,omitempty" jsonschema:"保存目录，默认项目下的 assets"`
 	}
 	type videoArgs struct {
-		Prompt    string `json:"prompt" jsonschema:"视频内容描述"`
-		Seconds   int    `json:"seconds,omitempty" jsonschema:"时长秒数，默认 5"`
-		Tier      string `json:"tier,omitempty" jsonschema:"档位：cheap / default / best"`
-		ImagePath string `json:"image_path,omitempty" jsonschema:"图生视频时的首帧图片路径"`
-		Model     string `json:"model,omitempty" jsonschema:"点名用哪个出视频型号（工具说明里列了能用的）；不填按档位选"`
+		Prompt        string   `json:"prompt" jsonschema:"视频内容描述；有参考图时写清画面怎么动、保留哪些人物或元素"`
+		Seconds       int      `json:"seconds,omitempty" jsonschema:"时长秒数，默认 5"`
+		Tier          string   `json:"tier,omitempty" jsonschema:"一般不填，按 Switchboard 配置分派；只有用户明确要求时才填 cheap 便宜 / best 最好"`
+		ImagePath     string   `json:"image_path,omitempty" jsonschema:"图生视频时的首帧图片路径（单张；多张参考图请用 image_paths）"`
+		ImagePaths    []string `json:"image_paths,omitempty" jsonschema:"参考图，可以多张：本地路径（相对路径按项目目录算）或 http 地址；单张按首帧处理，多张按参考图生成视频"`
+		LastImagePath string   `json:"last_image_path,omitempty" jsonschema:"尾帧图片路径（与首帧配合做首尾帧生视频）"`
+		Size          string   `json:"size,omitempty" jsonschema:"分辨率或比例，如 720p、1080p、16:9"`
+		OutDir        string   `json:"out_dir,omitempty" jsonschema:"保存目录，默认项目下的 assets"`
+		Model         string   `json:"model,omitempty" jsonschema:"点名用哪个出视频型号（工具说明里列了能用的）；不填按 Switchboard 配置分派"`
 	}
 	type animArgs struct {
 		Spec    string `json:"spec" jsonschema:"动画要表现什么：画面、文字、节奏"`
 		Seconds int    `json:"seconds,omitempty" jsonschema:"时长秒数，默认 8"`
 		Engine  string `json:"engine,omitempty" jsonschema:"渲染引擎，目前只有 remotion"`
+		OutDir  string `json:"out_dir,omitempty" jsonschema:"保存目录，默认项目下的 assets"`
 	}
 	type askArgs struct {
 		Prompt string `json:"prompt" jsonschema:"要问的内容，把需要的上下文一起放进来"`
@@ -122,14 +138,33 @@ func NewServer(baseURL, version, host, cwd string) *sdk.Server {
 	type jobArgs struct {
 		JobID string `json:"job_id" jsonschema:"任务号"`
 	}
-	sdk.AddTool(srv, &sdk.Tool{Name: "generate_image", Description: "生成图片并保存到项目里。需要插画、头像、封面、海报、像素画这类成品图时先用它，不要自己写 SVG、HTML 或脚本画图冒充；用户给了参考图（照着这张画、按这个风格）就把路径放进 image_paths。" + modelHint(baseURL, "image")},
-		func(ctx context.Context, r *sdk.CallToolRequest, a imageArgs) (*sdk.CallToolResult, any, error) {
-			return call("generate_image", a)
-		})
-	sdk.AddTool(srv, &sdk.Tool{Name: "generate_video", Description: "生成短视频。90 秒内没完成会返回任务号，之后用 get_job 查询。" + modelHint(baseURL, "video")},
-		func(ctx context.Context, r *sdk.CallToolRequest, a videoArgs) (*sdk.CallToolResult, any, error) {
-			return call("generate_video", a)
-		})
+	const (
+		imgDescBase = "生成图片并保存到项目里。需要插画、头像、封面、海报、像素画这类成品图时先用它，不要自己写 SVG、HTML 或脚本画图冒充；用户给了参考图（照着这张画、按这个风格）就把路径放进 image_paths。"
+		vidDescBase = "生成短视频，支持文生视频、首尾帧和参考图生视频（参考图路径放进 image_paths，尾帧放进 last_image_path）。90 秒内没完成会返回任务号，之后用 get_job 查询。"
+	)
+	var mu sync.Mutex
+	var lastImgHint, lastVidHint string
+	registerMedia := func(force bool) {
+		imgHint := modelHint(baseURL, "image")
+		vidHint := modelHint(baseURL, "video")
+		mu.Lock()
+		defer mu.Unlock()
+		if force || imgHint != lastImgHint {
+			lastImgHint = imgHint
+			sdk.AddTool(srv, &sdk.Tool{Name: "generate_image", Description: imgDescBase + imgHint},
+				func(ctx context.Context, r *sdk.CallToolRequest, a imageArgs) (*sdk.CallToolResult, any, error) {
+					return call("generate_image", a)
+				})
+		}
+		if force || vidHint != lastVidHint {
+			lastVidHint = vidHint
+			sdk.AddTool(srv, &sdk.Tool{Name: "generate_video", Description: vidDescBase + vidHint},
+				func(ctx context.Context, r *sdk.CallToolRequest, a videoArgs) (*sdk.CallToolResult, any, error) {
+					return call("generate_video", a)
+				})
+		}
+	}
+	registerMedia(true)
 	sdk.AddTool(srv, &sdk.Tool{Name: "make_animation", Description: "按描述做动效视频：由强模型写 Remotion 代码并在本机渲染成 mp4。需要标题动效、转场、数据动画时用它。"},
 		func(ctx context.Context, r *sdk.CallToolRequest, a animArgs) (*sdk.CallToolResult, any, error) {
 			return call("make_animation", a)
@@ -142,7 +177,39 @@ func NewServer(baseURL, version, host, cwd string) *sdk.Server {
 		func(ctx context.Context, r *sdk.CallToolRequest, a jobArgs) (*sdk.CallToolResult, any, error) {
 			return call("get_job", a)
 		})
-	return srv
+	return srv, func() { registerMedia(false) }
+}
+
+// watchBackendEvents 订阅后台 SSE 事件流：后台配置变更或重启重连后自动刷新工具说明并通知宿主。
+func watchBackendEvents(ctx context.Context, baseURL string, refresh func()) {
+	client := &http.Client{}
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/api/events?client=mcp", nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("X-IMLS-Client", "mcp")
+		resp, err := client.Do(req)
+		if err == nil {
+			refresh()
+			sc := bufio.NewScanner(resp.Body)
+			for sc.Scan() {
+				line := sc.Text()
+				if line == "event: config" || line == "event: status" {
+					refresh()
+				}
+			}
+			resp.Body.Close()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+	}
 }
 
 // ensureBackend 探测后台；没起就用同一个可执行文件启动 serve 并等它就绪。

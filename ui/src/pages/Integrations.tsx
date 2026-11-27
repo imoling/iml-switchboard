@@ -4,18 +4,21 @@ import type { Integration, IntegrationId } from '../api/types';
 import { HostModelDialog } from '../components/HostModels';
 import { HostTiersDialog } from '../components/HostTiers';
 import { HostBaselineRow } from '../components/HostBaseline';
-import { Dot, ErrorLine, SetRow, Toggle, toast } from '../components/ui';
+import { Dot, ErrorLine, Modal, SetRow, Toggle, toast } from '../components/ui';
 import { Vendor, VendorLogo } from '../components/Vendor';
 import { errText, useLoad } from '../hooks';
 import { num } from '../format';
 import { useTheme } from '../theme/ThemeContext';
 import { desktop } from '../tauri';
 
-/** 每个宿主只说一句自己特有的：在哪生效、什么时候生效 */
-const META: Record<IntegrationId, { name: string; note: string; manual?: boolean; takeoverOnly?: boolean }> = {
+interface HostMeta { name: string; note: string; manual?: boolean; takeoverOnly?: boolean }
+
+/** 每个应用只说一句自己特有的：在哪生效、什么时候生效 */
+const META: Record<string, HostMeta> = {
   claude_code: { name: 'Claude Code', note: 'VS Code 和终端里都生效' },
   claude_desktop: { name: 'Claude Desktop', note: '只有「接管模型」这一个开关', takeoverOnly: true },
   codex: { name: 'Codex', note: '终端和 ChatGPT 桌面版都生效；下次启动生效' },
+  antigravity: { name: 'Antigravity', note: '写进 Antigravity 配置；重连工具生效' },
   gemini_cli: { name: 'Gemini CLI', note: '下次启动生效' },
   doubao_work: { name: '豆包工作', note: '新建一个自定义连接器，把下面的内容填进去', manual: true },
   pi: { name: 'pi', note: '型号在模型列表里定；下次启动生效' },
@@ -26,7 +29,9 @@ const META: Record<IntegrationId, { name: string; note: string; manual?: boolean
   winwork: { name: 'WinWork', note: '下次新建会话生效' },
 };
 
-/** 「接管模型」在三个宿主里的后果各不相同 */
+const metaOf = (it: Integration): HostMeta => META[it.id] ?? { name: it.name || it.id, note: '复制下面的配置，填进它的工具设置里', manual: true };
+
+/** 「接管模型」在几个应用里的后果各不相同 */
 const TAKEOVER_DESC: Partial<Record<IntegrationId, string>> = {
   claude_code: '对话改走按量付费，订阅暂停；/model 里可选档位',
   codex: '对话改走按量付费；彻底重启 Codex 生效',
@@ -34,18 +39,18 @@ const TAKEOVER_DESC: Partial<Record<IntegrationId, string>> = {
   hermes: '主模型改走按量付费，型号 router-auto；重启 Hermes 生效',
 };
 
-/** 订阅只能由官方命令行消耗，跑不了宿主自己的工具：派活和纯对话用得上，带工具的回合和接管走按量付费 */
-const SUB_USE: Record<IntegrationId, string> = {
-  claude_code: '订阅 · 派活', claude_desktop: '不走订阅', codex: '订阅 · 派活', gemini_cli: '订阅 · 派活',
+/** 订阅只能由官方命令行消耗，跑不了应用自己的工具：派活和纯对话用得上，带工具的回合和接管走按量付费 */
+const SUB_USE: Record<string, string> = {
+  claude_code: '订阅 · 派活', claude_desktop: '不走订阅', codex: '订阅 · 派活', antigravity: '订阅 · 派活', gemini_cli: '订阅 · 派活',
   doubao_work: '订阅 · 派活', winwork: '订阅 · 派活', hermes: '订阅 · 派活',
   workbuddy: '订阅 · 纯对话', pi: '订阅 · 纯对话', deepseek_harness: '订阅 · 纯对话', openclaw: '订阅 · 纯对话',
 };
 const SUB_RULE = '订阅只接不带工具的请求：派活工具和纯对话能用，带工具的智能体回合和接管走按量付费';
 
-/** 带型号表的宿主；Codex 只在接管时有菜单 */
+/** 带型号表的应用；Codex 只在接管时有菜单 */
 const MODEL_LIST_HOSTS = new Set<IntegrationId>(['codex', 'workbuddy', 'pi', 'deepseek_harness', 'openclaw']);
 
-const inUse = (it: Integration) => it.status === 'connected' || !!it.options?.takeover || (it.status === 'manual' && (it.calls_7d ?? 0) > 0);
+const inUse = (it: Integration) => !it.disabled && (it.status === 'connected' || !!it.options?.takeover || !!it.custom || (it.status === 'manual' && (it.calls_7d ?? 0) > 0));
 const installed = (it: Integration) => it.available !== false;
 const STATUS: Record<string, string> = { connected: '已接入', manual: '手动', disconnected: '未接入' };
 
@@ -56,6 +61,8 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [dialog, setDialog] = useState<IntegrationId | null>(null);
   const [tiersDialog, setTiersDialog] = useState<IntegrationId | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
   const [selId, setSelId] = useState<IntegrationId | null>(null);
 
   const list = data ?? [];
@@ -79,10 +86,40 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
   };
   const set = (it: Integration, patch: Integration['options']) => run(it.id, () => api.setIntegration(it.id, { ...it.options, ...patch }));
 
-  /** 宿主自己的开关：接入之后才有意义 */
+  const addCustom = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setBusy('__add'); setErr(null);
+    try {
+      const it = await api.addIntegration(name);
+      setData((old) => [...(old ?? []), it]);
+      setSelId(it.id);
+      setNewName('');
+      setAdding(false);
+      toast(`已添加 ${name}`);
+    } catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
+  };
+
+  const removeCustom = async (it: Integration) => {
+    setBusy(it.id); setErr(null);
+    try {
+      await api.deleteIntegration(it.id);
+      setData((old) => old?.filter((x) => x.id !== it.id) ?? old);
+      toast(`已删除 ${metaOf(it).name}`);
+    } catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
+  };
+
+  /** 应用自己的开关 */
   const ownRows = (it: Integration): ReactNode[] => {
     const rows: ReactNode[] = [];
     const connected = it.status === 'connected';
+    if (it.custom || it.id === 'antigravity' || it.id === 'doubao_work') {
+      rows.push(
+        <SetRow key="enabled" title="启用这个应用" desc="停用后，这个应用发来的派活请求会被拒绝">
+          <Toggle on={!it.disabled} onChange={(v) => set(it, { disabled: !v })} />
+        </SetRow>,
+      );
+    }
     if (connected && (it.id === 'claude_code' || it.id === 'winwork')) {
       rows.push(
         <SetRow key="md" title="写入调用约定" desc={it.id === 'winwork' ? '写进 WinWork 的 CLAUDE.md；不写它不知道什么时候把活交出来' : '写进全局 CLAUDE.md；不写它不知道什么时候把活交出来'}>
@@ -104,6 +141,7 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
   const routeRows = (it: Integration): ReactNode[] => {
     const rows: ReactNode[] = [];
     const connected = it.status === 'connected';
+    const manualOrCustom = !!it.custom || metaOf(it).manual;
     if ((connected && (it.id === 'claude_code' || it.id === 'codex' || it.id === 'hermes')) || (it.id === 'claude_desktop' && installed(it))) {
       rows.push(
         <SetRow key="takeover" title="接管模型" desc={TAKEOVER_DESC[it.id]}>
@@ -111,15 +149,15 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
         </SetRow>,
       );
     }
-    if (connected || !!it.options?.takeover) {
+    if (connected || !!it.options?.takeover || manualOrCustom) {
       rows.push(
         <SetRow key="tiers" title="档位候选">
-          <span className="hint">{it.tiers_custom ? `${it.tiers_custom} 档自己排` : '跟全局'}</span>
+          <span className="hint">{it.tiers_custom ? `${it.tiers_custom} 项自己排` : '跟全局'}</span>
           <button className="btn sm" onClick={() => setTiersDialog(it.id)}>调整</button>
         </SetRow>,
       );
     }
-    if (it.baseline && (connected || !!it.options?.takeover || !!it.calls_7d)) {
+    if (it.baseline && (connected || !!it.options?.takeover || !!it.calls_7d || !!it.custom)) {
       rows.push(<HostBaselineRow key="baseline" host={it.id} value={it.baseline} onSaved={(b) => setData((old) => old?.map((x) => (x.id === it.id ? { ...x, baseline: b } : x)) ?? old)} />);
     }
     if (MODEL_LIST_HOSTS.has(it.id) && (it.id === 'codex' ? !!it.options?.takeover : connected)) {
@@ -134,8 +172,17 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
   };
 
   const action = (it: Integration) => {
-    const m = META[it.id];
-    if (!installed(it) || m.takeoverOnly) return null;
+    const m = metaOf(it);
+    if (it.custom) {
+      return (
+        <div className="row" style={{ gap: 6 }}>
+          <button className="btn sm" onClick={async () => { await desktop.copyText(it.snippet ?? ''); toast(`已复制，去 ${m.name} 里粘贴`); }}>复制配置</button>
+          <button className="btn sm" disabled={busy === it.id} onClick={() => removeCustom(it)}>删除</button>
+        </div>
+      );
+    }
+    if (!installed(it) && !m.manual) return null;
+    if (m.takeoverOnly) return null;
     if (m.manual) return <button className="btn sm" onClick={async () => { await desktop.copyText(it.snippet ?? ''); toast(`已复制，去 ${m.name} 里粘贴`); }}>复制配置</button>;
     if (it.status === 'connected') return <button className="btn sm" disabled={busy === it.id} onClick={() => run(it.id, () => api.disconnect(it.id))}>断开</button>;
     return <button className="btn pri sm" disabled={busy === it.id} onClick={() => run(it.id, () => api.connect(it.id, it.id === 'claude_code' || it.id === 'winwork' ? { write_claude_md: true, commands: true } : undefined))}>{busy === it.id ? '正在接入…' : '接入'}</button>;
@@ -148,9 +195,15 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
     return null;
   };
 
+  const selName = sel ? metaOf(sel).name : '';
+
   return (
     <>
-      <div className="ct" data-tauri-drag-region><h4 data-tauri-drag-region>{t('nav.integrations')}</h4></div>
+      <div className="ct" data-tauri-drag-region>
+        <h4 data-tauri-drag-region>{t('nav.integrations')}</h4>
+        <span className="grow" data-tauri-drag-region />
+        <button className="btn sm" onClick={() => setAdding(true)}>添加应用</button>
+      </div>
       {(error || err) && <ErrorLine {...errText(error ?? err)!} />}
       {data && (
         <div className="hosts">
@@ -160,7 +213,7 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
                 <div className="hint hgrp">{title}</div>
                 {items.map((it) => (
                   <button key={it.id} className={`hitem ${it.id === selId ? 'on' : ''} ${installed(it) ? '' : 'muted'}`} onClick={() => setSelId(it.id)}>
-                    <Vendor provider={it.id} /><span className="grow">{META[it.id].name}</span>
+                    <Vendor provider={it.custom ? 'gateway' : it.id} /><span className="grow">{metaOf(it).name}</span>
                     {installed(it) && <Dot s={inUse(it) ? 'ok' : 'no'} />}
                   </button>
                 ))}
@@ -168,18 +221,18 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
             ))}
           </div>
           {sel && (() => {
-            const m = META[sel.id];
+            const m = metaOf(sel);
             const own = ownRows(sel);
             const route = routeRows(sel);
             return (
               <div className="hdetail">
                 <div className="hhead">
-                  <VendorLogo provider={sel.id} />
+                  <VendorLogo provider={sel.custom ? 'gateway' : sel.id} />
                   <div className="grow">
                     <b>{m.name}</b>
                     <div className="row hint" style={{ gap: 8 }}>
-                      {installed(sel) ? <span>{STATUS[sel.status] ?? sel.status}</span> : <span>未安装</span>}
-                      {installed(sel) && <span className="chip" title={SUB_RULE}>{SUB_USE[sel.id]}</span>}
+                      {sel.disabled ? <span>已停用</span> : installed(sel) ? <span>{STATUS[sel.status] ?? sel.status}</span> : <span>未安装</span>}
+                      {installed(sel) && <span className="chip" title={SUB_RULE}>{SUB_USE[sel.id] ?? '订阅 · 派活'}</span>}
                       {activity(sel)}
                     </div>
                   </div>
@@ -189,7 +242,7 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
                 {own.length > 0 && <div className="panel mb12">{own}</div>}
                 {route.length > 0 && <div className="panel mb12">{route}</div>}
                 {sel.snippet && sel.id !== 'claude_code' && sel.id !== 'winwork' && (
-                  <details className="raw cfg host-more">
+                  <details className="raw cfg host-more" open={!!sel.custom && !sel.calls_7d}>
                     <summary>{m.manual ? '要填的内容' : '写进去的内容'}</summary>
                     <pre>{sel.snippet}</pre>
                   </details>
@@ -199,12 +252,23 @@ export function Integrations({ onConnected }: { onConnected?: () => void }) {
           })()}
         </div>
       )}
+      {adding && (
+        <Modal title="添加应用" onClose={() => setAdding(false)} width={420}>
+          <div className="hint mb12">添加后生成专属配置，可单独调整档位与媒体顺序</div>
+          <input className="input mb12" style={{ width: '100%' }} placeholder="应用名称，比如 Cursor、Windsurf" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.nativeEvent.isComposing || e.keyCode === 229) return; if (e.key === 'Enter') addCustom(); }} autoFocus />
+          <div className="hm-foot">
+            <span className="grow" />
+            <button className="btn sm" disabled={busy === '__add'} onClick={() => setAdding(false)}>取消</button>
+            <button className="btn pri sm" disabled={!newName.trim() || busy === '__add'} onClick={addCustom}>{busy === '__add' ? '正在添加…' : '添加'}</button>
+          </div>
+        </Modal>
+      )}
       {tiersDialog && (
-        <HostTiersDialog host={tiersDialog} hostName={META[tiersDialog].name} onClose={() => setTiersDialog(null)}
+        <HostTiersDialog host={tiersDialog} hostName={selName || tiersDialog} onClose={() => setTiersDialog(null)}
           onSaved={(n) => setData((old) => old?.map((x) => (x.id === tiersDialog ? { ...x, tiers_custom: n } : x)) ?? old)} />
       )}
       {dialog && (
-        <HostModelDialog host={dialog} hostName={META[dialog].name} onClose={() => setDialog(null)}
+        <HostModelDialog host={dialog} hostName={selName || dialog} onClose={() => setDialog(null)}
           onSaved={(n) => setData((old) => old?.map((x) => (x.id === dialog ? { ...x, models_count: n } : x)) ?? old)} />
       )}
     </>
